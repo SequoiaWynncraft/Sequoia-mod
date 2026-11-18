@@ -19,7 +19,6 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
@@ -46,6 +45,7 @@ import com.seqwawa.seq.config.ConfigManager;
 import com.seqwawa.seq.model.ChatItemPreview;
 import com.seqwawa.seq.managers.GuildRankEventParser;
 import com.seqwawa.seq.managers.GuildStorageTracker;
+import com.seqwawa.seq.managers.PartyFinderManager;
 import com.seqwawa.seq.managers.ServerQueueDetector;
 import com.seqwawa.seq.managers.TreasuryOutManager;
 import com.seqwawa.seq.model.BombShareType;
@@ -53,6 +53,7 @@ import com.seqwawa.seq.model.GuildWarSubmission;
 import com.seqwawa.seq.model.WynnClassType;
 import com.seqwawa.seq.network.auth.AuthErrorCode;
 import com.seqwawa.seq.network.auth.AuthException;
+import com.seqwawa.seq.network.auth.MinecraftAuthService;
 import com.seqwawa.seq.network.auth.UnlinkedAccountWarning;
 import com.seqwawa.seq.utils.WynnClassCache;
 
@@ -130,8 +131,24 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     // Reconnect state
     private static boolean autoReconnect = true;
     private static int reconnectAttempt = 0;
-    private static ScheduledFuture<?> reconnectTask;
+    private static final PendingReconnect pendingReconnect = new PendingReconnect();
+    /** Ordinary backend errors, each shown at most once every ten minutes; all are logged. */
+    private static final RepeatedNotice otherErrors =
+            new RepeatedNotice(java.time.Duration.ofMinutes(10).toMillis(), () -> System.nanoTime() / 1_000_000L);
     private static boolean autoConnectSuppressedByManualDisconnect;
+    /** Set when the backend refuses us in a way no retry fixes (version, ban); an explicit connect clears it. */
+    private static volatile boolean autoConnectPausedByBackend;
+    /**
+     * Sign-in rejections since the backend last accepted a session. A new socket resets the
+     * retry budget, so without this a backend that keeps refusing would be retried forever.
+     */
+    private static volatile int consecutiveAuthRejections;
+    static final int MAX_CONSECUTIVE_AUTH_REJECTIONS = 3;
+    /** The close this client sends to drop a socket the backend stopped accepting as signed in; it reconnects. */
+    private static final int CLOSE_TO_REAUTHENTICATE = 4001;
+    /** Set before this client closes its own socket, so onClose does not take the echo for the backend's close. */
+    private volatile boolean closedByClient;
+    private volatile boolean versionRejectionShown;
 
     // Callbacks for new message types
     private static Consumer<DiscordChatMessage> discordChatHandler;
@@ -204,6 +221,17 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private void connectInternal(boolean userInitiated, boolean forceTokenRefresh) {
         if (userInitiated) {
             autoConnectSuppressedByManualDisconnect = false;
+            // Asking to connect ends the player's own sign-out and any pause the backend caused.
+            autoConnectPausedByBackend = false;
+            consecutiveAuthRejections = 0;
+            MinecraftAuthService auth = SeqClient.getAuthService();
+            if (auth != null) {
+                auth.allowSignIn();
+            }
+        } else if (isAutomaticConnectSuppressed()) {
+            // A reconnect or recovery already under way when the player signed out or the backend refused us.
+            SeqClient.LOGGER.info("[WebSocket] Skipping automatic connect until the player connects explicitly");
+            return;
         }
         WynncraftServerPolicy.Scope serverScope = WynncraftServerPolicy.currentScope();
         if (serverScope != WynncraftServerPolicy.Scope.MAIN) {
@@ -243,6 +271,10 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         if (connectInProgress) {
             notifyConnectionStatus("Already connected/connecting.");
             return;
+        }
+        if (userInitiated) {
+            // This connect replaces a reconnect still waiting to run, which would open a second socket.
+            cancelReconnect();
         }
 
         notifyConnectionStatus("Connecting to " + BuildConfig.ENVIRONMENT + "...");
@@ -303,7 +335,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             }
             return;
         }
-        close();
+        closeFromClient();
         authenticated = false;
         authFailed = false;
         notInGuild = false;
@@ -373,10 +405,11 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     @Override
     public void onClose(int code, String reason, boolean remote) {
         SeqClient.LOGGER.info(
-                "[WebSocket] onClose code={} reason='{}' remote={} autoReconnect={}",
+                "[WebSocket] onClose code={} reason='{}' remote={} closedByClient={} autoReconnect={}",
                 code,
                 reason,
                 remote,
+                closedByClient,
                 autoReconnect);
         connectInProgress = false;
         authenticated = false;
@@ -391,8 +424,11 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             return;
         }
         instance = null;
-        handleWebSocketAuthRejection(code, reason);
-        boolean shouldReconnect = autoReconnect && shouldReconnectAfterClose(code, remote);
+        BackendCloseClassifier.Kind kind = BackendCloseClassifier.classify(code, reason, closedByClient);
+        handleBackendClose(kind);
+        // A close this client started comes back marked remote once the backend echoes it.
+        boolean shouldReconnect = autoReconnect
+                && shouldReconnectAfterClose(code, remote && kind != BackendCloseClassifier.Kind.CLIENT_INITIATED);
         if (shouldReconnect) {
             SeqClient.LOGGER.info(
                     "[WebSocket] Scheduling reconnect after close code={} remote={} reason='{}'", code, remote, reason);
@@ -445,12 +481,19 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             notifyManualConnectRequired();
             return;
         }
-        cancelReconnect();
         long delay = Math.min(RECONNECT_BASE_MS * (1L << reconnectAttempt), RECONNECT_CAP_MS);
         reconnectAttempt++;
         SeqClient.LOGGER.info("[WebSocket] Reconnecting in {}ms (attempt {})", delay, reconnectAttempt);
-        reconnectTask = scheduler.schedule(
+        pendingReconnect.replace(
+                attempt -> scheduler.schedule(attempt, delay, TimeUnit.MILLISECONDS),
                 () -> {
+                    ConnectionManager current = instance;
+                    if (current != null
+                            && !scheduledReconnectStillNeeded(current.isOpen(), current.connectInProgress)) {
+                        // A connect that started after this was scheduled is already under way.
+                        SeqClient.LOGGER.info("[WebSocket] Skipping scheduled reconnect; a connection is already live");
+                        return;
+                    }
                     instance = null;
                     try {
                         WynncraftServerPolicy.Scope reconnectScope = WynncraftServerPolicy.currentScope();
@@ -474,17 +517,16 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         SeqClient.LOGGER.error("[WebSocket] Reconnect failed", e);
                         scheduleReconnect();
                     }
-                },
-                delay,
-                TimeUnit.MILLISECONDS);
+                });
+    }
+
+    /** Replacing a live or connecting instance would orphan its socket while a second one opens. */
+    static boolean scheduledReconnectStillNeeded(boolean currentOpen, boolean currentConnecting) {
+        return !currentOpen && !currentConnecting;
     }
 
     private static void cancelReconnect() {
-        if (reconnectTask != null) {
-            SeqClient.LOGGER.debug("[WebSocket] Cancelling pending reconnect task");
-            reconnectTask.cancel(false);
-            reconnectTask = null;
-        }
+        pendingReconnect.cancel();
     }
 
     private void notifyConnectionStatus(String message) {
@@ -547,12 +589,12 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 || authFailed
                 || notInGuild
                 || connectedSince != null
-                || reconnectTask != null
+                || pendingReconnect.isWaiting()
                 || userInitiatedConnectFlow;
     }
 
     static boolean hasReconnectTask() {
-        return reconnectTask != null;
+        return pendingReconnect.isWaiting();
     }
 
     public static boolean canAutoConnectNow() {
@@ -561,12 +603,20 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 current != null && current.isOpen(),
                 current != null && current.authenticated,
                 current != null && current.connectInProgress,
-                reconnectTask != null,
-                autoConnectSuppressedByManualDisconnect);
+                pendingReconnect.isWaiting(),
+                isAutomaticConnectSuppressed());
     }
 
     public static boolean isAutoConnectSuppressedByManualDisconnect() {
         return autoConnectSuppressedByManualDisconnect;
+    }
+
+    /** Whether only an explicit connect may connect: the player disconnected or signed out, or the backend said no. */
+    private static boolean isAutomaticConnectSuppressed() {
+        MinecraftAuthService auth = SeqClient.getAuthService();
+        return autoConnectSuppressedByManualDisconnect
+                || autoConnectPausedByBackend
+                || (auth != null && auth.isSignedOutByUser());
     }
 
     static void resetForTest() {
@@ -574,6 +624,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         autoReconnect = true;
         reconnectAttempt = 0;
         autoConnectSuppressedByManualDisconnect = false;
+        autoConnectPausedByBackend = false;
+        consecutiveAuthRejections = 0;
         cancelReconnect();
         instance = null;
     }
@@ -583,8 +635,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             boolean authenticated,
             boolean connectInProgress,
             boolean reconnectScheduled,
-            boolean manualDisconnectSuppressed) {
-        return !manualDisconnectSuppressed
+            boolean suppressedUntilManualConnect) {
+        return !suppressedUntilManualConnect
                 && !socketOpen
                 && !authenticated
                 && !connectInProgress
@@ -897,29 +949,57 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 cause);
     }
 
-    private void handleWebSocketAuthRejection(int code, String reason) {
-        String normalizedReason = reason == null ? "" : reason.toLowerCase(Locale.ROOT);
-        boolean rejected = code == 1008
-                || normalizedReason.contains("token")
-                || normalizedReason.contains("expired")
-                || normalizedReason.contains("unauthor")
-                || normalizedReason.contains("forbidden")
-                || normalizedReason.contains("auth");
-        if (!rejected) {
-            return;
+    private void handleBackendClose(BackendCloseClassifier.Kind kind) {
+        switch (kind) {
+            case AUTH_REJECTED -> {
+                authFailed = true;
+                SeqClient.getAuthService()
+                        .invalidateSession(
+                                AuthErrorCode.WEBSOCKET_AUTH_REJECTED,
+                                "Backend rejected websocket authentication. Re-authenticating.");
+                notifyConnectionFailure(SeqClient.getAuthService().getLastError().getMessage(), false);
+                registerAuthFailure();
+                recordAuthRejection();
+            }
+            // The backend explains in an error just before it closes; say it here only if that went unshown.
+            case VERSION_UNSUPPORTED -> pauseAutoConnect(versionRejectionShown
+                    ? null
+                    : "This version of Sequoia is no longer supported. Update the mod, then run /seq connect.");
+            case PARTY_FINDER_BANNED -> pauseAutoConnect(
+                    "Sequoia closed the connection: this account is banned from the party finder. "
+                            + "Run /seq connect to try again.");
+            case HANDSHAKE_FORBIDDEN -> pauseAutoConnect(
+                    "Sequoia refused to connect this account. Run /seq connect to try again.");
+            // The Treasury error before this close already stopped reconnecting and told the player.
+            case TREASURY_AUTH_FAILED -> autoReconnect = false;
+            case CLIENT_INITIATED, OTHER -> {}
         }
+    }
 
-        authFailed = true;
-        SeqClient.getAuthService()
-                .invalidateSession(
-                        normalizedReason.contains("expired")
-                                ? AuthErrorCode.TOKEN_EXPIRED
-                                : AuthErrorCode.WEBSOCKET_AUTH_REJECTED,
-                        normalizedReason.contains("expired")
-                                ? "Backend token expired. Re-authenticating."
-                                : "Backend rejected websocket authentication. Re-authenticating.");
-        notifyConnectionFailure(SeqClient.getAuthService().getLastError().getMessage(), false);
-        registerAuthFailure();
+    /**
+     * Counts a sign-in rejection. After {@link #MAX_CONSECUTIVE_AUTH_REJECTIONS} in a row, with no
+     * session accepted in between, the backend is taken to mean it, and reconnecting stops until
+     * the player connects.
+     */
+    private void recordAuthRejection() {
+        consecutiveAuthRejections++;
+        if (shouldStopAfterAuthRejections(consecutiveAuthRejections)) {
+            pauseAutoConnect("Sequoia keeps rejecting this session. Run /seq connect to try again.");
+        }
+    }
+
+    static boolean shouldStopAfterAuthRejections(int consecutiveRejections) {
+        return consecutiveRejections >= MAX_CONSECUTIVE_AUTH_REJECTIONS;
+    }
+
+    /** A refusal no retry can fix: stop reconnecting, and connecting automatically, until the player connects. */
+    private void pauseAutoConnect(String message) {
+        autoReconnect = false;
+        autoConnectPausedByBackend = true;
+        SeqClient.LOGGER.warn("[WebSocket] Backend refused this client; automatic connects paused until /seq connect");
+        if (message != null) {
+            notify(message);
+        }
     }
 
     public void requestConnectedUsers(Consumer<List<String>> callback) {
@@ -1722,6 +1802,9 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     public static void resetForAccountChange() {
         pendingGuildWarEvents.clear();
         UnlinkedAccountWarning.getInstance().reset();
+        // A refusal (such as a ban) was about the previous account.
+        autoConnectPausedByBackend = false;
+        consecutiveAuthRejections = 0;
         ConnectionManager current = instance;
         if (current == null) {
             return;
@@ -1939,6 +2022,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         return;
                     }
                     authenticated = true;
+                    consecutiveAuthRejections = 0;
                     guildRankTrackingSupported = json.has("guild_rank_tracking_supported")
                             && json.get("guild_rank_tracking_supported").isJsonPrimitive()
                             && json.get("guild_rank_tracking_supported").getAsBoolean();
@@ -2177,21 +2261,6 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     String minimumSafeVersion = extractMinimumSafeVersion(json);
                     String capability = extractCapability(json);
                     int status = extractStatusCode(json);
-                    String normalized = error.toLowerCase(Locale.ROOT);
-
-                    if (treasuryOnlyConnection
-                            && requestId == null
-                            && isTreasuryAuthenticationError(backendCode)) {
-                        treasurySessionAuthenticator.reset();
-                        authFailed = true;
-                        autoReconnect = false;
-                        notifyConnectionFailure(
-                                "Treasury identity verification failed: " + error,
-                                true);
-                        finishConnectFlow();
-                        closeTreasuryAuthFailure();
-                        return;
-                    }
 
                     if (requestId != null
                             && treasuryOutErrorHandler != null
@@ -2205,93 +2274,108 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                                     .invalidateSession(
                                             AuthErrorCode.TOKEN_INVALID,
                                             "Backend rejected the stored token. Re-authentication required.");
+                            recordAuthRejection();
+                            closeToReauthenticate();
                         } else if ("mod_version_unsupported".equalsIgnoreCase(backendCode)) {
                             autoReconnect = false;
                         }
                         return;
                     }
 
-                    if (isSilentGuildChatMembershipReject(backendCode, capability, normalized)) {
-                        SeqClient.LOGGER.info("[WebSocket] Guild chat relay rejected because sender is not in guild");
-                        return;
-                    }
-
-                    if (isSessionMembershipReject(backendCode, capability, normalized)) {
-                        disableMemberFeaturesForSession();
-                        return;
-                    }
-
-                    SeqClient.LOGGER.warn(
-                            "[WebSocket] Backend error status={} code={} message={}", status, backendCode, error);
-
-                    if ("mod_version_unsupported".equalsIgnoreCase(backendCode) || status == 426) {
-                        if (shouldDisableReconnectForVersionRejection(capability)) {
-                            autoReconnect = false;
-                        }
-                        maybeNotifyVersionRejection(capability, minimumSafeVersion, error);
-                        return;
-                    }
-
-                    if (isSessionAuthenticationError(status, capability, normalized)) {
-                        authFailed = true;
-                        authenticated = false;
-                        registerAuthFailure();
-                        notify("Invalid auth request. Run /seq connect to start a fresh backend session.");
-                        return;
-                    }
-
-                    if (status == 401 || normalized.contains("invalid token") || normalized.contains("expired")) {
-                        authFailed = true;
-                        authenticated = false;
-                        registerAuthFailure();
-                        SeqClient.getAuthService()
-                                .invalidateSession(
-                                        normalized.contains("expired")
-                                                ? AuthErrorCode.TOKEN_EXPIRED
-                                                : AuthErrorCode.TOKEN_INVALID,
-                                        normalized.contains("expired")
-                                                ? "Backend token expired. Re-authentication required."
-                                                : "Backend rejected the stored token. Re-authentication required.");
-                        notify(SeqClient.getAuthService().getLastError().getMessage());
-                        return;
-                    }
-
-                    if (isPartyFinderError(json, normalized)) {
-                        SeqClient.getPartyFinderManager().pushUiError(error);
-                        return;
-                    }
-
-                    if (isCapabilityAuthorizationReject(status, capability)) {
-                        SeqClient.LOGGER.info(
-                                "[WebSocket] Capability authorization rejected capability={} message={}",
-                                capability,
-                                error);
-                        notify(formatCapabilityAccessDenied(capability, error));
-                        return;
-                    }
-
-                    if (status == 403 || normalized.contains("not in guild") || normalized.contains("guild")) {
-                        notInGuild = true;
-                        authFailed = true;
-                        authenticated = false;
-                        notify("Access denied by backend authorization.");
+                    BackendErrorClassifier.Kind kind = BackendErrorClassifier.classify(
+                            new BackendErrorClassifier.BackendError(
+                                    requestId,
+                                    backendCode,
+                                    status,
+                                    capability,
+                                    error,
+                                    extractPrimitiveString(json, "context"),
+                                    extractPrimitiveString(json, "request_type")),
+                            treasuryOnlyConnection);
+                    if (kind != BackendErrorClassifier.Kind.GUILD_CHAT_SENDER_NOT_IN_GUILD
+                            && kind != BackendErrorClassifier.Kind.NOT_A_SEQUOIA_MEMBER) {
                         SeqClient.LOGGER.warn(
-                                "[WebSocket] Guild error detected; disabling auto-reconnect and closing socket");
-                        autoReconnect = false;
-                        close();
-                        return;
+                                "[WebSocket] Backend error status={} code={} kind={} message={}",
+                                status,
+                                backendCode,
+                                kind,
+                                error);
                     }
 
-                    if (normalized.contains("validation")) {
-                        if ("Unknown backend error".equals(error)) {
-                            notify("Request rejected by backend validation. Please check your input.");
-                        } else {
-                            notify(error);
+                    switch (kind) {
+                        case TREASURY_AUTH_FAILED -> {
+                            treasurySessionAuthenticator.reset();
+                            authFailed = true;
+                            autoReconnect = false;
+                            notifyConnectionFailure(
+                                    "Treasury identity verification failed: " + error,
+                                    true);
+                            finishConnectFlow();
+                            closeTreasuryAuthFailure();
                         }
-                        return;
+                        case GUILD_CHAT_SENDER_NOT_IN_GUILD -> SeqClient.LOGGER.info(
+                                "[WebSocket] Guild chat relay rejected because sender is not in guild");
+                        case NOT_A_SEQUOIA_MEMBER -> disableMemberFeaturesForSession();
+                        case VERSION_UNSUPPORTED -> {
+                            if (shouldDisableReconnectForVersionRejection(capability)) {
+                                autoReconnect = false;
+                            }
+                            maybeNotifyVersionRejection(capability, minimumSafeVersion, error);
+                        }
+                        case SESSION_AUTH_INVALID -> {
+                            authFailed = true;
+                            authenticated = false;
+                            registerAuthFailure();
+                            notify("Invalid auth request. Run /seq connect to start a fresh backend session.");
+                            recordAuthRejection();
+                            closeToReauthenticate();
+                        }
+                        case TOKEN_INVALID, TOKEN_EXPIRED -> {
+                            boolean expired = kind == BackendErrorClassifier.Kind.TOKEN_EXPIRED;
+                            authFailed = true;
+                            authenticated = false;
+                            registerAuthFailure();
+                            SeqClient.getAuthService()
+                                    .invalidateSession(
+                                            expired ? AuthErrorCode.TOKEN_EXPIRED : AuthErrorCode.TOKEN_INVALID,
+                                            expired
+                                                    ? "Backend token expired. Re-authentication required."
+                                                    : "Backend rejected the stored token. Re-authentication required.");
+                            notify(SeqClient.getAuthService().getLastError().getMessage());
+                            recordAuthRejection();
+                            closeToReauthenticate();
+                        }
+                        case PARTY_FINDER -> SeqClient.getPartyFinderManager().pushUiError(error);
+                        case CAPABILITY_DENIED -> {
+                            SeqClient.LOGGER.info(
+                                    "[WebSocket] Capability authorization rejected capability={} message={}",
+                                    capability,
+                                    error);
+                            notify(formatCapabilityAccessDenied(capability, error));
+                        }
+                        case NOT_IN_GUILD -> {
+                            notInGuild = true;
+                            authFailed = true;
+                            authenticated = false;
+                            notify("Access denied by backend authorization.");
+                            SeqClient.LOGGER.warn(
+                                    "[WebSocket] Guild error detected; disabling auto-reconnect and closing socket");
+                            autoReconnect = false;
+                            closeFromClient();
+                        }
+                        case VALIDATION -> {
+                            if ("Unknown backend error".equals(error)) {
+                                notify("Request rejected by backend validation. Please check your input.");
+                            } else {
+                                notify(error);
+                            }
+                        }
+                        case OTHER -> {
+                            if (otherErrors.shouldShow(error)) {
+                                notify("Error: " + error);
+                            }
+                        }
                     }
-
-                    notify("Error: " + error);
                 }
                 default -> SeqClient.LOGGER.warn("[WebSocket] Unhandled incoming message type={}", type);
             }
@@ -2415,10 +2499,28 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     public void unlinkLocally() {
         pendingGuildWarEvents.clear();
-        disconnectInternal(false);
-        SeqClient.getAuthService().clearSession();
+        signOut();
         clearDiscordUsername();
-        notify("Backend session cleared.");
+        notify("Backend session cleared. Run /seq connect to sign in again.");
+    }
+
+    /**
+     * Signs the player out, as /seq logout and Clear session do: nothing reconnects or signs
+     * them back in until they connect explicitly. The session is marked signed out before the
+     * socket closes, so a reconnect already running cannot sign in again in between.
+     */
+    public void signOut() {
+        MinecraftAuthService auth = SeqClient.getAuthService();
+        if (auth != null) {
+            auth.signOut();
+        }
+        disconnectInternal(false);
+        PartyFinderManager partyFinder = SeqClient.getPartyFinderManager();
+        if (partyFinder != null) {
+            partyFinder.reset();
+        }
+        // Raid profiles sign in to their own backend: drop that token too, and any sign-in in flight.
+        com.seqwawa.seq.network.auth.RaidProfilesSession.getInstance().clear();
     }
 
     private boolean canAttemptAuthNow() {
@@ -2486,11 +2588,6 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         return TreasuryOutManager.isTreasuryMinecraftAccount(activeMinecraftUsername);
     }
 
-    private static boolean isTreasuryAuthenticationError(String code) {
-        return "treasury_auth_failed".equalsIgnoreCase(code)
-                || "treasury_auth_timeout".equalsIgnoreCase(code);
-    }
-
     private static void joinActiveMinecraftSession(String serverId)
             throws com.mojang.authlib.exceptions.AuthenticationException {
         Minecraft minecraft = Minecraft.getInstance();
@@ -2530,8 +2627,29 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     private void closeTreasuryAuthFailure() {
         if (isOpen()) {
-            close(1008, "Treasury authentication failed");
+            closeFromClient(BackendCloseClassifier.POLICY_VIOLATION, "Treasury authentication failed");
         }
+    }
+
+    /**
+     * Drops a socket the backend no longer treats as signed in. Left open it would serve
+     * nothing, and /seq connect would only answer "Already connected". The close then
+     * reconnects as any other does, signing in afresh if the session was invalidated.
+     */
+    private void closeToReauthenticate() {
+        if (isOpen()) {
+            closeFromClient(CLOSE_TO_REAUTHENTICATE, "Re-authenticating");
+        }
+    }
+
+    private void closeFromClient() {
+        closedByClient = true;
+        close();
+    }
+
+    private void closeFromClient(int code, String reason) {
+        closedByClient = true;
+        close(code, reason);
     }
 
     private static String currentMinecraftUsername() {
@@ -2697,35 +2815,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         return extractPrimitiveString(json, "capability");
     }
 
-    static boolean isSilentGuildChatMembershipReject(String backendCode, String capability, String normalizedMessage) {
-        return "not_in_guild".equalsIgnoreCase(backendCode)
-                && "guild_chat".equalsIgnoreCase(capability)
-                && normalizedMessage != null
-                && normalizedMessage.contains("guild");
-    }
-
-    static boolean isSessionMembershipReject(String backendCode, String capability, String normalizedMessage) {
-        return "not_in_guild".equalsIgnoreCase(backendCode)
-                && (capability == null || capability.isBlank())
-                && normalizedMessage != null
-                && normalizedMessage.contains("sequoia")
-                && normalizedMessage.contains("member");
-    }
-
-    static boolean isSessionAuthenticationError(int status, String capability, String normalizedMessage) {
-        if (capability != null && !capability.isBlank()) {
-            return false;
-        }
-        return status == 400
-                || (normalizedMessage != null && normalizedMessage.contains("invalid auth request"));
-    }
-
     static boolean shouldDisableReconnectForVersionRejection(String capability) {
         return capability == null || capability.isBlank();
-    }
-
-    private static boolean isCapabilityAuthorizationReject(int status, String capability) {
-        return status == 403 && capability != null && !capability.isBlank();
     }
 
     private static String formatCapabilityAccessDenied(String capability, String backendMessage) {
@@ -2742,6 +2833,10 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         int interval = VERSION_REMINDER_INTERVALS.getOrDefault(scope, Integer.MAX_VALUE);
         if (count != 1 && (interval == Integer.MAX_VALUE || count % interval != 0)) {
             return;
+        }
+        // Only a connection-wide notice explains a version close; a warning about one feature doesn't.
+        if (capability == null || capability.isBlank()) {
+            versionRejectionShown = true;
         }
 
         if (count == 1) {
@@ -2814,32 +2909,6 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             }
         });
         return List.copyOf(values);
-    }
-
-    private static boolean isPartyFinderError(JsonObject json, String normalizedMessage) {
-        if (normalizedMessage != null
-                && (normalizedMessage.contains("party finder")
-                        || normalizedMessage.contains("party_finder")
-                        || normalizedMessage.contains("listing")
-                        || normalizedMessage.contains("invite"))) {
-            return true;
-        }
-        if (json == null) {
-            return false;
-        }
-        if (json.has("context") && json.get("context").isJsonPrimitive()) {
-            String context = json.get("context").getAsString().toLowerCase(Locale.ROOT);
-            if (context.contains("party_finder") || context.contains("party finder")) {
-                return true;
-            }
-        }
-        if (json.has("request_type") && json.get("request_type").isJsonPrimitive()) {
-            String requestType = json.get("request_type").getAsString().toLowerCase(Locale.ROOT);
-            return requestType.startsWith("party_")
-                    || requestType.contains("listing")
-                    || requestType.contains("invite");
-        }
-        return false;
     }
 
     public String getEnvironment() {

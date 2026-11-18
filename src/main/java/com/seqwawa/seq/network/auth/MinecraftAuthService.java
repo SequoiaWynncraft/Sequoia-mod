@@ -46,6 +46,8 @@ public class MinecraftAuthService {
 
     private volatile CompletableFuture<StoredAuthSession> inFlightAuthentication;
     private long authenticationGeneration;
+    /** The player signed out; nothing signs them in again until they connect. Guarded by this. */
+    private boolean signedOutByUser;
 
     /**
      * The last join-and-complete sequence handed out. Mojang keeps only the latest
@@ -104,6 +106,10 @@ public class MinecraftAuthService {
         }
 
         synchronized (this) {
+            // Checked under the lock signOut takes, so no sign-in can start after it.
+            if (signedOutByUser) {
+                return CompletableFuture.failedFuture(new NotSignedInException());
+            }
             if (inFlightAuthentication != null && !inFlightAuthentication.isDone()) {
                 return inFlightAuthentication;
             }
@@ -164,6 +170,9 @@ public class MinecraftAuthService {
      * reports it, are unaffected either way.
      */
     public CompletableFuture<StoredAuthSession> authenticateAgainst(String apiBaseUrl) {
+        if (isSignedOutByUser()) {
+            return CompletableFuture.failedFuture(new NotSignedInException());
+        }
         if (apiBaseUrl == null || !apiBaseUrl.startsWith("https://")) {
             return CompletableFuture.failedFuture(new AuthException(
                     AuthErrorCode.TRANSPORT_INSECURE, "Refusing Minecraft authentication over insecure transport."));
@@ -314,8 +323,35 @@ public class MinecraftAuthService {
         return session == null || session.isExpired(Instant.now());
     }
 
+    /**
+     * Ends the session without signing out, as an account change does: the next account
+     * signs in the usual way, even if the previous one had signed out.
+     */
     public void clearSession() {
+        endSession(false);
+    }
+
+    /**
+     * Signs the player out (/seq logout, Clear session). Until {@link #allowSignIn()}, which
+     * only their own connect calls, a token request fails with {@link NotSignedInException}
+     * instead of starting a sign-in, whichever feature asks.
+     */
+    public void signOut() {
+        endSession(true);
+    }
+
+    /** The player asked to connect, so a sign-out of theirs no longer holds. */
+    public synchronized void allowSignIn() {
+        signedOutByUser = false;
+    }
+
+    public synchronized boolean isSignedOutByUser() {
+        return signedOutByUser;
+    }
+
+    private void endSession(boolean byUser) {
         synchronized (this) {
+            signedOutByUser = byUser;
             authenticationGeneration++;
             inFlightAuthentication = null;
             SeqClient.getConfigManager().clearAuthSession();

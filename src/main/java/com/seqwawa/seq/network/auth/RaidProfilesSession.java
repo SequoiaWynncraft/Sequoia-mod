@@ -80,13 +80,16 @@ public final class RaidProfilesSession {
         CompletableFuture<String> attempt = MinecraftAuthService.getInstance()
                 .authenticateAgainst(apiBaseUrl)
                 .thenApply(signedIn -> {
-                    if (startedFor != generation) {
-                        // The account changed mid sign-in: this token speaks for the old one.
-                        throw new CompletionException(new AuthException(
-                                AuthErrorCode.NETWORK_FAILURE, "The Minecraft account changed while signing in.", true, null));
+                    // Checked and stored under the lock clear() takes, so a sign-out can't land in between.
+                    synchronized (this) {
+                        if (startedFor != generation) {
+                            // The account changed, or the player signed out, mid sign-in: this token is stale.
+                            throw new CompletionException(new AuthException(
+                                    AuthErrorCode.NETWORK_FAILURE, "The Minecraft account changed while signing in.", true, null));
+                        }
+                        session = signedIn;
+                        lastFailure = null;
                     }
-                    session = signedIn;
-                    lastFailure = null;
                     SeqClient.LOGGER.info(
                             "[RaidProfiles] Signed in to {} as '{}' until {}",
                             ApiClient.resolveAuthBaseUrl(apiBaseUrl),

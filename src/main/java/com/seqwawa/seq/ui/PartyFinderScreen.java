@@ -179,6 +179,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
     // ── Leader member management ──
     private final List<MemberActionHitbox> renderedMemberActionBounds = new ArrayList<>();
+    private final List<JoinButtonHitbox> renderedJoinButtonBounds = new ArrayList<>();
     private String activeStatusBannerMessage;
     private long activeStatusBannerExpiresAtMs;
 
@@ -207,8 +208,18 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         KICK
     }
 
+    // Buttons name their party and player by id, not list position: the list can be
+    // rebuilt by a websocket update between the frame that drew them and the click.
     private record MemberActionHitbox(
-            MemberAction action, int partyIndex, int memberIndex, float x, float y, float w, float h) {
+            MemberAction action, long listingId, String memberUuid, float x, float y, float w, float h) {
+        private boolean contains(float mouseX, float mouseY) {
+            return mouseX >= x && mouseX <= x + w && mouseY >= y && mouseY <= y + h;
+        }
+    }
+
+    /** A card's Join or Leave button as drawn; {@code enabled} is false while it shows greyed out. */
+    private record JoinButtonHitbox(
+            long listingId, boolean leave, boolean enabled, float x, float y, float w, float h) {
         private boolean contains(float mouseX, float mouseY) {
             return mouseX >= x && mouseX <= x + w && mouseY >= y && mouseY <= y + h;
         }
@@ -287,6 +298,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             float contentHeight = screenHeight - headerHeight;
 
             renderedMemberActionBounds.clear();
+            renderedJoinButtonBounds.clear();
 
             canvas.save();
             canvas.scissor(contentX, contentY, contentWidth, contentHeight);
@@ -817,8 +829,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     memberY,
                     w - CARD_PADDING * 2 - 10,
                     member,
-                    partyIndex,
-                    mi,
+                    party.id,
                     amLeaderOfThisParty);
             memberY += MEMBER_ROW_HEIGHT;
         }
@@ -839,6 +850,9 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     ? color(ACCENT_DISABLED)
                     : (joinHovered ? color(ACCENT_PRIMARY_HOVER) : color(ACCENT_PRIMARY));
             canvas.fillRect(joinX, joinY, JOIN_BUTTON_WIDTH, BUTTON_HEIGHT, joinBg);
+
+            renderedJoinButtonBounds.add(new JoinButtonHitbox(
+                    party.id, isJoined, !buttonDisabled, joinX, joinY, JOIN_BUTTON_WIDTH, BUTTON_HEIGHT));
 
             Color textCol = buttonDisabled ? color(TEXT_DISABLED) : color(TEXT_PRIMARY);
             String actionText = isJoined ? "Leave" : partyActionLabel(party);
@@ -1013,8 +1027,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             float y,
             float w,
             PartyMember member,
-            int partyIndex,
-            int memberIndex,
+            long listingId,
             boolean amLeaderOfThisParty) {
         float rowX = x;
         float centerY = y + MEMBER_ROW_HEIGHT / 2f;
@@ -1051,7 +1064,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float nameW = textWidth(memberName, fontName, MEMBER_FONT_SIZE);
 
         if (showLeaderActions) {
-            renderLeaderMemberActions(canvas, fontName, x, y, w, partyIndex, memberIndex);
+            renderLeaderMemberActions(canvas, fontName, x, y, w, listingId, member.playerUUID);
         }
 
         rowX += nameW + 8;
@@ -1088,7 +1101,13 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     }
 
     private void renderLeaderMemberActions(
-            UiCanvas canvas, String fontName, float rowX, float rowY, float rowWidth, int partyIndex, int memberIndex) {
+            UiCanvas canvas,
+            String fontName,
+            float rowX,
+            float rowY,
+            float rowWidth,
+            long listingId,
+            String memberUuid) {
         float promoteButtonWidth = leaderActionButtonWidth("Promote", fontName);
         float kickButtonWidth = leaderActionButtonWidth("Kick", fontName);
         float buttonY = rowY + (MEMBER_ROW_HEIGHT - LEADER_ACTION_BUTTON_HEIGHT) / 2f;
@@ -1138,16 +1157,16 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         renderedMemberActionBounds.add(new MemberActionHitbox(
                 MemberAction.PROMOTE,
-                partyIndex,
-                memberIndex,
+                listingId,
+                memberUuid,
                 promoteX,
                 buttonY,
                 promoteButtonWidth,
                 LEADER_ACTION_BUTTON_HEIGHT));
         renderedMemberActionBounds.add(new MemberActionHitbox(
                 MemberAction.KICK,
-                partyIndex,
-                memberIndex,
+                listingId,
+                memberUuid,
                 kickX,
                 buttonY,
                 kickButtonWidth,
@@ -2192,9 +2211,22 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 continue;
             }
             if (action.action() == MemberAction.PROMOTE) {
-                party().promoteMember(action.partyIndex(), action.memberIndex());
+                party().promoteMemberById(action.listingId(), action.memberUuid());
             } else {
-                party().kickMember(action.partyIndex(), action.memberIndex());
+                party().kickMemberById(action.listingId(), action.memberUuid());
+            }
+            return true;
+        }
+
+        // ── Join/Leave buttons ──
+        for (JoinButtonHitbox button : renderedJoinButtonBounds) {
+            if (!button.contains(mx, my)) {
+                continue;
+            }
+            if (button.leave()) {
+                party().leavePartyById(button.listingId());
+            } else if (button.enabled()) {
+                party().joinPartyById(button.listingId(), selectedRole);
             }
             return true;
         }
@@ -2213,22 +2245,6 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
             if (party.expanded) {
                 cardH = CARD_HEADER_HEIGHT + party.members.size() * MEMBER_ROW_HEIGHT + CARD_PADDING;
-
-                boolean isMyParty = i == party().getMyPartyIndex() && party().isPartyLeader();
-
-                float joinBtnX = cardX + cardW - CARD_PADDING - JOIN_BUTTON_WIDTH;
-                float joinBtnY = cursorY
-                        + CARD_HEADER_HEIGHT
-                        + (party.members.size() - 1) * MEMBER_ROW_HEIGHT
-                        + (MEMBER_ROW_HEIGHT - BUTTON_HEIGHT) / 2f;
-                if (!isMyParty && isHovered(mx, my, joinBtnX, joinBtnY, JOIN_BUTTON_WIDTH, BUTTON_HEIGHT)) {
-                    if (party().getJoinedPartyIndex() == i) {
-                        party().leaveParty();
-                    } else if (party().getJoinedPartyIndex() < 0 && party.isJoinable()) {
-                        party().joinParty(i, selectedRole);
-                    }
-                    return true;
-                }
 
                 if (isHovered(mx, my, cardX, cursorY, cardW, CARD_HEADER_HEIGHT)) {
                     party.expanded = false;

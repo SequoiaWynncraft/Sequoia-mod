@@ -431,35 +431,36 @@ class ConnectionManagerTest {
 
     @Test
     void scopedGuildChatMembershipRejectsAreSilent() {
-        assertTrue(ConnectionManager.isSilentGuildChatMembershipReject(
+        assertTrue(BackendErrorClassifier.isSilentGuildChatMembershipReject(
                 "not_in_guild", "guild_chat", "guild chat sender is not in sequoia"));
     }
 
     @Test
     void unscopedGuildMembershipRejectIdentifiesNonMemberSession() {
-        assertTrue(ConnectionManager.isSessionMembershipReject(
+        assertTrue(BackendErrorClassifier.isSessionMembershipReject(
                 "not_in_guild", null, "this feature is limited to sequoia members"));
-        assertTrue(ConnectionManager.isSessionMembershipReject(
+        assertTrue(BackendErrorClassifier.isSessionMembershipReject(
                 "not_in_guild", "", "you must be a member of sequoia guild to use this feature"));
     }
 
     @Test
     void scopedMembershipRejectDoesNotDisableWholeSession() {
-        assertFalse(ConnectionManager.isSessionMembershipReject(
+        assertFalse(BackendErrorClassifier.isSessionMembershipReject(
                 "not_in_guild", "guild_chat", "guild chat sender is not in sequoia"));
-        assertFalse(ConnectionManager.isSilentGuildChatMembershipReject(
+        assertFalse(BackendErrorClassifier.isSilentGuildChatMembershipReject(
                 "not_in_guild", "guild_bank_event", "this feature is limited to sequoia members"));
     }
 
     @Test
     void capabilityValidationErrorDoesNotInvalidateAuthenticatedSession() {
-        assertFalse(ConnectionManager.isSessionAuthenticationError(
+        assertFalse(BackendErrorClassifier.isSessionAuthenticationError(
                 400, "war_status", "invalid war status payload"));
-        assertFalse(ConnectionManager.isSessionAuthenticationError(
+        assertFalse(BackendErrorClassifier.isSessionAuthenticationError(
                 400, "war_tower_update", "invalid war tower update payload"));
 
-        assertTrue(ConnectionManager.isSessionAuthenticationError(400, null, "invalid message format"));
-        assertTrue(ConnectionManager.isSessionAuthenticationError(
+        // A bare 400 is an ordinary validation error; only the legacy auth answer ends the session.
+        assertFalse(BackendErrorClassifier.isSessionAuthenticationError(400, null, "invalid message format"));
+        assertTrue(BackendErrorClassifier.isSessionAuthenticationError(
                 0, null, "invalid auth request"));
     }
 
@@ -645,5 +646,12 @@ class ConnectionManagerTest {
                 },
                 Style.EMPTY);
         assertEquals(java.util.Set.of(new ClickEvent.RunCommand("/seq _dismiss-unlinked " + account)), clicks);
+    }
+
+    @Test
+    void reconnectingStopsAfterThreeSignInRejectionsInARow() {
+        assertFalse(ConnectionManager.shouldStopAfterAuthRejections(1));
+        assertFalse(ConnectionManager.shouldStopAfterAuthRejections(2));
+        assertTrue(ConnectionManager.shouldStopAfterAuthRejections(ConnectionManager.MAX_CONSECUTIVE_AUTH_REJECTIONS));
     }
 }

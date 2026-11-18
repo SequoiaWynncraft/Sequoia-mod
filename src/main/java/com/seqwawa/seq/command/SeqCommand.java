@@ -132,12 +132,14 @@ public class SeqCommand {
                                                                 .executes(SeqCommand::dismissUnlinkedWarning)))
                                 .then(ClientCommandManager.literal("logout")
                                                 .executes(ctx -> {
-                                                        ConnectionManager.getInstance().disconnect();
-                                                        SeqClient.getAuthService().clearSession();
+                                                        ConnectionManager.getInstance().signOut();
                                                         if (SeqClient.getWarPlannerManager() != null) {
                                                                 SeqClient.getWarPlannerManager().reset();
                                                         }
-                                                        sendFeedback(ctx.getSource(), "Logged out and token cleared.");
+                                                        sendFeedback(
+                                                                        ctx.getSource(),
+                                                                        "Logged out and token cleared. "
+                                                                                        + "Run /seq connect to sign in again.");
                                                         return 1;
                                                 }))
                                 .then(buildIgnoreCommand())

@@ -665,6 +665,10 @@ public class SeqClient implements ClientModInitializer {
                 currentUsername,
                 preserveOperatorSession);
         lastSeenMinecraftProfileId = currentProfileId;
+        // Its reset hands pending reward bursts to the socket, so it runs while the previous account's is open.
+        if (guildStorageTracker != null) {
+            guildStorageTracker.reset();
+        }
         if (!preserveOperatorSession) {
             ConnectionManager.resetForAccountChange();
             if (authService != null) {
@@ -673,6 +677,9 @@ public class SeqClient implements ClientModInitializer {
         }
         wasInPartyFinder = false;
         lastBroadcastPartyClass = null;
+        if (partyFinderManager != null) {
+            partyFinderManager.reset();
+        }
         if (wynnPartySyncManager != null) {
             wynnPartySyncManager.reset();
         }
@@ -687,9 +694,6 @@ public class SeqClient implements ClientModInitializer {
         LeafEventStream.getInstance().reset();
         UnlockOverlay.getInstance().clear();
         resetWarTrackingState();
-        if (guildStorageTracker != null) {
-            guildStorageTracker.reset();
-        }
         resetWarPlanningState();
         if (princessRaidStatsManager != null) {
             princessRaidStatsManager.reset();
