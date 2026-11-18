@@ -303,6 +303,24 @@ class FetchPacksTest(unittest.TestCase):
         self.assertEqual(before, self.contents())
         self.assertEqual([], self.leftovers())
 
+    def test_a_failure_while_setting_the_old_packs_aside_keeps_every_one(self):
+        before = self.contents()
+        rename = Path.rename
+        moved = []
+
+        def failing(path, target):
+            if Path(target).parent.name.startswith(".packs-old-"):
+                if moved:
+                    raise OSError("disk full")
+                moved.append(path)
+            return rename(path, target)
+
+        with patch.object(Path, "rename", failing), self.assertRaises(OSError):
+            self.fetch.fetch("41", self.sandbox, self.gh({"helpers-x86_64.xz": b"new", "provenance.json": b"new"}))
+
+        self.assertEqual(before, self.contents())
+        self.assertEqual([], self.leftovers())
+
     def test_help_and_anything_but_a_run_id_touch_nothing(self):
         before = self.contents()
         for argv in (["--help"], ["-h"]):

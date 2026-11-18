@@ -51,17 +51,19 @@ def install(staging, sandbox):
     """Swaps SANDBOX's pack files for STAGING's. The old ones wait aside until the new ones are all in
     place, and go back if moving them in fails; if even that fails, the error says where they are."""
     backup = pathlib.Path(tempfile.mkdtemp(dir=sandbox.parent, prefix=".packs-old-"))
+    installed = []
     try:
         for path in list(sandbox.iterdir()):
             if PACK_FILE.fullmatch(path.name):
                 path.rename(backup / path.name)
         for path in list(staging.iterdir()):
             path.rename(sandbox / path.name)
+            installed.append(sandbox / path.name)
     except OSError as failure:
+        # Only what this call put there goes; an old pack that was never moved aside stays.
         try:
-            for path in list(sandbox.iterdir()):
-                if PACK_FILE.fullmatch(path.name):
-                    path.unlink()
+            for path in installed:
+                path.unlink()
             for path in list(backup.iterdir()):
                 path.rename(sandbox / path.name)
         except OSError:
