@@ -60,6 +60,19 @@ class UnlockPopupTest {
     }
 
     @Test
+    void whenBothGoalsAreMetTheTitleFollowsTheObjectiveLikeTheIcon() {
+        UnlockPopup popup = from("quest_completed",
+                "{\"quest\":{\"slot\":\"daily\",\"title\":\"Complete 3 NOL raids or 9 wars\","
+                        + "\"objective\":{\"type\":\"wars\",\"raid\":null},\"goals\":["
+                        + "{\"type\":\"raids\",\"raid\":\"nol\",\"title\":\"Complete 3 NOL raids\",\"progress\":3,\"target\":3},"
+                        + "{\"type\":\"wars\",\"raid\":null,\"title\":\"Take part in 9 wars\",\"progress\":9,\"target\":9}],"
+                        + "\"reward\":{\"leaf\":300,\"xp\":150}}}");
+
+        assertEquals("Take part in 9 wars", popup.title());
+        assertEquals("unlock_war", popup.icon());
+    }
+
+    @Test
     void milestonesFromPlatinumUpGetTheWholeScreen() {
         List<String> tiers = List.of("bronze", "silver", "gold", "platinum", "diamond", "obsidian", "mythril");
         List<Kind> kinds = tiers.stream()

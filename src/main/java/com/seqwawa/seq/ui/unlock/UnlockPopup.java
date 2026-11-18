@@ -4,6 +4,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.seqwawa.seq.model.SeqRaid;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -159,9 +160,12 @@ public record UnlockPopup(
     /**
      * What a finished quest says it was: the goal that finished it, such as "Take part
      * in 9 wars" for a quest that raids or wars could finish, or the quest's title
-     * when Leaf sends no goals.
+     * when Leaf sends no goals. Leaf names that goal as the quest's {@code objective},
+     * which also picks the icon, so the met goal matching it wins; else the first met.
      */
     public static String finishedQuestTitle(JsonObject quest) {
+        JsonObject objective = object(quest, "objective");
+        String firstMet = null;
         JsonElement goals = quest.get("goals");
         if (goals != null && goals.isJsonArray()) {
             for (JsonElement element : goals.getAsJsonArray()) {
@@ -169,10 +173,15 @@ public record UnlockPopup(
                 JsonObject goal = element.getAsJsonObject();
                 long target = number(goal, "target");
                 String title = text(goal, "title");
-                if (target > 0 && number(goal, "progress") >= target && title != null) return title;
+                if (target <= 0 || number(goal, "progress") < target || title == null) continue;
+                if (objective != null && Objects.equals(text(goal, "type"), text(objective, "type"))
+                        && Objects.equals(text(goal, "raid"), text(objective, "raid"))) {
+                    return title;
+                }
+                if (firstMet == null) firstMet = title;
             }
         }
-        return text(quest, "title");
+        return firstMet != null ? firstMet : text(quest, "title");
     }
 
     private static String text(JsonObject object, String field) {
