@@ -145,6 +145,9 @@ dependencies {
 
 tasks.withType(Test).configureEach {
     useJUnitPlatform()
+    // Tests marked @RequiresDecoderPacks skip only in a build that allowed the packs to be missing.
+    systemProperty "seq.decoderPacks",
+            providers.gradleProperty("allow_partial_native").isPresent() ? "optional" : "required"
     if (org.gradle.internal.os.OperatingSystem.current().isMacOsX()) {
         jvmArgs '-XstartOnFirstThread'
     }

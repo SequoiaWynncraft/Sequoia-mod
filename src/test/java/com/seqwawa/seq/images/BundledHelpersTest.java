@@ -208,6 +208,7 @@ class BundledHelpersTest {
         return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
     }
 
+    @RequiresDecoderPacks
     @Test
     void theShippedIndexDescribesEveryHelperOfThisHost() throws Exception {
         String platform = IsolatedDecoder.platform(System.getProperty("os.name"), System.getProperty("os.arch"));
