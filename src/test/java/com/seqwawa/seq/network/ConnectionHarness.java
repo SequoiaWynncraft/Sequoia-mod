@@ -238,6 +238,12 @@ final class ConnectionHarness implements AutoCloseable {
         return socket;
     }
 
+    /** What a sign-out does to the connection: the player is signed out, then the socket closes. */
+    void signOut() {
+        tokens.signedOutByUser = true;
+        connection().disconnectForSessionEnd();
+    }
+
     void closeFromBackend(int code, String reason) {
         socket().closeFromBackend(code, reason);
         settle();
@@ -260,7 +266,6 @@ final class ConnectionHarness implements AutoCloseable {
         String lastError;
         boolean signedOutByUser;
         int allowSignIns;
-        int signOuts;
 
         @Override
         public CompletableFuture<String> ensureValidToken(boolean forceRefresh) {
@@ -293,12 +298,6 @@ final class ConnectionHarness implements AutoCloseable {
         @Override
         public boolean isSignedOutByUser() {
             return signedOutByUser;
-        }
-
-        @Override
-        public void signOut() {
-            signOuts++;
-            signedOutByUser = true;
         }
     }
 

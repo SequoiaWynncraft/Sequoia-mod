@@ -11,6 +11,8 @@ import com.seqwawa.seq.managers.TreasuryOutManager;
 import com.seqwawa.seq.model.WynnClassType;
 import com.seqwawa.seq.network.auth.AuthErrorCode;
 import com.seqwawa.seq.network.auth.MinecraftAuthService;
+import com.seqwawa.seq.session.EndReason;
+import com.seqwawa.seq.session.SessionManager;
 import com.seqwawa.seq.utils.WynnClassCache;
 import java.time.Clock;
 import java.time.Duration;
@@ -95,7 +97,7 @@ record ConnectionEnvironment(
         /** A token for the bearer handshake, signing in afresh when there is none or {@code forceRefresh}. */
         CompletableFuture<String> ensureValidToken(boolean forceRefresh);
 
-        /** Drops the stored session because the backend refused it; the next connect signs in again. */
+        /** Ends the session because the backend refused its token; the next connect signs in again. */
         void invalidateSession(AuthErrorCode code, String message);
 
         /** The message of the last sign-in failure, which {@link #invalidateSession} sets. */
@@ -105,9 +107,6 @@ record ConnectionEnvironment(
         void allowSignIn();
 
         boolean isSignedOutByUser();
-
-        /** Signs the player out: nothing signs them in again until they connect. */
-        void signOut();
     }
 
     /** The parts of the game the connection reads from, or reports to. */
@@ -204,7 +203,7 @@ record ConnectionEnvironment(
 
         @Override
         public void invalidateSession(AuthErrorCode code, String message) {
-            SeqClient.getAuthService().invalidateSession(code, message);
+            SessionManager.getInstance().end(new EndReason.TokenRejected(code, message));
         }
 
         @Override
@@ -224,14 +223,6 @@ record ConnectionEnvironment(
         public boolean isSignedOutByUser() {
             MinecraftAuthService auth = SeqClient.getAuthService();
             return auth != null && auth.isSignedOutByUser();
-        }
-
-        @Override
-        public void signOut() {
-            MinecraftAuthService auth = SeqClient.getAuthService();
-            if (auth != null) {
-                auth.signOut();
-            }
         }
     }
 

@@ -409,10 +409,9 @@ class ConnectionLifecycleTest {
     void signingOutClosesTheSocketAndNothingConnectsUntilThePlayerAsks() {
         FakeBackendSocket socket = harness.connectAsMember();
 
-        harness.connection().signOut();
+        harness.signOut();
         harness.echoClientClose();
 
-        assertEquals(1, harness.tokens.signOuts);
         assertEquals(1, socket.closes());
         assertEquals(List.of(), harness.told);
         assertFalse(ConnectionManager.canAutoConnectNow());
@@ -423,17 +422,6 @@ class ConnectionLifecycleTest {
         assertEquals(2, harness.sockets.size());
         assertTrue(harness.socket().connected());
         assertFalse(harness.tokens.signedOutByUser);
-    }
-
-    @Test
-    void clearingTheSessionAlsoForgetsTheDiscordNameAndSaysHowToSignInAgain() {
-        harness.connectAsMember();
-
-        harness.connection().unlinkLocally();
-
-        assertNull(harness.config.getDiscordUsername());
-        assertEquals(List.of("Backend session cleared. Run /seq connect to sign in again."), harness.told);
-        assertEquals(1, harness.tokens.signOuts);
     }
 
     @Test

@@ -37,7 +37,6 @@ import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.config.ConfigManager;
 import com.seqwawa.seq.model.ChatItemPreview;
 import com.seqwawa.seq.managers.GuildRankEventParser;
-import com.seqwawa.seq.managers.PartyFinderManager;
 import com.seqwawa.seq.managers.TreasuryOutManager;
 import com.seqwawa.seq.model.BombShareType;
 import com.seqwawa.seq.model.GuildWarSubmission;
@@ -2517,27 +2516,14 @@ public class ConnectionManager {
         return SeqClient.getConfigManager().getDiscordUsername();
     }
 
-    public void unlinkLocally() {
-        pendingGuildWarEvents.clear();
-        signOut();
-        clearDiscordUsername();
-        notify("Backend session cleared. Run /seq connect to sign in again.");
+    /** Closes the connection for a session that ended, without counting as the player's own disconnect. */
+    public void disconnectForSessionEnd() {
+        disconnectInternal(false);
     }
 
-    /**
-     * Signs the player out, as /seq logout and Clear session do: nothing reconnects or signs
-     * them back in until they connect explicitly. The session is marked signed out before the
-     * socket closes, so a reconnect already running cannot sign in again in between.
-     */
-    public void signOut() {
-        environment.tokens().signOut();
-        disconnectInternal(false);
-        PartyFinderManager partyFinder = SeqClient.getPartyFinderManager();
-        if (partyFinder != null) {
-            partyFinder.reset();
-        }
-        // Raid profiles sign in to their own backend: drop that token too, and any sign-in in flight.
-        com.seqwawa.seq.network.auth.RaidProfilesSession.getInstance().clear();
+    /** Drops the war events waiting to be sent: they were the ended session's to send. */
+    public static void dropPendingWarEvents() {
+        pendingGuildWarEvents.clear();
     }
 
     private boolean canAttemptAuthNow() {

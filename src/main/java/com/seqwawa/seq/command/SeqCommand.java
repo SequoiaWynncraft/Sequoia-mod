@@ -56,6 +56,8 @@ import com.seqwawa.seq.model.AllyRaidReport;
 import com.seqwawa.seq.model.Listing;
 import com.seqwawa.seq.model.PartyRole;
 import com.seqwawa.seq.network.ApiClient;
+import com.seqwawa.seq.session.EndReason;
+import com.seqwawa.seq.session.SessionManager;
 import com.seqwawa.seq.network.ConnectionManager;
 import com.seqwawa.seq.network.WynncraftServerPolicy;
 import com.seqwawa.seq.network.auth.AuthException;
@@ -132,10 +134,7 @@ public class SeqCommand {
                                                                 .executes(SeqCommand::dismissUnlinkedWarning)))
                                 .then(ClientCommandManager.literal("logout")
                                                 .executes(ctx -> {
-                                                        ConnectionManager.getInstance().signOut();
-                                                        if (SeqClient.getWarPlannerManager() != null) {
-                                                                SeqClient.getWarPlannerManager().reset();
-                                                        }
+                                                        SessionManager.getInstance().end(EndReason.SIGN_OUT);
                                                         sendFeedback(
                                                                         ctx.getSource(),
                                                                         "Logged out and token cleared. "

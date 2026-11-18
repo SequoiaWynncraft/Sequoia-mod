@@ -11,6 +11,8 @@ import org.jetbrains.annotations.NotNull;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.network.ConnectionManager;
 import com.seqwawa.seq.managers.TreasuryOutManager;
+import com.seqwawa.seq.session.EndReason;
+import com.seqwawa.seq.session.SessionManager;
 import com.seqwawa.seq.utils.rendering.UiCanvas;
 import com.seqwawa.seq.utils.rendering.UiRenderer;
 
@@ -190,7 +192,7 @@ public class ConnectionScreen extends SequoiaPanelScreen {
 
         String token = SeqClient.getConfigManager().getToken();
         if (showsClearSession(token != null && !token.isBlank(), isTreasuryAccount()) && authButton().contains(at)) {
-            connectionManager.unlinkLocally();
+            SessionManager.getInstance().end(EndReason.CLEAR_SESSION);
             return true;
         }
 

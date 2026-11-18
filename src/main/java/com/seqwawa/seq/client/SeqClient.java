@@ -33,9 +33,7 @@ import com.seqwawa.seq.managers.FontManager;
 import com.seqwawa.seq.managers.GameManager;
 import com.seqwawa.seq.managers.GearSharingProtectionManager;
 import com.seqwawa.seq.managers.GlobalSoundListener;
-import com.seqwawa.seq.managers.GuildPresenceManager;
 import com.seqwawa.seq.managers.GuildRaidProgressService;
-import com.seqwawa.seq.managers.LeafQuestService;
 import com.seqwawa.seq.managers.CombatState;
 import com.seqwawa.seq.managers.GuildRewardAutomationManager;
 import com.seqwawa.seq.managers.GuildStorageTracker;
@@ -69,19 +67,17 @@ import com.seqwawa.seq.model.WynnClassType;
 import com.seqwawa.seq.network.ConnectionManager;
 import com.seqwawa.seq.network.WynncraftServerPolicy;
 import com.seqwawa.seq.network.auth.MinecraftAuthService;
-import com.seqwawa.seq.network.auth.RaidProfilesSession;
-import com.seqwawa.seq.network.auth.StoredAuthSession;
 import com.seqwawa.seq.network.auth.UnlinkedAccountWarning;
 import com.seqwawa.seq.radiance.RadianceCheckerClient;
 import com.seqwawa.seq.raids.tna.TnaLineupHelper;
 import com.seqwawa.seq.raids.tna.TnaSahurSoundDetector;
 import com.seqwawa.seq.scroll.CraftedScrollRangeVisualiserClient;
+import com.seqwawa.seq.session.SessionManager;
 import com.seqwawa.seq.ui.GuildMembersScreen;
 import com.seqwawa.seq.ui.RaidProfileSetupScreen;
 import com.seqwawa.seq.ui.IngredientGuideScreen;
 import com.seqwawa.seq.ui.AchievementsScreen;
 import com.seqwawa.seq.ui.QuestBoardScreen;
-import com.seqwawa.seq.ui.unlock.UnlockOverlay;
 import com.seqwawa.seq.ui.unlock.UnlockPreview;
 import com.seqwawa.seq.network.LeafEventStream;
 import com.seqwawa.seq.ui.PartyFinderScreen;
@@ -387,7 +383,6 @@ public class SeqClient implements ClientModInitializer {
     private static WynncraftServerPolicy.Scope lastServerScope = WynncraftServerPolicy.Scope.BLOCKED;
     private static String lastServerHost;
     private static long lastProductionRecoveryAttemptAtMs;
-    private static UUID lastSeenMinecraftProfileId;
 
     @Override
     public void onInitializeClient() {
@@ -517,7 +512,8 @@ public class SeqClient implements ClientModInitializer {
                 SequoiaGuildMembership.getInstance().reset();
                 NicknameResolverCache.reset();
             }
-            boolean minecraftAccountChanged = handleMinecraftAccountChange();
+            boolean minecraftAccountChanged =
+                    SessionManager.getInstance().checkAccount(currentMinecraftProfileId(), currentMinecraftUsername());
             com.seqwawa.seq.managers.WorldEventLootTracker.getInstance().tick(client);
             if (worldEventManager != null) {
                 worldEventManager.tick(
@@ -629,64 +625,13 @@ public class SeqClient implements ClientModInitializer {
         });
     }
 
-    private static boolean handleMinecraftAccountChange() {
-        UUID currentProfileId = currentMinecraftProfileId();
-        if (currentProfileId == null) {
-            return false;
-        }
-        if (lastSeenMinecraftProfileId == null) {
-            lastSeenMinecraftProfileId = currentProfileId;
-            return false;
-        }
-        if (lastSeenMinecraftProfileId.equals(currentProfileId)) {
-            return false;
-        }
-
-        String currentUsername = currentMinecraftUsername();
-        StoredAuthSession storedSession = configManager == null ? null : configManager.getStoredAuthSession();
-        boolean preserveOperatorSession = shouldPreserveOperatorSession(
-                currentProfileId, storedSession == null ? null : storedSession.minecraftUuid());
-        LOGGER.info(
-                "[Seq] Active Minecraft account changed {} -> {} username={} preserveOperatorSession={}",
-                lastSeenMinecraftProfileId,
-                currentProfileId,
-                currentUsername,
-                preserveOperatorSession);
-        lastSeenMinecraftProfileId = currentProfileId;
-        // Its reset hands pending reward bursts to the socket, so it runs while the previous account's is open.
-        if (guildStorageTracker != null) {
-            guildStorageTracker.reset();
-        }
-        if (!preserveOperatorSession) {
-            ConnectionManager.resetForAccountChange();
-            if (authService != null) {
-                authService.clearSession();
-            }
-        }
+    /**
+     * Forgets which class was last sent to the party finder, so the next party sends it again.
+     * The previous account's session told the backend, not this one's.
+     */
+    public static void forgetPartyClassBroadcast() {
         wasInPartyFinder = false;
         lastBroadcastPartyClass = null;
-        if (partyFinderManager != null) {
-            partyFinderManager.reset();
-        }
-        if (wynnPartySyncManager != null) {
-            wynnPartySyncManager.reset();
-        }
-        RaidPartySnapshotTracker.reset();
-        GuildPresenceManager.getInstance().reset();
-        SequoiaGuildMembership.getInstance().reset();
-        NicknameResolverCache.reset();
-        // Its token speaks for the previous account, so a save would land on their profile.
-        RaidProfilesSession.getInstance().clear();
-        GuildRaidProgressService.getInstance().reset();
-        LeafQuestService.getInstance().reset();
-        LeafEventStream.getInstance().reset();
-        UnlockOverlay.getInstance().clear();
-        resetWarTrackingState();
-        resetWarPlanningState();
-        if (princessRaidStatsManager != null) {
-            princessRaidStatsManager.reset();
-        }
-        return true;
     }
 
     private static void resetWarTrackingState() {
@@ -727,20 +672,6 @@ public class SeqClient implements ClientModInitializer {
             return null;
         }
         return mc.getUser().getName();
-    }
-
-    static boolean shouldPreserveOperatorSession(UUID activeMinecraftProfileId, String authenticatedMinecraftUuid) {
-        if (authenticatedMinecraftUuid == null || authenticatedMinecraftUuid.isBlank()) {
-            return false;
-        }
-        if (activeMinecraftProfileId == null) {
-            return false;
-        }
-        try {
-            return activeMinecraftProfileId.equals(UUID.fromString(authenticatedMinecraftUuid));
-        } catch (IllegalArgumentException ignored) {
-            return false;
-        }
     }
 
     private static void logServerScopeChange(WynncraftServerPolicy.Scope serverScope, String currentHost) {

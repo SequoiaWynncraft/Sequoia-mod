@@ -174,7 +174,8 @@ class ConnectionThreadingTest {
         FakeBackendSocket socket = harness.open();
         socket.receive("{\"type\":\"authenticated\",\"discord_username\":\"sequoian\"}");
 
-        harness.connection().unlinkLocally();
+        harness.signOut();
+        harness.config.clearDiscordUsername();
         harness.settle();
 
         assertNull(harness.config.getDiscordUsername());
@@ -188,7 +189,7 @@ class ConnectionThreadingTest {
         FakeBackendSocket socket = harness.connectAsMember();
         socket.receive(partyFinderUpdate(7));
 
-        harness.connection().signOut();
+        harness.signOut();
         harness.settle();
 
         assertEquals(List.of(), listings);
