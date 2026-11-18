@@ -4,8 +4,12 @@ name: Retry jobs no runner took
 # fifteen minutes without running a step: "The job was not acquired by Runner of type hosted even
 # after multiple attempts". That says nothing about the code, so the run's failed jobs are run again,
 # up to five times, instead of the run waiting for someone to notice. A job no runner takes costs no
-# minutes, and on 18 November 2026 macOS Arm took until the fourth attempt. A run that also has a job which
-# ran and failed is left alone, so a real failure is never retried.
+# minutes, and on 18 November 2026 macOS Arm took until the fourth attempt.
+#
+# A job that ran and failed only after a runner was not found counts with it: pack runs and fails
+# for want of a helper when a platform job was never placed, since a matrix's result does not count
+# a leg cancelled that way. A job that started failing before then is a real failure, and its run is
+# left alone.
 on:
   # zizmor: ignore[dangerous-triggers] nothing from the run is checked out or executed; this only reads its jobs and asks GitHub to rerun them
   workflow_run:
@@ -32,13 +36,20 @@ jobs:
           RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
           set -euo pipefail
+          # One line per failed job: "unplaced COMPLETED" or "ran STARTED", as UTC timestamps that sort.
           jobs=$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs?filter=latest&per_page=100" --paginate \
             --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled")
-                  | if (.steps | length) == 0 and (.runner_name // "") == "" then "unplaced" else "ran" end')
-          unplaced=$(grep -c '^unplaced$' <<<"$jobs" || true)
-          ran=$(grep -c '^ran$' <<<"$jobs" || true)
-          echo "Failed jobs no runner took: $unplaced; failed jobs that ran: $ran"
-          if [ "$unplaced" -gt 0 ] && [ "$ran" -eq 0 ]; then
+                  | if (.steps | length) == 0 and (.runner_name // "") == ""
+                    then "unplaced \(.completed_at)" else "ran \(.started_at)" end')
+          first_given_up=$(awk '$1 == "unplaced" { print $2 }' <<<"$jobs" | sort | head -n 1)
+          if [ -z "$first_given_up" ]; then
+            echo "Every failed job ran; nothing to retry."
+            exit 0
+          fi
+          # A failure that started before any runner was given up on cannot have been caused by it.
+          independent=$(awk -v t="$first_given_up" '$1 == "ran" && $2 < t' <<<"$jobs" | wc -l)
+          echo "Failed jobs: $(wc -l <<<"$jobs"); no runner from $first_given_up; failures that started earlier: $independent"
+          if [ "$independent" -eq 0 ]; then
             gh run rerun "$RUN_ID" --failed --repo "$REPO"
             echo "Asked GitHub to run them again."
           fi

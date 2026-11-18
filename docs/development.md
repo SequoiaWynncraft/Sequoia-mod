@@ -97,7 +97,8 @@ The Build workflow runs on pull requests, on pushes to `main` and from Release:
 | Job | Runs |
 | --- | --- |
 | `guest` | `test:scripts`, `native:guest --sources-only`, then `native:guest` unless a guest built from the same inputs is cached |
-| One job per platform | `native:build` on a runner for each of the six platforms |
+| `cached helpers` | On Linux, restores each platform's helper from the cache a run on its own platform saved after building and verifying it, and passes it on |
+| One job per platform | `native:build` on that platform's runner, for each helper `cached helpers` did not find; for all six on a tag |
 | `pack` | `native:guest --sources-only` on the guest job's sources and `native:pack --require-all`, once for every later job |
 | `build` | `native:notices`, `build` and `native:verify-jar` |
 | `java PLATFORM` | `test:platform` on Windows x64 and macOS Arm, plus the other platforms except Linux x64 for tags and manual runs |

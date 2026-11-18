@@ -75,19 +75,184 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  # A helper whose inputs main already built is taken from the cache main saved after building and
+  # verifying it on its own runner. The caches are restored here, on Linux, so a platform's runner,
+  # scarce on macOS Arm above all, is needed only for a helper whose inputs changed. Tags take
+  # nothing from a cache: every helper they ship is built and verified on its platform.
+  native-cache:
+    name: cached helpers
+    needs: guest
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      build: ${{ steps.plan.outputs.build }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: guest
+          path: native/out/guest
+      # The cache key: the helper's inputs and checks as committed, which read the same on every runner
+      # whatever its line endings, and the guest it embeds. The platform jobs compute it the same way.
+      - name: Digest the helpers' inputs
+        id: inputs
+        shell: bash
+        # Git alone, which every runner has (macOS has no sha256sum). The checks are inputs too: a
+        # cached helper skips them, so changing one must miss the cache.
+        run: |
+          {
+            git ls-tree -r HEAD -- native/decoder native/sandbox.cpp native/windows-probe.cpp native/build-native.py \
+              native/tests/windows-cancellation.py native/tests/broker_children.py src/test/resources/klipy-report.mp4
+            git hash-object --no-filters native/out/guest/decoder.wasm
+          } | git hash-object --stdin | sed 's/^/digest=/' >> "$GITHUB_OUTPUT"
+      - name: Restore the windows-x86_64 helper
+        id: windows_x86_64
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            native/out/sandbox/windows-x86_64
+            native/out/windows-x86_64
+          key: native-v2-windows-x86_64-${{ steps.inputs.outputs.digest }}
+          enableCrossOsArchive: true
+      - name: Pass on the windows-x86_64 helper
+        if: steps.windows_x86_64.outputs.cache-hit == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-windows-x86_64
+          path: |
+            native/out/sandbox/windows-x86_64/
+            native/out/windows-x86_64/validation.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Restore the windows-aarch64 helper
+        id: windows_aarch64
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            native/out/sandbox/windows-aarch64
+            native/out/windows-aarch64
+          key: native-v2-windows-aarch64-${{ steps.inputs.outputs.digest }}
+          enableCrossOsArchive: true
+      - name: Pass on the windows-aarch64 helper
+        if: steps.windows_aarch64.outputs.cache-hit == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-windows-aarch64
+          path: |
+            native/out/sandbox/windows-aarch64/
+            native/out/windows-aarch64/validation.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Restore the linux-x86_64 helper
+        id: linux_x86_64
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            native/out/sandbox/linux-x86_64
+            native/out/linux-x86_64
+          key: native-v2-linux-x86_64-${{ steps.inputs.outputs.digest }}
+          enableCrossOsArchive: true
+      - name: Pass on the linux-x86_64 helper
+        if: steps.linux_x86_64.outputs.cache-hit == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-linux-x86_64
+          path: |
+            native/out/sandbox/linux-x86_64/
+            native/out/linux-x86_64/validation.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Restore the linux-aarch64 helper
+        id: linux_aarch64
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            native/out/sandbox/linux-aarch64
+            native/out/linux-aarch64
+          key: native-v2-linux-aarch64-${{ steps.inputs.outputs.digest }}
+          enableCrossOsArchive: true
+      - name: Pass on the linux-aarch64 helper
+        if: steps.linux_aarch64.outputs.cache-hit == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-linux-aarch64
+          path: |
+            native/out/sandbox/linux-aarch64/
+            native/out/linux-aarch64/validation.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Restore the macos-x86_64 helper
+        id: macos_x86_64
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            native/out/sandbox/macos-x86_64
+            native/out/macos-x86_64
+          key: native-v2-macos-x86_64-${{ steps.inputs.outputs.digest }}
+          enableCrossOsArchive: true
+      - name: Pass on the macos-x86_64 helper
+        if: steps.macos_x86_64.outputs.cache-hit == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-macos-x86_64
+          path: |
+            native/out/sandbox/macos-x86_64/
+            native/out/macos-x86_64/validation.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Restore the macos-aarch64 helper
+        id: macos_aarch64
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            native/out/sandbox/macos-aarch64
+            native/out/macos-aarch64
+          key: native-v2-macos-aarch64-${{ steps.inputs.outputs.digest }}
+          enableCrossOsArchive: true
+      - name: Pass on the macos-aarch64 helper
+        if: steps.macos_aarch64.outputs.cache-hit == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-macos-aarch64
+          path: |
+            native/out/sandbox/macos-aarch64/
+            native/out/macos-aarch64/validation.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: List the helpers to build on their platforms
+        id: plan
+        shell: bash
+        env:
+          HIT_WINDOWS_X86_64: ${{ steps.windows_x86_64.outputs.cache-hit }}
+          HIT_WINDOWS_AARCH64: ${{ steps.windows_aarch64.outputs.cache-hit }}
+          HIT_LINUX_X86_64: ${{ steps.linux_x86_64.outputs.cache-hit }}
+          HIT_LINUX_AARCH64: ${{ steps.linux_aarch64.outputs.cache-hit }}
+          HIT_MACOS_X86_64: ${{ steps.macos_x86_64.outputs.cache-hit }}
+          HIT_MACOS_AARCH64: ${{ steps.macos_aarch64.outputs.cache-hit }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+          runners = {"windows-x86_64": "windows-2025", "windows-aarch64": "windows-11-arm", "linux-x86_64": "ubuntu-24.04", "linux-aarch64": "ubuntu-24.04-arm", "macos-x86_64": "macos-15-intel", "macos-aarch64": "macos-15"}
+          build = [{"platform": p, "runner": r} for p, r in runners.items()
+                   if os.environ["HIT_" + p.replace("-", "_").upper()] != "true"]
+          print("build=" + json.dumps(build, separators=(",", ":")))
+          PY
+
+  # Builds, tests and verifies each helper the cache did not have, on its own platform: all of them
+  # for a tag.
   native:
     name: ${{ matrix.platform }}
-    needs: guest
+    needs: [guest, native-cache]
+    if: >-
+      ${{ !cancelled() && needs.guest.result == 'success' && (startsWith(github.ref, 'refs/tags/')
+      || (needs.native-cache.result == 'success' && needs.native-cache.outputs.build != '[]')) }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - {platform: windows-x86_64, runner: windows-2025}
-          - {platform: windows-aarch64, runner: windows-11-arm}
-          - {platform: linux-x86_64, runner: ubuntu-24.04}
-          - {platform: linux-aarch64, runner: ubuntu-24.04-arm}
-          - {platform: macos-x86_64, runner: macos-15-intel}
-          - {platform: macos-aarch64, runner: macos-15}
+        include: ${{ fromJSON(startsWith(github.ref, 'refs/tags/') && '[{"platform":"windows-x86_64","runner":"windows-2025"}, {"platform":"windows-aarch64","runner":"windows-11-arm"}, {"platform":"linux-x86_64","runner":"ubuntu-24.04"}, {"platform":"linux-aarch64","runner":"ubuntu-24.04-arm"}, {"platform":"macos-x86_64","runner":"macos-15-intel"}, {"platform":"macos-aarch64","runner":"macos-15"}]' || needs.native-cache.outputs.build) }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 40
     env:
@@ -100,6 +265,21 @@ jobs:
         with:
           name: guest
           path: native/out/guest
+      # The cache key: the helper's inputs and checks as committed, which read the same on every runner
+      # whatever its line endings, and the guest it embeds. native-cache computes it the same way.
+      - name: Digest the helper's inputs
+        id: inputs
+        shell: bash
+        # Git alone, which every runner has (macOS has no sha256sum). The checks are inputs too: a
+        # cached helper skips them, so changing one must miss the cache.
+        run: |
+          {
+            git ls-tree -r HEAD -- native/decoder native/sandbox.cpp native/windows-probe.cpp native/build-native.py \
+              native/tests/windows-cancellation.py native/tests/broker_children.py src/test/resources/klipy-report.mp4
+            git hash-object --no-filters native/out/guest/decoder.wasm
+          } | git hash-object --stdin | sed 's/^/digest=/' >> "$GITHUB_OUTPUT"
+      # Saves the helper this job builds, for native-cache to restore on Linux; enableCrossOsArchive
+      # makes a Windows runner's cache readable there. The key matches native-cache's.
       - name: Restore a helper built from the same inputs
         id: cache
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
@@ -108,7 +288,8 @@ jobs:
           path: |
             native/out/sandbox/${{ matrix.platform }}
             native/out/${{ matrix.platform }}
-          key: native-${{ matrix.platform }}-${{ hashFiles('native/out/guest/decoder.wasm', 'native/decoder/**', 'native/sandbox.cpp', 'native/windows-probe.cpp', 'native/build-native.py') }}
+          key: native-v2-${{ matrix.platform }}-${{ steps.inputs.outputs.digest }}
+          enableCrossOsArchive: true
       - name: Install the musl linker
         if: runner.os == 'Linux' && steps.cache.outputs.cache-hit != 'true'
         run: sudo apt-get update && sudo apt-get install -y musl-tools
@@ -144,7 +325,12 @@ jobs:
 
   # Packs the verified helpers once. The JAR and every Java test lane use these exact files.
   pack:
-    needs: native
+    needs: [guest, native-cache, native]
+    # Runs whether the helpers came from the cache, from their platforms, or from both.
+    if: >-
+      ${{ !cancelled() && needs.guest.result == 'success'
+      && !contains(fromJSON('["failure", "cancelled"]'), needs.native-cache.result)
+      && !contains(fromJSON('["failure", "cancelled"]'), needs.native.result) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
@@ -193,6 +379,8 @@ jobs:
 
   build:
     needs: pack
+    # A skipped helper job upstream, as when every helper came from the cache, must not skip this.
+    if: ${{ !cancelled() && needs.pack.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
@@ -250,6 +438,8 @@ jobs:
   java-native-tests:
     name: java ${{ matrix.platform }}
     needs: pack
+    # A skipped helper job upstream, as when every helper came from the cache, must not skip this.
+    if: ${{ !cancelled() && needs.pack.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
