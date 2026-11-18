@@ -108,6 +108,7 @@ public final class SidebarProfile {
     static String leafStatus(LeafQuestService.State state, boolean connected) {
         return switch (state) {
             case NOT_MEMBER -> "Leaf is for members";
+            case SIGNED_OUT -> "Connect for Leaf";
             case UNAVAILABLE -> "Leaf is unavailable";
             default -> connected ? "Loading Leaf..." : "Connect for Leaf";
         };

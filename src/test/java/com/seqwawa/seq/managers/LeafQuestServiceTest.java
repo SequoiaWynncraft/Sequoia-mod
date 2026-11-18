@@ -250,7 +250,7 @@ class LeafQuestServiceTest {
             AtomicReference<CompletableFuture<String>> token = new AtomicReference<>();
             LeafQuestService service = new LeafQuestService(read -> {
                 token.set(LeafQuestService.sessionToken(read.wanted(),
-                        force -> auth.ensureValidToken(force, read.session())).apply(false));
+                        force -> auth.ensureSessionToken(force, read.session())).apply(false));
                 return new CompletableFuture<>();
             }, now::get, LeafQuestService.READ_DEADLINE, auth::sessionGeneration);
 
@@ -260,6 +260,58 @@ class LeafQuestServiceTest {
 
             assertTrue(token.get().isCompletedExceptionally());
             assertEquals(0, signIns.get());
+        } finally {
+            com.seqwawa.seq.client.SeqClient.configManager = previous;
+        }
+    }
+
+    @Test
+    void saysToConnectWhenThereIsNoSessionToReadWith() {
+        answer.set(CompletableFuture.failedFuture(new com.seqwawa.seq.network.auth.NotSignedInException()));
+        LeafQuestService service = service();
+
+        service.requestRefresh();
+
+        assertEquals(State.SIGNED_OUT, service.state());
+        assertEquals(Snapshot.EMPTY, service.snapshot());
+        assertFalse(service.refreshFailed());
+    }
+
+    @Test
+    void anOpenBoardKeepsReadingWhileSignedInAndStopsOnceTheSessionIsCleared() throws Exception {
+        com.seqwawa.seq.config.ConfigManager previous = com.seqwawa.seq.client.SeqClient.configManager;
+        var constructor = com.seqwawa.seq.config.ConfigManager.class.getDeclaredConstructor(
+                java.nio.file.Path.class, java.nio.file.Path.class, boolean.class);
+        constructor.setAccessible(true);
+        var config = constructor.newInstance(tempDir.resolve("config.json"), tempDir.resolve("token"), false);
+        config.setAuthSession(new com.seqwawa.seq.network.auth.StoredAuthSession("session-token",
+                java.time.Instant.now().plusSeconds(86_400), "123e4567-e89b-12d3-a456-426614174000", "Player"));
+        com.seqwawa.seq.client.SeqClient.configManager = config;
+        try {
+            AtomicInteger signIns = new AtomicInteger();
+            var auth = new com.seqwawa.seq.network.auth.MinecraftAuthService() {
+                @Override
+                public CompletableFuture<String> ensureValidToken(boolean forceRefresh) {
+                    signIns.incrementAndGet();
+                    return CompletableFuture.completedFuture("token");
+                }
+            };
+            LeafQuestService service = new LeafQuestService(read -> LeafQuestService.sessionToken(read.wanted(),
+                            force -> auth.ensureSessionToken(force, read.session()))
+                    .apply(false)
+                    .thenApply(token -> snapshot(12_480)), now::get, LeafQuestService.READ_DEADLINE, auth::sessionGeneration);
+
+            service.requestRefresh();
+            assertEquals(State.READY, service.state(), "an active session reads as before");
+            assertEquals(1, signIns.get());
+
+            // The session is invalidated while the board is open; clearing it resets the board, which reads again.
+            auth.clearSession();
+            service.reset();
+            service.requestRefresh();
+
+            assertEquals(State.SIGNED_OUT, service.state());
+            assertEquals(1, signIns.get(), "the refresh started no sign-in");
         } finally {
             com.seqwawa.seq.client.SeqClient.configManager = previous;
         }

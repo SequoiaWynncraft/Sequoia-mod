@@ -254,6 +254,7 @@ public final class QuestBoardScreen extends Screen {
         return switch (state) {
             case LOADING -> "Loading your quests...";
             case NOT_MEMBER -> "Quests are for current Sequoia members.";
+            case SIGNED_OUT -> "Connect to Sequoia to see your quests.";
             default -> "Quests are unavailable right now. Try again in a minute.";
         };
     }

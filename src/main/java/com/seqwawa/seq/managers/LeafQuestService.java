@@ -6,6 +6,7 @@ import com.seqwawa.seq.model.LeafEvents;
 import com.seqwawa.seq.model.LeafQuests;
 import com.seqwawa.seq.network.ApiClient;
 import com.seqwawa.seq.network.auth.MinecraftAuthService;
+import com.seqwawa.seq.network.auth.NotSignedInException;
 import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
@@ -29,6 +30,8 @@ public final class LeafQuestService {
         READY,
         /** Leaf is only for current guild members. */
         NOT_MEMBER,
+        /** There is no Sequoia session to read Leaf with, until the player connects. */
+        SIGNED_OUT,
         UNAVAILABLE
     }
 
@@ -112,7 +115,7 @@ public final class LeafQuestService {
         ApiClient api = ApiClient.getInstance();
         MinecraftAuthService auth = SeqClient.getAuthService();
         Function<Boolean, CompletableFuture<String>> tokenFor = sessionToken(read.wanted(),
-                force -> auth.ensureValidToken(force, read.session()));
+                force -> auth.ensureSessionToken(force, read.session()));
         // Quests first: with sync=1 Leaf pays what was just finished, so the balance read after it includes it.
         // The recent events are a nicety: without them the board still shows the balance and the quests, and
         // says the list could not be read. A blank answer is an empty list, not a failure.
@@ -140,6 +143,15 @@ public final class LeafQuestService {
         return force -> sessionCurrent.getAsBoolean()
                 ? tokens.apply(force)
                 : CompletableFuture.failedFuture(new CancellationException("The session this read started under has ended"));
+    }
+
+    /** Whether a read failed because there was no session to read with. */
+    static boolean signedOut(Throwable failure) {
+        Throwable cause = failure;
+        while (cause instanceof java.util.concurrent.CompletionException && cause.getCause() != null) {
+            cause = cause.getCause();
+        }
+        return cause instanceof NotSignedInException;
     }
 
     public Snapshot snapshot() {
@@ -216,6 +228,12 @@ public final class LeafQuestService {
         if (fetched != null) {
             snapshot = fetched;
             state = State.READY;
+            refreshFailed = false;
+            return;
+        }
+        if (signedOut(failure)) {
+            snapshot = Snapshot.EMPTY;
+            state = State.SIGNED_OUT;
             refreshFailed = false;
             return;
         }

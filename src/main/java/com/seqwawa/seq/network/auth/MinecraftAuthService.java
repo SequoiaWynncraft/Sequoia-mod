@@ -75,17 +75,21 @@ public class MinecraftAuthService {
     }
 
     /**
-     * {@link #ensureValidToken(boolean)} for work that began under the session
-     * {@code generation} names. Once that session has been cleared it fails
-     * instead of signing in again. The check and the start of any sign-in happen
+     * A token for work that belongs to the session {@code generation} names, such
+     * as a Leaf read. It renews that session's token when it has to, but never
+     * starts a session of its own: once the session has been cleared, or when
+     * there is none, it fails with {@link NotSignedInException}, and the player
+     * signs in again by connecting. The check and the start of any renewal happen
      * under the lock that clearing a session takes, so a clear cannot land
-     * between them, and a sign-in started before a clear is never stored.
+     * between them, and a renewal started before a clear is never stored.
      */
-    public CompletableFuture<String> ensureValidToken(boolean forceRefresh, long generation) {
+    public CompletableFuture<String> ensureSessionToken(boolean forceRefresh, long generation) {
         synchronized (this) {
-            if (!isCurrentAuthenticationAttempt(generation, authenticationGeneration)) {
-                return CompletableFuture.failedFuture(
-                        new CancellationException("The session this request began under has ended."));
+            StoredAuthSession session = getCurrentSession();
+            if (!isCurrentAuthenticationAttempt(generation, authenticationGeneration)
+                    || session == null
+                    || !session.hasToken()) {
+                return CompletableFuture.failedFuture(new NotSignedInException());
             }
             return ensureValidToken(forceRefresh);
         }
@@ -142,6 +146,8 @@ public class MinecraftAuthService {
                                 "[Auth] Authenticated Minecraft account username='{}' expiresAt={}",
                                 session.minecraftUsername(),
                                 session.expiresAt());
+                        // A board that found no session can read Leaf now, without waiting out its minute.
+                        LeafQuestService.getInstance().markStale();
                     });
             inFlightAuthentication = future;
             return future;

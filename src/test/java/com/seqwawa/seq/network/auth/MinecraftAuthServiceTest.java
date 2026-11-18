@@ -126,12 +126,20 @@ class MinecraftAuthServiceTest {
         void run() throws Exception;
     }
 
-    /** Runs with a real token store under a temporary directory, as clearing a session needs one. */
+    private static final StoredAuthSession SESSION = new StoredAuthSession(
+            "session-token", Instant.now().plusSeconds(86_400), "123e4567-e89b-12d3-a456-426614174000", "Player");
+
+    /** Runs signed in, with a real token store under a temporary directory, as clearing a session needs one. */
     private void withConfig(Scenario scenario) throws Exception {
+        withConfig(SESSION, scenario);
+    }
+
+    private void withConfig(StoredAuthSession session, Scenario scenario) throws Exception {
         ConfigManager previous = SeqClient.configManager;
         var constructor = ConfigManager.class.getDeclaredConstructor(Path.class, Path.class, boolean.class);
         constructor.setAccessible(true);
         SeqClient.configManager = constructor.newInstance(tempDir.resolve("config.json"), tempDir.resolve("token"), false);
+        if (session != null) SeqClient.configManager.setAuthSession(session);
         try {
             scenario.run();
         } finally {
@@ -151,13 +159,13 @@ class MinecraftAuthServiceTest {
                 }
             };
             long session = auth.sessionGeneration();
-            assertEquals("token", auth.ensureValidToken(false, session).join());
+            assertEquals("token", auth.ensureSessionToken(false, session).join());
 
             // The session ends after the request began and before it asks for a token again.
             auth.clearSession();
 
-            assertTrue(auth.ensureValidToken(false, session).isCompletedExceptionally());
-            assertTrue(auth.ensureValidToken(true, session).isCompletedExceptionally(),
+            assertTrue(auth.ensureSessionToken(false, session).isCompletedExceptionally());
+            assertTrue(auth.ensureSessionToken(true, session).isCompletedExceptionally(),
                     "nor the fresh sign-in a 401 asks for");
             assertEquals(1, starts.get());
         });
@@ -182,12 +190,32 @@ class MinecraftAuthServiceTest {
             };
             long session = auth.sessionGeneration();
 
-            auth.ensureValidToken(false, session).join();
+            auth.ensureSessionToken(false, session).join();
             clearing.get().join(5_000);
 
             assertFalse(clearing.get().isAlive());
             assertFalse(MinecraftAuthService.isCurrentAuthenticationAttempt(session, auth.sessionGeneration()),
                     "the clear went ahead once the sign-in had started");
+        });
+    }
+
+    @Test
+    void aRequestWithNoSessionNeverSignsIn() throws Exception {
+        withConfig(null, () -> {
+            AtomicInteger starts = new AtomicInteger();
+            var auth = new MinecraftAuthService() {
+                @Override
+                public CompletableFuture<String> ensureValidToken(boolean forceRefresh) {
+                    starts.incrementAndGet();
+                    return CompletableFuture.completedFuture("token");
+                }
+            };
+
+            var token = auth.ensureSessionToken(false, auth.sessionGeneration());
+
+            var failure = assertThrows(java.util.concurrent.CompletionException.class, token::join);
+            org.junit.jupiter.api.Assertions.assertInstanceOf(NotSignedInException.class, failure.getCause());
+            assertEquals(0, starts.get());
         });
     }
 }
