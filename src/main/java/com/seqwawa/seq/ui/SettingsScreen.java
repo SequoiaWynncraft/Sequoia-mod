@@ -265,7 +265,7 @@ public class SettingsScreen extends Screen {
                 float leaderboardY = sidebarLayout.bottom() + SIDEBAR_BUTTON_SPACING;
                 float availableBottom = princessPromptFits
                         ? princessPromptY(screenHeight, 1f)
-                        : screenHeight - SIDEBAR_PADDING;
+                        : screenHeight - SidebarProfile.reserved() - SIDEBAR_PADDING;
                 float availableHeight = availableBottom
                         - SIDEBAR_BUTTON_SPACING
                         - leaderboardY;
@@ -285,6 +285,7 @@ public class SettingsScreen extends Screen {
             if (princessPromptFits) {
                 renderPrincessPrompt(canvas, fontName, screenHeight, System.currentTimeMillis());
             }
+            SidebarProfile.render(canvas, screenHeight, nvgMouseX, nvgMouseY);
 
             // === Main Content Panel (fills rest of screen) ===
             float panelX = SIDEBAR_WIDTH;
@@ -537,6 +538,9 @@ public class SettingsScreen extends Screen {
         float width = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
         float y = princessPromptY(screenHeight, progress);
         boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, width, PRINCESS_PROMPT_HEIGHT);
+        // It slides up from behind the profile card, so nothing of it shows below the card's top.
+        canvas.save();
+        canvas.scissor(0, 0, SIDEBAR_WIDTH, screenHeight - SidebarProfile.reserved());
         canvas.fillRect(
                 x,
                 y,
@@ -573,11 +577,14 @@ public class SettingsScreen extends Screen {
                 checkboxX + checkboxSize + 7,
                 y + PRINCESS_PROMPT_HEIGHT / 2f,
                 "Princess mode");
+        canvas.restore();
     }
 
+    /** The prompt sits at the sidebar's foot, above the profile card while that shows. */
     private static float princessPromptY(float screenHeight, float progress) {
-        float visibleY = screenHeight - SIDEBAR_PADDING - PRINCESS_PROMPT_HEIGHT;
-        return screenHeight + (visibleY - screenHeight) * progress;
+        float bottom = screenHeight - SidebarProfile.reserved();
+        float visibleY = bottom - SIDEBAR_PADDING - PRINCESS_PROMPT_HEIGHT;
+        return bottom + (visibleY - bottom) * progress;
     }
 
     static boolean princessPromptFits(float screenHeight, float navigationBottom) {
@@ -628,6 +635,7 @@ public class SettingsScreen extends Screen {
         if (click.button() == 0) {
 
             // Sidebar button clicks
+            if (SidebarProfile.click(mx, my, screenHeight, this)) return true;
             float btnX = SIDEBAR_PADDING;
             float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
 

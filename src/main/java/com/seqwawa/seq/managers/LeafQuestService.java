@@ -2,9 +2,11 @@ package com.seqwawa.seq.managers;
 
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.LeafAccount;
+import com.seqwawa.seq.model.LeafEvents;
 import com.seqwawa.seq.model.LeafQuests;
 import com.seqwawa.seq.network.ApiClient;
 import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
@@ -25,9 +27,20 @@ public final class LeafQuestService {
         UNAVAILABLE
     }
 
-    /** What the board shows: both parts always come from the same read. */
-    public record Snapshot(LeafAccount account, LeafQuests quests) {
+    /**
+     * What the board and the sidebar show, all from the same read: the balance and
+     * level, the quests, and the latest events, newest first.
+     */
+    public record Snapshot(LeafAccount account, LeafQuests quests, List<LeafEvents.Event> recent) {
         public static final Snapshot EMPTY = new Snapshot(LeafAccount.EMPTY, LeafQuests.EMPTY);
+
+        public Snapshot(LeafAccount account, LeafQuests quests) {
+            this(account, quests, List.of());
+        }
+
+        public Snapshot {
+            recent = recent == null ? List.of() : List.copyOf(recent);
+        }
     }
 
     static final long REFRESH_INTERVAL_MS = Duration.ofMinutes(1).toMillis();
@@ -60,8 +73,12 @@ public final class LeafQuestService {
     private static CompletableFuture<Snapshot> fetch() {
         ApiClient api = ApiClient.getInstance();
         // Quests first: with sync=1 Leaf pays what was just finished, so the balance read after it includes it.
-        return api.getLeafQuests(true).thenCompose(quests -> api.getLeafAccount()
-                .thenApply(account -> new Snapshot(account, quests)));
+        // The recent events are a nicety: without them the board still shows the balance and the quests.
+        return api.getLeafQuests(true).thenCompose(quests -> {
+            CompletableFuture<LeafEvents> events = api.getLeafEvents().exceptionally(failure -> LeafEvents.EMPTY);
+            return api.getLeafAccount()
+                    .thenCombine(events, (account, recent) -> new Snapshot(account, quests, recent.eventsOrEmpty()));
+        });
     }
 
     public Snapshot snapshot() {

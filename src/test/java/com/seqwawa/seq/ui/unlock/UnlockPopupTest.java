@@ -26,6 +26,17 @@ class UnlockPopupTest {
     }
 
     @Test
+    void aWarOverSequoiasClaimIsCalledADefence() {
+        UnlockPopup defence = from("leaf_earned",
+                "{\"source\":\"war\",\"leaf\":146,\"xp\":146,\"detail\":\"Detlas\",\"in_claim\":true}");
+        UnlockPopup snipe = from("leaf_earned",
+                "{\"source\":\"war\",\"leaf\":26,\"xp\":26,\"detail\":\"Ragni\",\"in_claim\":false}");
+
+        assertEquals("Defended Detlas", defence.detail());
+        assertEquals("War for Ragni", snipe.detail());
+    }
+
+    @Test
     void aFinishedQuestIsACardInItsSlotsColours() {
         UnlockPopup popup = from("quest_completed",
                 "{\"quest\":{\"slot\":\"weekly\",\"title\":\"Complete 12 TCC raids\",\"objective\":{\"type\":\"raids\","

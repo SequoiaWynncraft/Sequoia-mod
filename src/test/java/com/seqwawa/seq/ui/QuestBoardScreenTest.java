@@ -10,7 +10,6 @@ import com.seqwawa.seq.model.LeafQuests.Daily;
 import com.seqwawa.seq.model.LeafQuests.Objective;
 import com.seqwawa.seq.model.LeafQuests.Quest;
 import com.seqwawa.seq.model.LeafQuests.Reward;
-import com.seqwawa.seq.model.SeqRaid;
 import com.seqwawa.seq.ui.theme.UiColor;
 import java.time.Duration;
 import java.time.Instant;
@@ -42,6 +41,9 @@ class QuestBoardScreenTest {
                 cards.stream().map(QuestBoardScreen.Card::heading).toList());
         assertEquals(List.of("Next daily in 6h 12m", "Ends in 5d 6h", "Next one when done"),
                 cards.stream().map(QuestBoardScreen.Card::timer).toList());
+        assertEquals(List.of(2, 0, 0), cards.stream().map(QuestBoardScreen.Card::banked).toList());
+        assertEquals(List.of(3, 0, 0), cards.stream().map(QuestBoardScreen.Card::bankSize).toList(),
+                "only the daily has a bank, drawn as pips");
     }
 
     @Test
@@ -76,25 +78,6 @@ class QuestBoardScreenTest {
         assertEquals("12m", QuestBoardScreen.durationLabel(Duration.ofMinutes(12).plusSeconds(40)));
         assertEquals("under a minute", QuestBoardScreen.durationLabel(Duration.ofSeconds(30)));
         assertEquals("under a minute", QuestBoardScreen.durationLabel(Duration.ofMinutes(-5)));
-    }
-
-    @Test
-    void namesEachObjectiveForItsTile() {
-        assertEquals("NOL", QuestBoardScreen.objectiveCode(new Objective("raids", "nol")));
-        assertEquals("TWP", QuestBoardScreen.objectiveCode(new Objective("raids", "wtp")));
-        assertEquals("ALL", QuestBoardScreen.objectiveCode(new Objective("raids", null)));
-        assertEquals("WAR", QuestBoardScreen.objectiveCode(new Objective("wars", null)));
-        assertEquals("SR", QuestBoardScreen.objectiveCode(new Objective("season_rating", null)));
-        assertEquals("?", QuestBoardScreen.objectiveCode(null));
-    }
-
-    @Test
-    void usesTheRaidsOwnArtworkAndTheSequoiaIconForAnyRaid() {
-        assertEquals(SeqRaid.TWP, QuestBoardScreen.objectiveRaid(new Objective("raids", "wtp")));
-        assertEquals("twp", QuestBoardScreen.objectiveAsset(new Objective("raids", "wtp")));
-        assertEquals("icon", QuestBoardScreen.objectiveAsset(new Objective("raids", null)));
-        assertNull(QuestBoardScreen.objectiveAsset(new Objective("wars", null)));
-        assertNull(QuestBoardScreen.objectiveAsset(new Objective("raids", "a raid added later")));
     }
 
     @Test
@@ -135,34 +118,16 @@ class QuestBoardScreenTest {
         assertEquals(2, QuestBoardScreen.columnCount(300));
         assertEquals(1, QuestBoardScreen.columnCount(140));
 
-        List<QuestBoardScreen.Placement> wide = QuestBoardScreen.placements(624, 3);
+        List<QuestBoardScreen.Placement> wide = QuestBoardScreen.placements(624, 3, 98);
         assertEquals(List.of(0f, 210f, 420f), wide.stream().map(QuestBoardScreen.Placement::x).toList());
-        assertEquals(QuestBoardScreen.SUMMARY_HEIGHT + QuestBoardScreen.CARD_HEIGHT,
-                QuestBoardScreen.contentHeight(624, 3));
-        assertEquals(QuestBoardScreen.SUMMARY_HEIGHT + 3 * QuestBoardScreen.CARD_HEIGHT + 2 * 6,
-                QuestBoardScreen.contentHeight(140, 3));
-    }
-
-    @Test
-    void aRewardShrinksAndThenShortensToStayInItsHalfOfTheRow() {
-        // Six pixels a character at 13, five at 11.
-        java.util.function.BiFunction<String, Float, Float> measure = (text, size) -> text.length() * (size >= 13 ? 6f : 5f);
-
-        assertEquals(new QuestBoardScreen.LeafFit("+1,000", 13, 52), QuestBoardScreen.leafFit(1_000, 60, true, measure));
-        assertEquals(new QuestBoardScreen.LeafFit("+1,000", 11, 44), QuestBoardScreen.leafFit(1_000, 50, true, measure));
-        assertEquals(new QuestBoardScreen.LeafFit("+12.5k", 11, 44), QuestBoardScreen.leafFit(12_480, 45, true, measure));
-        assertNull(QuestBoardScreen.leafFit(12_480, 20, true, measure));
-    }
-
-    @Test
-    void withoutTheIconTheWordLeafCountsTowardsTheRoom() {
-        java.util.function.BiFunction<String, Float, Float> measure = (text, size) -> text.length() * (size >= 13 ? 6f : 5f);
-
-        // "+1,000" and "Leaf" at 13: 36 + 3 + 24.
-        assertEquals(new QuestBoardScreen.LeafFit("+1,000", 13, 63), QuestBoardScreen.leafFit(1_000, 63, false, measure));
-        assertEquals(new QuestBoardScreen.LeafFit("+1,000", 11, 53), QuestBoardScreen.leafFit(1_000, 60, false, measure));
-        assertEquals(new QuestBoardScreen.LeafFit("+1k", 11, 38), QuestBoardScreen.leafFit(1_000, 40, false, measure));
-        assertNull(QuestBoardScreen.leafFit(1_000, 30, false, measure));
+        assertEquals(List.of(98f, 98f, 98f), wide.stream().map(QuestBoardScreen.Placement::y).toList());
+        assertEquals(QuestBoardScreen.CARD_HEIGHT, QuestBoardScreen.cardsHeight(624, 3));
+        List<QuestBoardScreen.Placement> uneven = QuestBoardScreen.placements(479, 3, 0);
+        assertEquals(List.of(154f, 154f, 159f), uneven.stream().map(QuestBoardScreen.Placement::width).toList(),
+                "whole art pixels wide, the last taking what is left so the row ends with the board");
+        List<QuestBoardScreen.Placement> stacked = QuestBoardScreen.placements(140, 3, 98);
+        assertEquals(List.of(98f, 264f, 430f), stacked.stream().map(QuestBoardScreen.Placement::y).toList());
+        assertEquals(3 * QuestBoardScreen.CARD_HEIGHT + 2 * 6, QuestBoardScreen.cardsHeight(140, 3));
     }
 
     @Test

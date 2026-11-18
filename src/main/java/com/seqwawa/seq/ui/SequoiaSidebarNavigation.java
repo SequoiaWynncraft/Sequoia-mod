@@ -55,8 +55,16 @@ final class SequoiaSidebarNavigation {
         return warPlannerAuthorized ? WAR_DESTINATIONS : STANDARD_DESTINATIONS;
     }
 
+    /** The buttons' layout, kept clear of the profile card at the sidebar's foot while it shows. */
     static SidebarLayout sidebarLayout(
             float screenHeight, int rowCount, float buttonHeight, float normalSpacing) {
+        return sidebarLayout(screenHeight, rowCount, buttonHeight, normalSpacing, SidebarProfile.reserved());
+    }
+
+    /** The buttons' layout with {@code reservedBelow} UI pixels at the sidebar's foot left free. */
+    static SidebarLayout sidebarLayout(
+            float screenHeight, int rowCount, float buttonHeight, float normalSpacing, float reservedBelow) {
+        screenHeight = Math.max(0, screenHeight - reservedBelow);
         int rows = Math.max(1, rowCount);
         float startY = 50;
         // A cramped sidebar starts its rows just under the title's divider at y=40.
@@ -99,6 +107,7 @@ final class SequoiaSidebarNavigation {
                     new UiCanvas.TextStyle(font, Math.min(12, Math.max(8, layout.buttonHeight() - 2)),
                             color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.CENTER, UiCanvas.VerticalAlign.MIDDLE));
         }
+        SidebarProfile.render(canvas, canvas.metrics().height(), mouseX, mouseY);
     }
 
     static Destination destinationAt(float mouseX, float mouseY, float height, boolean authorized) {
@@ -115,6 +124,7 @@ final class SequoiaSidebarNavigation {
 
     static boolean click(float mouseX, float mouseY, float height, Destination active, Screen parent) {
         if (mouseX < 0 || mouseX >= WIDTH) return false;
+        if (SidebarProfile.click(mouseX, mouseY, height, parent)) return true;
         var destination = destinationAt(mouseX, mouseY, height,
                 SeqClient.getWarPlannerManager() != null && SeqClient.getWarPlannerManager().isAuthorized());
         if (destination != null && destination != active) {

@@ -5,6 +5,7 @@ import com.google.gson.JsonParser;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.managers.LeafQuestService;
 import com.seqwawa.seq.model.LeafAccount;
+import com.seqwawa.seq.model.LeafEvents;
 import com.seqwawa.seq.model.LeafQuests;
 import com.seqwawa.seq.ui.QuestBoardScreen;
 import java.time.Duration;
@@ -41,6 +42,7 @@ public final class UnlockPreview {
     private static int ticks;
     private static int stageStart;
     private static int frame;
+    private static int uiSizeBefore = 100;
 
     private UnlockPreview() {}
 
@@ -62,6 +64,8 @@ public final class UnlockPreview {
             case WAIT_FOR_TITLE -> {
                 if (mc.screen instanceof TitleScreen && SeqClient.assetManager != null
                         && SeqClient.assetManager.getAsset("unlock_medal_gold") != null && inStage > 60) {
+                    // The pause menu would hold the popups back whenever the window loses focus.
+                    mc.options.pauseOnLostFocus = false;
                     createWorld(mc);
                     next(Stage.WAIT_FOR_WORLD);
                 }
@@ -82,7 +86,25 @@ public final class UnlockPreview {
             }
             case BOARD -> {
                 if (inStage == 40) grab(mc, "preview-quest-board.png");
-                if (inStage == 46) {
+                if (inStage == 44 && mc.screen != null) {
+                    // Down to the recent Leaf under the cards.
+                    double x = mc.getWindow().getGuiScaledWidth() * 0.6;
+                    double y = mc.getWindow().getGuiScaledHeight() * 0.6;
+                    mc.screen.mouseScrolled(x, y, 0, -40);
+                }
+                if (inStage == 52) grab(mc, "preview-quest-board-recent.png");
+                if (inStage == 54) {
+                    // A narrow board: the same window with the mod's UI at its largest size.
+                    uiSizeBefore = SeqClient.getUiSizePercentSetting().getValue();
+                    SeqClient.getUiSizePercentSetting().setValue(150);
+                    mc.resizeDisplay();
+                }
+                if (inStage == 62) grab(mc, "preview-quest-board-narrow.png");
+                if (inStage == 64) {
+                    SeqClient.getUiSizePercentSetting().setValue(uiSizeBefore);
+                    mc.resizeDisplay();
+                }
+                if (inStage == 70) {
                     mc.setScreen(null);
                     for (UnlockPopup popup : samplePopups()) UnlockOverlay.getInstance().enqueue(popup);
                     next(Stage.POPUPS);
@@ -128,7 +150,27 @@ public final class UnlockPreview {
                                 now.plus(Duration.ofHours(70))),
                         quest("repeatable", "Complete 8 raids", "raids", null, 3, 8, 200, 100, null)),
                 List.of());
-        return new LeafQuestService.Snapshot(new LeafAccount(12_480, 13_120, new LeafAccount.Level(7, 640, 2_500)), quests);
+        Instant at = Instant.now();
+        List<LeafEvents.Event> recent = List.of(
+                event(6, "leaf_earned", at.minus(Duration.ofMinutes(12)),
+                        "{\"source\":\"raid\",\"leaf\":330,\"xp\":330,\"detail\":\"The Nameless Anomaly\"}"),
+                event(5, "leaf_earned", at.minus(Duration.ofMinutes(41)),
+                        "{\"source\":\"war\",\"leaf\":146,\"xp\":146,\"detail\":\"Detlas\",\"in_claim\":true}"),
+                event(4, "quest_completed", at.minus(Duration.ofMinutes(75)),
+                        "{\"quest\":{\"slot\":\"daily\",\"title\":\"Complete 3 NOL raids\","
+                                + "\"objective\":{\"type\":\"raids\",\"raid\":\"nol\"},\"reward\":{\"leaf\":300,\"xp\":150}}}"),
+                event(3, "achievement_paid", at.minus(Duration.ofHours(3)),
+                        "{\"ladder\":\"raid:NOTG\",\"milestone\":\"gold\",\"tier\":\"gold\",\"threshold\":100,"
+                                + "\"label\":\"Gold\",\"leaf\":1000,\"xp\":1000}"),
+                event(2, "level_up", at.minus(Duration.ofHours(3)), "{\"level\":7}"),
+                event(1, "leaf_earned", at.minus(Duration.ofHours(5)),
+                        "{\"source\":\"war\",\"leaf\":26,\"xp\":26,\"detail\":\"Ragni\",\"in_claim\":false}"));
+        return new LeafQuestService.Snapshot(new LeafAccount(12_480, 13_120, new LeafAccount.Level(7, 640, 2_500)), quests,
+                recent);
+    }
+
+    private static LeafEvents.Event event(long id, String type, Instant at, String data) {
+        return new LeafEvents.Event(id, type, at, JsonParser.parseString(data).getAsJsonObject());
     }
 
     private static LeafQuests.Quest quest(String slot, String title, String type, String raid, long progress, long target,
@@ -142,7 +184,7 @@ public final class UnlockPreview {
     static List<UnlockPopup> samplePopups() {
         return List.of(
                 popup("leaf_earned", "{\"source\":\"raid\",\"leaf\":330,\"xp\":330,\"detail\":\"The Nameless Anomaly\"}"),
-                popup("leaf_earned", "{\"source\":\"war\",\"leaf\":60,\"xp\":60,\"detail\":\"Detlas\"}"),
+                popup("leaf_earned", "{\"source\":\"war\",\"leaf\":146,\"xp\":146,\"detail\":\"Detlas\",\"in_claim\":true}"),
                 popup("quest_completed", "{\"quest\":{\"slot\":\"daily\",\"title\":\"Complete 3 NOL raids\","
                         + "\"objective\":{\"type\":\"raids\",\"raid\":\"nol\"},"
                         + "\"reward\":{\"leaf\":300,\"xp\":150}}}"),

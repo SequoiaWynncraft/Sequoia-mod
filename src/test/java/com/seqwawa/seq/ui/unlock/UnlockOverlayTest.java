@@ -140,7 +140,7 @@ class UnlockOverlayTest {
 
     @Test
     void framesSitOnTheArtPixelGrid() {
-        assertEquals(12f, UnlockOverlay.snap(12.9f, 3));
-        assertEquals(14f, UnlockOverlay.snap(13.1f, 2));
+        assertEquals(12f, PixelArt.snap(12.9f, 3));
+        assertEquals(14f, PixelArt.snap(13.1f, 2));
     }
 }

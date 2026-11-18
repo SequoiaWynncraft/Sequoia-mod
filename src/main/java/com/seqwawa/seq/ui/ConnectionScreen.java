@@ -94,6 +94,7 @@ public class ConnectionScreen extends Screen {
                     destination.label(),
                     destination == SequoiaSidebarNavigation.Destination.CONNECTION);
         }
+        SidebarProfile.render(canvas, screenHeight, nvgMouseX, nvgMouseY);
     }
 
     private void renderHeader(UiCanvas canvas, String fontName, float panelX, float panelWidth) {
@@ -231,6 +232,7 @@ public class ConnectionScreen extends Screen {
         float mx = MinecraftUiRenderer.mouseX(click.x());
         float my = MinecraftUiRenderer.mouseY(click.y());
         float screenHeight = MinecraftUiRenderer.screenHeight();
+        if (SidebarProfile.click(mx, my, screenHeight, this)) return true;
 
         float btnX = SIDEBAR_PADDING;
         float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;

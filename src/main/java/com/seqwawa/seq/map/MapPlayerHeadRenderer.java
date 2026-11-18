@@ -50,9 +50,14 @@ public final class MapPlayerHeadRenderer implements AutoCloseable {
     }
 
     public boolean render(UiCanvas canvas, String username, float x, float y) {
+        return render(canvas, username, x, y, HEAD_SIZE);
+    }
+
+    /** Draws a player's face {@code size} UI pixels square, centred on ({@code x}, {@code y}). */
+    public boolean render(UiCanvas canvas, String username, float x, float y, float size) {
         UiImage face = face(username);
         if (face == null) return false;
-        canvas.drawImage(face, x - HEAD_SIZE / 2, y - HEAD_SIZE / 2, HEAD_SIZE, HEAD_SIZE, 1f);
+        canvas.drawImage(face, x - size / 2, y - size / 2, size, size, 1f);
         return true;
     }
 

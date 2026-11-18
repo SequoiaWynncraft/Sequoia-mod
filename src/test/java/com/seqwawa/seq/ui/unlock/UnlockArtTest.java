@@ -19,7 +19,11 @@ class UnlockArtTest {
             "unlock_icon_tna", "unlock_icon_twp");
 
     private static BufferedImage load(String name) throws IOException {
-        try (InputStream in = UnlockArtTest.class.getResourceAsStream("/assets/seq/textures/unlock/" + name + ".png")) {
+        return load("unlock", name);
+    }
+
+    private static BufferedImage load(String folder, String name) throws IOException {
+        try (InputStream in = UnlockArtTest.class.getResourceAsStream("/assets/seq/textures/" + folder + "/" + name + ".png")) {
             assertNotNull(in, name);
             return ImageIO.read(in);
         }
@@ -66,19 +70,35 @@ class UnlockArtTest {
     }
 
     @Test
-    void theIvyKeepsCloseToTheMedalAndOffTheEmblem() throws IOException {
-        // The medal sits 6 pixels into the 44-pixel square, its middle on the line at 22; the emblem fills
-        // about 10 pixels round that.
-        int margin = UnlockOverlay.IVY_INSET - UnlockOverlay.MedalStyle.IVY.reach();
-        BufferedImage ivy = load("unlock_ivy");
-        assertEquals(44, ivy.getWidth());
-        assertEquals(44, ivy.getHeight());
-        for (int y = 0; y < 44; y++) {
-            for (int x = 0; x < 44; x++) {
-                if (!visible(ivy, x, y)) continue;
-                boolean inside = x >= margin && x < 44 - margin && y >= margin && y < 44 - margin;
-                assertTrue(inside, "the ivy reaches past its square at " + x + ", " + y);
-                assertTrue(Math.hypot(x + 0.5 - 22, y + 0.5 - 22) >= 10, "the ivy covers the emblem at " + x + ", " + y);
+    void everyTierHasAHaloThatLightsOnlyOutsideItsMedal() throws IOException {
+        for (String tier : List.of("bronze", "silver", "gold", "platinum", "diamond", "obsidian", "mythril", "level")) {
+            BufferedImage halo = load("unlock_halo_" + tier);
+            assertEquals(44, halo.getWidth(), tier);
+            assertEquals(44, halo.getHeight(), tier);
+            boolean lit = false;
+            for (int y = 0; y < 44; y++) {
+                for (int x = 0; x < 44; x++) {
+                    if (!visible(halo, x, y)) continue;
+                    lit = true;
+                    // The medal sits 6 pixels in, its rim 16 from the middle at 22.
+                    double distance = Math.hypot(x + 0.5 - 22, y + 0.5 - 22);
+                    assertTrue(distance >= 16, tier + " lights the medal at " + x + ", " + y);
+                    assertTrue(distance < 22 - 1, tier + " reaches its square's edge at " + x + ", " + y);
+                }
+            }
+            assertTrue(lit, tier);
+        }
+    }
+
+    @Test
+    void theLeafGlyphIsOneOutlinedDigitTallAndMirroredAcrossItsStem() throws IOException {
+        BufferedImage leaf = load("leaf", "leaf_glyph");
+        assertEquals(9, leaf.getWidth());
+        assertEquals(9, leaf.getHeight());
+        for (int y = 0; y < 9; y++) {
+            for (int x = 0; x < 9; x++) {
+                // Its stem runs from the bottom left to the tip at the top right.
+                assertEquals(visible(leaf, x, y), visible(leaf, 8 - y, 8 - x), "column " + x + ", row " + y);
             }
         }
     }

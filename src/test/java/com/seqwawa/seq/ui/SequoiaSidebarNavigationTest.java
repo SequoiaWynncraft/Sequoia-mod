@@ -72,4 +72,14 @@ class SequoiaSidebarNavigationTest {
         assertEquals(22f, normal.buttonHeight());
         assertTrue(SettingsScreen.princessPromptFits(400, normal.bottom()));
     }
+
+    @Test
+    void theButtonsKeepClearOfWhatIsReservedAtTheFoot() {
+        var free = SequoiaSidebarNavigation.sidebarLayout(360, 9, 22, 6, 0);
+        var reserved = SequoiaSidebarNavigation.sidebarLayout(360, 9, 22, 6, 56);
+
+        org.junit.jupiter.api.Assertions.assertTrue(free.bottom() <= 360 - 8);
+        org.junit.jupiter.api.Assertions.assertTrue(reserved.bottom() <= 360 - 56 - 8,
+                "the last button ends " + reserved.bottom());
+    }
 }

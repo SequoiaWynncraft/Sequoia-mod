@@ -40,7 +40,7 @@ public record UnlockPopup(
                 String source = text(data, "source");
                 String detail = text(data, "detail");
                 yield new UnlockPopup(Kind.TOAST, null, "+" + formatCount(number(data, "leaf")),
-                        "war".equals(source) ? "War for " + detail : detail,
+                        "war".equals(source) ? (isTrue(data, "in_claim") ? "Defended " : "War for ") + detail : detail,
                         number(data, "leaf"), number(data, "xp"), null,
                         "war".equals(source) ? WAR_ICON : raidIconByName(detail));
             }
@@ -71,13 +71,13 @@ public record UnlockPopup(
         };
     }
 
-    static final String WAR_ICON = "unlock_war";
-    static final String SEASON_RATING_ICON = "star";
+    public static final String WAR_ICON = "unlock_war";
+    public static final String SEASON_RATING_ICON = "star";
     /** A raid portal: for any raid, all raids, and raids the mod has no art for yet. */
-    static final String RAID_ICON = "unlock_raid";
+    public static final String RAID_ICON = "unlock_raid";
 
     /** The raid's pixelated art for a tile, from its full name as Leaf reports it. */
-    static String raidIconByName(String name) {
+    public static String raidIconByName(String name) {
         if (name != null) {
             String lower = name.toLowerCase(Locale.ROOT);
             for (SeqRaid raid : SeqRaid.values()) {
@@ -88,7 +88,7 @@ public record UnlockPopup(
     }
 
     /** The tile icon for a quest's objective: the raid it names, any raid, wars or season rating. */
-    static String objectiveIcon(String type, String raid) {
+    public static String objectiveIcon(String type, String raid) {
         if ("wars".equals(type)) return WAR_ICON;
         if ("season_rating".equals(type)) return SEASON_RATING_ICON;
         String asset = raidAsset(raid);
@@ -99,7 +99,7 @@ public record UnlockPopup(
      * The emblem in a milestone's medal: that raid's art pixelated, the raid
      * portal for all raids and anything else, and the tower for wars.
      */
-    static String emblem(String ladder) {
+    public static String emblem(String ladder) {
         if (ladder == null) return RAID_ICON;
         if (ladder.startsWith("war:")) return WAR_ICON;
         if (ladder.startsWith("raid:") && !ladder.equals("raid:all raids")) {
@@ -110,7 +110,7 @@ public record UnlockPopup(
     }
 
     /** The mod's asset key for a raid's short name, such as {@code tna}, or null for one it does not know. */
-    static String raidAsset(String raid) {
+    public static String raidAsset(String raid) {
         if (raid == null) return null;
         // Leaf calls The Wartorn Palace "wtp"; the mod calls it TWP.
         String code = "wtp".equalsIgnoreCase(raid) ? "TWP" : raid.toUpperCase(Locale.ROOT);
@@ -127,7 +127,7 @@ public record UnlockPopup(
     }
 
     /** "TNA raids", "guild raids" or "guild wars", from Sierra's ladder key. */
-    static String ladderPhrase(String ladder) {
+    public static String ladderPhrase(String ladder) {
         if (ladder == null) return "";
         if (ladder.equals("raid:all raids")) return "guild raids";
         if (ladder.startsWith("raid:")) return ladder.substring("raid:".length()).toUpperCase(Locale.ROOT) + " raids";
@@ -135,13 +135,13 @@ public record UnlockPopup(
         return ladder;
     }
 
-    static String slotName(String slot) {
+    public static String slotName(String slot) {
         if (slot == null || slot.isEmpty()) return "Quest";
         return capitalise(slot);
     }
 
     /** The colours each quest slot uses on the quest board. */
-    static String questTier(String slot) {
+    public static String questTier(String slot) {
         if ("daily".equals(slot)) return "gold";
         if ("weekly".equals(slot)) return "diamond";
         return "bronze";
@@ -159,6 +159,12 @@ public record UnlockPopup(
     private static String text(JsonObject object, String field) {
         JsonElement value = object.get(field);
         return value == null || value.isJsonNull() || !value.isJsonPrimitive() ? null : value.getAsString();
+    }
+
+    /** Whether a field is the JSON value {@code true}; false when it is anything else or missing. */
+    public static boolean isTrue(JsonObject object, String field) {
+        JsonElement value = object.get(field);
+        return value != null && value.isJsonPrimitive() && value.getAsJsonPrimitive().isBoolean() && value.getAsBoolean();
     }
 
     private static long number(JsonObject object, String field) {

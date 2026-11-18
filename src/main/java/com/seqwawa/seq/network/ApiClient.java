@@ -28,6 +28,7 @@ import com.seqwawa.seq.model.AllyRaidReport;
 import com.seqwawa.seq.model.CreateInviteResponse;
 import com.seqwawa.seq.model.GuildRaidProgress;
 import com.seqwawa.seq.model.LeafAccount;
+import com.seqwawa.seq.model.LeafEvents;
 import com.seqwawa.seq.model.LeafQuests;
 import com.seqwawa.seq.model.Listing;
 import com.seqwawa.seq.model.PartyJoinPolicy;
@@ -377,6 +378,13 @@ public class ApiClient {
         return callWithTokenRetry(
                 force -> SeqClient.getAuthService().ensureValidToken(force),
                 token -> sendAsync(newRequestWithToken(leafBaseUrl, path, token).GET().build(), LeafQuests.class));
+    }
+
+    /** The member's latest Leaf events, newest first: what paid Leaf, finished a quest or reached a level. */
+    public CompletableFuture<LeafEvents> getLeafEvents() {
+        return callWithTokenRetry(
+                force -> SeqClient.getAuthService().ensureValidToken(force),
+                token -> sendAsync(newRequestWithToken(leafBaseUrl, "/v1/me/events", token).GET().build(), LeafEvents.class));
     }
 
     /** Whether Leaf refused because the player is not a current Sequoia member. */
