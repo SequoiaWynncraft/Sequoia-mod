@@ -59,7 +59,7 @@ final class LiveSessionSteps implements SessionManager.Steps {
 
     @Override
     public void forgetDiscordName() {
-        SeqClient.getConfigManager().clearDiscordUsername();
+        SeqClient.getConfigManager().clearDiscordUsername(SeqClient.currentMinecraftProfileId());
     }
 
     @Override

@@ -430,12 +430,28 @@ class RaidProfileStoreTest {
 
     // ── Setup gating ──
 
+    /** Two Minecraft accounts that play on this computer, neither with a profile in the payload. */
+    private static final String MAIN_ACCOUNT = "20000000-0000-0000-0000-000000000001";
+    private static final String ALT_ACCOUNT = "20000000-0000-0000-0000-000000000002";
+
+    /** A store for whichever account {@code playing} holds. */
+    private static RaidProfileStore storeFor(Path directory, java.util.concurrent.atomic.AtomicReference<String> playing) {
+        return new RaidProfileStore(
+                directory.resolve("raid-profile.json"),
+                directory.resolve("cache/raid-profiles.json"),
+                () -> CompletableFuture.completedFuture(
+                        RaidProfileStore.parseProfilesResponse(BACKEND_PAYLOAD).orElse(null)),
+                () -> false,
+                Runnable::run,
+                Runnable::run,
+                playing::get);
+    }
+
     @Test
     void setupIsNeededUntilTheBackendHoldsAProfileForYou(@TempDir Path directory) {
-        RaidProfileStore store = store(directory);
+        RaidProfileStore store = storeFor(directory, new java.util.concurrent.atomic.AtomicReference<>(MAIN_ACCOUNT));
         store.load();
 
-        // No local player in a test, so nothing resolves as "you" and setup is offered.
         assertTrue(store.needsSetup());
 
         store.dismissSetup();
@@ -445,14 +461,62 @@ class RaidProfileStoreTest {
 
     @Test
     void skippingSetupSurvivesARestart(@TempDir Path directory) {
-        RaidProfileStore store = store(directory);
+        var playing = new java.util.concurrent.atomic.AtomicReference<>(MAIN_ACCOUNT);
+        RaidProfileStore store = storeFor(directory, playing);
         store.load();
         store.dismissSetup();
 
-        RaidProfileStore reloaded = store(directory);
+        RaidProfileStore reloaded = storeFor(directory, playing);
         reloaded.load();
 
         assertFalse(reloaded.needsSetup());
+    }
+
+    @Test
+    void skippingSetupIsEachAccountsOwn(@TempDir Path directory) {
+        var playing = new java.util.concurrent.atomic.AtomicReference<>(MAIN_ACCOUNT);
+        RaidProfileStore store = storeFor(directory, playing);
+        store.load();
+        store.dismissSetup();
+
+        playing.set(ALT_ACCOUNT);
+
+        assertTrue(store.needsSetup(), "the alt has not skipped it");
+        playing.set(MAIN_ACCOUNT);
+        assertFalse(store.needsSetup());
+    }
+
+    @Test
+    void anOlderFilesSkipGoesToTheFirstAccountToAsk(@TempDir Path directory) throws Exception {
+        Files.writeString(directory.resolve("raid-profile.json"),
+                "{\"version\": 1, \"setupDismissed\": true, \"friends\": [\"Blousy\"]}");
+        var playing = new java.util.concurrent.atomic.AtomicReference<>(MAIN_ACCOUNT);
+        RaidProfileStore store = storeFor(directory, playing);
+        store.load();
+
+        assertFalse(store.needsSetup(), "the account playing after the update keeps its skip");
+        playing.set(ALT_ACCOUNT);
+        assertTrue(store.needsSetup(), "another account does not inherit it");
+
+        RaidProfileStore restarted = storeFor(directory, playing);
+        restarted.load();
+        assertTrue(restarted.needsSetup(), "the skip was claimed, not left for whoever comes next");
+        playing.set(MAIN_ACCOUNT);
+        assertFalse(restarted.needsSetup());
+    }
+
+    @Test
+    void friendsStaySharedBetweenAccounts(@TempDir Path directory) {
+        var playing = new java.util.concurrent.atomic.AtomicReference<>(MAIN_ACCOUNT);
+        RaidProfileStore store = storeFor(directory, playing);
+        store.load();
+        store.toggleFriend("Blousy");
+
+        playing.set(ALT_ACCOUNT);
+        RaidProfileStore restarted = storeFor(directory, playing);
+        restarted.load();
+
+        assertTrue(restarted.isFriend("Blousy"));
     }
 
     // ── Friends ──

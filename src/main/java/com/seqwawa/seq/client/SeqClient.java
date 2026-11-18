@@ -653,7 +653,8 @@ public class SeqClient implements ClientModInitializer {
         getWarPlannerManager().reset();
     }
 
-    private static UUID currentMinecraftProfileId() {
+    /** The Minecraft account the game is signed in as, or null before it knows. */
+    public static UUID currentMinecraftProfileId() {
         if (mc == null || mc.getUser() == null) {
             return null;
         }

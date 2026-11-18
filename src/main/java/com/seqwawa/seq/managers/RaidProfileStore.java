@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ConcurrentHashMap;
@@ -45,7 +46,8 @@ import java.util.function.Supplier;
  * <p>
  * Catalog and profiles are guild data: fetched, cached to disk so the panel is not
  * blank offline, never authored here. Friends, premades, notes and the setup
- * dismissal are personal and stay in a local file.
+ * dismissal are personal and stay in a local file. Friends, premades and notes are
+ * shared by every Minecraft account on this computer; skipping setup is each account's own.
  * <p>
  * Your own profile is read back from the same fetch as everyone else's, so you
  * cannot see a version of yourself the guild cannot.
@@ -108,7 +110,12 @@ public final class RaidProfileStore {
     private final Refreshable<Published> published;
     private final Executor gameThread;
     private final Executor disk;
-    private volatile boolean setupDismissed;
+    /** The Minecraft accounts that skipped setup, by normalised UUID: each account decides for itself. */
+    private final Set<String> setupDismissedBy = ConcurrentHashMap.newKeySet();
+    /** An older file's single "skipped": the first account to ask takes it as its own. */
+    private volatile boolean unclaimedSetupDismissal;
+    /** The Minecraft account playing, by UUID, or null before the game knows. */
+    private final Supplier<String> account;
     private volatile boolean loaded;
     /** Whether a fetch has worked since the game started. */
     private volatile boolean fetchedOnce;
@@ -149,6 +156,19 @@ public final class RaidProfileStore {
             BooleanSupplier separateBackend,
             Executor gameThread,
             Executor disk) {
+        this(localPath, cachePath, fetch, separateBackend, gameThread, disk, RaidProfileStore::localUuid);
+    }
+
+    /** Test seam: {@code account} stands in for the Minecraft account playing. */
+    RaidProfileStore(
+            Path localPath,
+            Path cachePath,
+            Supplier<CompletableFuture<RaidProfilesResponse>> fetch,
+            BooleanSupplier separateBackend,
+            Executor gameThread,
+            Executor disk,
+            Supplier<String> account) {
+        this.account = account;
         this.localPath = localPath;
         this.cachePath = cachePath;
         this.fetch = fetch;
@@ -422,7 +442,7 @@ public final class RaidProfileStore {
         return ApiClient.getInstance()
                 .putMyRaidProfile(toSave)
                 .thenApplyAsync(saved -> {
-                    setupDismissed = false;
+                    forgetSetupDismissal();
                     persist();
                     // The response is authoritative, including a username that may be a
                     // rename ahead of the token.
@@ -448,13 +468,46 @@ public final class RaidProfileStore {
 
     /** Whether setup should open instead of the list: until you have a profile, or skip it. */
     public boolean needsSetup() {
-        return !selfProfile().isComplete() && !setupDismissed;
+        return !selfProfile().isComplete() && !setupDismissedHere();
     }
 
-    /** Records that setup was closed without filling anything in. */
+    /** Records that this account closed setup without filling anything in. */
     public void dismissSetup() {
-        setupDismissed = true;
+        String self = accountKey();
+        if (self == null) {
+            unclaimedSetupDismissal = true;
+        } else {
+            setupDismissedBy.add(self);
+        }
         persist();
+    }
+
+    /** Whether the account playing skipped setup, claiming an older version's single answer if nobody has. */
+    private boolean setupDismissedHere() {
+        String self = accountKey();
+        if (self == null) {
+            return unclaimedSetupDismissal;
+        }
+        if (unclaimedSetupDismissal) {
+            unclaimedSetupDismissal = false;
+            setupDismissedBy.add(self);
+            persist();
+        }
+        return setupDismissedBy.contains(self);
+    }
+
+    /** A saved profile answers setup for this account, so its skip no longer applies. */
+    private void forgetSetupDismissal() {
+        String self = accountKey();
+        if (self == null) {
+            unclaimedSetupDismissal = false;
+        } else {
+            setupDismissedBy.remove(self);
+        }
+    }
+
+    private String accountKey() {
+        return RaidProfilesResponse.normalizeUuid(account.get());
     }
 
     // ── Friends ──
@@ -598,9 +651,18 @@ public final class RaidProfileStore {
     }
 
     void applyLocalDocument(JsonObject document) {
-        setupDismissed = document.has("setupDismissed")
+        unclaimedSetupDismissal = document.has("setupDismissed")
                 && document.get("setupDismissed").isJsonPrimitive()
                 && document.get("setupDismissed").getAsBoolean();
+        setupDismissedBy.clear();
+        if (document.has("setupDismissedBy") && document.get("setupDismissedBy").isJsonArray()) {
+            for (JsonElement element : document.getAsJsonArray("setupDismissedBy")) {
+                String uuid = element.isJsonPrimitive() ? RaidProfilesResponse.normalizeUuid(element.getAsString()) : null;
+                if (uuid != null) {
+                    setupDismissedBy.add(uuid);
+                }
+            }
+        }
 
         notes.clear();
         if (document.has("notes") && document.get("notes").isJsonObject()) {
@@ -683,7 +745,13 @@ public final class RaidProfileStore {
     JsonObject toLocalDocument() {
         JsonObject document = new JsonObject();
         document.addProperty("version", SCHEMA_VERSION);
-        document.addProperty("setupDismissed", setupDismissed);
+        JsonArray dismissedBy = new JsonArray();
+        setupDismissedBy.forEach(dismissedBy::add);
+        document.add("setupDismissedBy", dismissedBy);
+        if (unclaimedSetupDismissal) {
+            // Kept until an account claims it, as an older version wrote it.
+            document.addProperty("setupDismissed", true);
+        }
 
         JsonObject noteObject = new JsonObject();
         new LinkedHashMap<>(notes).forEach(noteObject::addProperty);

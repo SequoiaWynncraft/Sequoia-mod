@@ -10,6 +10,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -117,14 +118,62 @@ class ConfigManagerTest {
         Path configPath = tempDir.resolve("config").resolve("sequoia.json");
         ConfigManager manager = new ConfigManager(configPath, tempDir.resolve(".seq_token"), false);
 
-        manager.setDiscordUsername("discord-user");
+        manager.setDiscordUsername(MAIN_ACCOUNT, "discord-user");
 
         String json = Files.readString(configPath);
         assertFalse(json.contains("_auth_token"));
         assertFalse(json.contains("_auth_token_expires_at"));
         assertFalse(json.contains("_minecraft_uuid"));
         assertFalse(json.contains("_minecraft_username"));
-        assertTrue(json.contains("_discord_username"));
+        assertTrue(json.contains("_discord_usernames"));
+    }
+
+    private static final java.util.UUID MAIN_ACCOUNT = java.util.UUID.fromString("20000000-0000-0000-0000-000000000001");
+    private static final java.util.UUID ALT_ACCOUNT = java.util.UUID.fromString("20000000-0000-0000-0000-000000000002");
+
+    @Test
+    void eachMinecraftAccountKeepsItsOwnDiscordName() throws Exception {
+        Path configPath = tempDir.resolve("config").resolve("sequoia.json");
+        ConfigManager manager = new ConfigManager(configPath, tempDir.resolve(".seq_token"), false);
+        manager.setDiscordUsername(MAIN_ACCOUNT, "main-discord");
+        manager.setDiscordUsername(ALT_ACCOUNT, "alt-discord");
+
+        ConfigManager reloaded = new ConfigManager(configPath, tempDir.resolve(".seq_token"), false);
+        reloaded.load();
+
+        assertEquals("main-discord", reloaded.getDiscordUsername(MAIN_ACCOUNT));
+        assertEquals("alt-discord", reloaded.getDiscordUsername(ALT_ACCOUNT));
+    }
+
+    @Test
+    void clearingOneAccountsDiscordNameLeavesTheOthers() {
+        ConfigManager manager = new ConfigManager(tempDir.resolve("sequoia.json"), tempDir.resolve(".seq_token"), false);
+        manager.setDiscordUsername(MAIN_ACCOUNT, "main-discord");
+        manager.setDiscordUsername(ALT_ACCOUNT, "alt-discord");
+
+        manager.clearDiscordUsername(ALT_ACCOUNT);
+
+        assertEquals("main-discord", manager.getDiscordUsername(MAIN_ACCOUNT));
+        assertNull(manager.getDiscordUsername(ALT_ACCOUNT));
+    }
+
+    @Test
+    void anOlderSingleDiscordNameGoesToTheFirstAccountThatAsks() throws Exception {
+        Path configPath = tempDir.resolve("config").resolve("sequoia.json");
+        Files.createDirectories(configPath.getParent());
+        Files.writeString(configPath, "{\"_discord_username\": \"discord-user\"}");
+        ConfigManager manager = new ConfigManager(configPath, tempDir.resolve(".seq_token"), false);
+        manager.load();
+
+        assertNull(manager.getDiscordUsername(null), "no account yet takes nothing");
+        assertEquals("discord-user", manager.getDiscordUsername(MAIN_ACCOUNT));
+        assertNull(manager.getDiscordUsername(ALT_ACCOUNT), "another account does not inherit it");
+
+        ConfigManager restarted = new ConfigManager(configPath, tempDir.resolve(".seq_token"), false);
+        restarted.load();
+        assertNull(restarted.getDiscordUsername(ALT_ACCOUNT), "it was claimed for good");
+        assertEquals("discord-user", restarted.getDiscordUsername(MAIN_ACCOUNT));
+        assertFalse(Files.readString(configPath).contains("\"_discord_username\""));
     }
 
     @Test

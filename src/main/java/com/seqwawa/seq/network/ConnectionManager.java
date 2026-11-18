@@ -2513,7 +2513,7 @@ public class ConnectionManager {
     }
 
     public String getLinkedDiscordUsername() {
-        return SeqClient.getConfigManager().getDiscordUsername();
+        return SeqClient.getConfigManager().getDiscordUsername(SeqClient.currentMinecraftProfileId());
     }
 
     /** Closes the connection for a session that ended, without counting as the player's own disconnect. */
@@ -2872,14 +2872,15 @@ public class ConnectionManager {
         return false;
     }
 
+    /** Each Minecraft account keeps the Discord name the backend linked to it. */
     private void storeDiscordUsername(String discordUsername) {
         if (hasDiscordUsername(discordUsername)) {
-            SeqClient.getConfigManager().setDiscordUsername(discordUsername);
+            SeqClient.getConfigManager().setDiscordUsername(SeqClient.currentMinecraftProfileId(), discordUsername);
         }
     }
 
     private void clearDiscordUsername() {
-        SeqClient.getConfigManager().clearDiscordUsername();
+        SeqClient.getConfigManager().clearDiscordUsername(SeqClient.currentMinecraftProfileId());
     }
 
     // ── Message records ──
