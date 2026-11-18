@@ -3,13 +3,11 @@ package com.seqwawa.seq.config;
 import com.google.gson.*;
 import lombok.Getter;
 import com.seqwawa.seq.client.SeqClient;
-import com.seqwawa.seq.network.auth.StoredAuthSession;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
@@ -49,10 +47,6 @@ public class ConfigManager {
     private final Set<String> trackedWorldEventIds = new LinkedHashSet<>();
     private final Set<Long> hiddenWarPlannerZoneIds = new LinkedHashSet<>();
     private final Set<Long> hiddenWarPlannerZoneCategoryIds = new LinkedHashSet<>();
-    private String authToken;
-    private Instant authTokenExpiresAt;
-    private String minecraftUuid;
-    private String minecraftUsername;
     private String discordUsername;
     private boolean bombSharePromptSeen;
     private Double startupVideoX;
@@ -85,65 +79,12 @@ public class ConfigManager {
         legacySettingKeys.put(setting, List.of(legacyKeys));
     }
 
-    // ── Token management ──
-
-    public String getToken() {
-        return authToken;
-    }
-
-    public Instant getTokenExpiresAt() {
-        return authTokenExpiresAt;
-    }
-
-    public String getMinecraftUuid() {
-        return minecraftUuid;
-    }
-
-    public String getMinecraftUsername() {
-        return minecraftUsername;
-    }
-
     public String getDiscordUsername() {
         return discordUsername;
     }
 
     public boolean isBombSharePromptSeen() {
         return bombSharePromptSeen;
-    }
-
-    public StoredAuthSession getStoredAuthSession() {
-        if (authToken == null || authToken.isBlank()) {
-            return null;
-        }
-        return new StoredAuthSession(authToken, authTokenExpiresAt, minecraftUuid, minecraftUsername);
-    }
-
-    public void setToken(String token) {
-        this.authToken = token;
-        this.authTokenExpiresAt = null;
-    }
-
-    public void setAuthSession(StoredAuthSession session) {
-        if (session == null || !session.hasToken()) {
-            clearAuthSession();
-            return;
-        }
-
-        this.authToken = session.token();
-        this.authTokenExpiresAt = session.expiresAt();
-        this.minecraftUuid = session.minecraftUuid();
-        this.minecraftUsername = session.minecraftUsername();
-    }
-
-    public void clearToken() {
-        clearAuthSession();
-    }
-
-    public void clearAuthSession() {
-        this.authToken = null;
-        this.authTokenExpiresAt = null;
-        this.minecraftUuid = null;
-        this.minecraftUsername = null;
     }
 
     public void setDiscordUsername(String discordUsername) {
@@ -480,6 +421,7 @@ public class ConfigManager {
         }
     }
 
+    /** Older versions wrote the backend session here; it is kept in memory only now. */
     private static boolean removePersistedAuthSession(JsonObject root) {
         boolean removed = root.remove(TOKEN_KEY) != null;
         removed |= root.remove(TOKEN_EXPIRES_AT_KEY) != null;

@@ -265,6 +265,7 @@ final class ConnectionHarness implements AutoCloseable {
         String token = "session-token";
         String lastError;
         boolean signedOutByUser;
+        String signedInUsername;
         int allowSignIns;
 
         @Override
@@ -298,6 +299,11 @@ final class ConnectionHarness implements AutoCloseable {
         @Override
         public boolean isSignedOutByUser() {
             return signedOutByUser;
+        }
+
+        @Override
+        public String signedInUsername() {
+            return signedInUsername;
         }
     }
 

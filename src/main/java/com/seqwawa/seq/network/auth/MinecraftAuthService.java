@@ -8,10 +8,7 @@ import lombok.Getter;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.User;
 import net.minecraft.server.Services;
-import com.seqwawa.seq.client.ClientThread;
 import com.seqwawa.seq.client.SeqClient;
-import com.seqwawa.seq.managers.GuildRaidProgressService;
-import com.seqwawa.seq.managers.LeafQuestService;
 import com.seqwawa.seq.network.ApiClient;
 import com.seqwawa.seq.network.BuildConfig;
 
@@ -24,6 +21,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.LongConsumer;
 import java.util.function.Supplier;
 
 public class MinecraftAuthService {
@@ -46,9 +44,12 @@ public class MinecraftAuthService {
     private volatile AuthException lastError;
 
     private volatile CompletableFuture<StoredAuthSession> inFlightAuthentication;
-    private long authenticationGeneration;
+    /** The current session's sign-in. Replaced, under this, whenever a session ends. */
+    private volatile SignIn current;
     /** The player signed out; nothing signs them in again until they connect. Guarded by this. */
     private boolean signedOutByUser;
+    /** Told the session's id each time a sign-in completes. */
+    private volatile LongConsumer whenSignedIn = session -> {};
 
     /**
      * The last join-and-complete sequence handed out. Mojang keeps only the latest
@@ -56,6 +57,16 @@ public class MinecraftAuthService {
      * one) interleaving would fail whichever backend asked Mojang second.
      */
     private CompletableFuture<?> lastJoin = CompletableFuture.completedFuture(null);
+
+    /** Signed out, as the game starts. */
+    public MinecraftAuthService() {
+        this(null);
+    }
+
+    /** Already signed in with {@code token}, as a test starts. The game starts signed out. */
+    public MinecraftAuthService(StoredAuthSession token) {
+        this.current = new SignIn(0, token);
+    }
 
     public static synchronized MinecraftAuthService getInstance() {
         if (instance == null) {
@@ -73,8 +84,18 @@ public class MinecraftAuthService {
     }
 
     /** Which session is current. It moves on whenever the session is cleared or invalidated. */
-    public synchronized long sessionGeneration() {
-        return authenticationGeneration;
+    public long sessionGeneration() {
+        return current.id();
+    }
+
+    /** The current session's sign-in. */
+    public SignIn currentSignIn() {
+        return current;
+    }
+
+    /** Tells {@code listener} the session's id each time a sign-in completes, on the auth thread. */
+    public void whenSignedIn(LongConsumer listener) {
+        whenSignedIn = listener == null ? session -> {} : listener;
     }
 
     /**
@@ -89,7 +110,7 @@ public class MinecraftAuthService {
     public CompletableFuture<String> ensureSessionToken(boolean forceRefresh, long generation) {
         synchronized (this) {
             StoredAuthSession session = getCurrentSession();
-            if (!isCurrentAuthenticationAttempt(generation, authenticationGeneration)
+            if (!isCurrentAuthenticationAttempt(generation, current.id())
                     || session == null
                     || !session.hasToken()) {
                 return CompletableFuture.failedFuture(new NotSignedInException());
@@ -116,7 +137,7 @@ public class MinecraftAuthService {
             }
 
             setState(AuthState.REQUESTING_CHALLENGE, null);
-            long startedFor = authenticationGeneration;
+            long startedFor = current.id();
             CompletableFuture<StoredAuthSession> future = ApiClient.getInstance()
                     .requestMinecraftAuthChallenge()
                     .thenApply(MinecraftAuthService::validateChallenge)
@@ -131,7 +152,7 @@ public class MinecraftAuthService {
                     .whenComplete((session, throwable) -> {
                         AuthException authException = throwable == null ? null : mapException(throwable);
                         synchronized (MinecraftAuthService.this) {
-                            if (!isCurrentAuthenticationAttempt(startedFor, authenticationGeneration)) {
+                            if (!isCurrentAuthenticationAttempt(startedFor, current.id())) {
                                 return;
                             }
                             inFlightAuthentication = null;
@@ -153,8 +174,7 @@ public class MinecraftAuthService {
                                 "[Auth] Authenticated Minecraft account username='{}' expiresAt={}",
                                 session.minecraftUsername(),
                                 session.expiresAt());
-                        // A board that found no session can read Leaf now, without waiting out its minute.
-                        LeafQuestService.getInstance().markStale();
+                        whenSignedIn.accept(startedFor);
                     });
             inFlightAuthentication = future;
             return future;
@@ -266,7 +286,7 @@ public class MinecraftAuthService {
     }
 
     private synchronized void advanceAuthentication(long startedFor, AuthState nextState) {
-        if (!isCurrentAuthenticationAttempt(startedFor, authenticationGeneration)) {
+        if (!isCurrentAuthenticationAttempt(startedFor, current.id())) {
             throw new CancellationException("Authentication attempt was superseded.");
         }
         setState(nextState, null);
@@ -315,8 +335,9 @@ public class MinecraftAuthService {
         return session.token();
     }
 
+    /** The current session's token, expired or not, or null while signed out. */
     public StoredAuthSession getCurrentSession() {
-        return SeqClient.getConfigManager().getStoredAuthSession();
+        return current.token();
     }
 
     public boolean isTokenExpired() {
@@ -350,36 +371,25 @@ public class MinecraftAuthService {
         return signedOutByUser;
     }
 
-    private void endSession(boolean byUser) {
-        synchronized (this) {
-            signedOutByUser = byUser;
-            authenticationGeneration++;
-            inFlightAuthentication = null;
-            SeqClient.getConfigManager().clearAuthSession();
-            setState(AuthState.IDLE, null);
-        }
-        resetSessionServices();
+    private synchronized void endSession(boolean byUser) {
+        signedOutByUser = byUser;
+        startNextSession();
+        setState(AuthState.IDLE, null);
     }
 
-    public void invalidateSession(AuthErrorCode code, String message) {
-        synchronized (this) {
-            authenticationGeneration++;
-            inFlightAuthentication = null;
-            SeqClient.getConfigManager().clearAuthSession();
-            setState(AuthState.FAILED, new AuthException(code, message, true));
-        }
-        resetSessionServices();
+    /** Ends the session whose token the backend refused. The next sign-in starts afresh. */
+    public synchronized void invalidateSession(AuthErrorCode code, String message) {
+        startNextSession();
+        setState(AuthState.FAILED, new AuthException(code, message, true));
     }
 
     /**
-     * The raid progress, balance and quests belong to the session that just ended. They
-     * live on the game thread, and a session can end on the socket's or this service's.
+     * Leaves the ended session's sign-in, token and all, with that session, and starts the
+     * next one signed out. A sign-in still running finishes for the ended one, so it is dropped.
      */
-    private static void resetSessionServices() {
-        ClientThread.execute(() -> {
-            GuildRaidProgressService.getInstance().reset();
-            LeafQuestService.getInstance().reset();
-        });
+    private void startNextSession() {
+        current = new SignIn(current.id() + 1, null);
+        inFlightAuthentication = null;
     }
 
     public void clearSessionIfNotActiveProfile(UUID activeProfileId) {
@@ -441,11 +451,11 @@ public class MinecraftAuthService {
     }
 
     private synchronized StoredAuthSession storeSession(long startedFor, MinecraftAuthCompleteResponse response) {
-        if (!isCurrentAuthenticationAttempt(startedFor, authenticationGeneration)) {
+        if (!isCurrentAuthenticationAttempt(startedFor, current.id())) {
             throw new CancellationException("Authentication attempt was superseded.");
         }
         StoredAuthSession session = toStoredSession(unwrapCompleteResponse(response));
-        SeqClient.getConfigManager().setAuthSession(session);
+        current.setToken(session);
         return session;
     }
 

@@ -2,7 +2,6 @@ package com.seqwawa.seq.session;
 
 import com.seqwawa.seq.accessors.NotificationAccessor;
 import com.seqwawa.seq.client.SeqClient;
-import com.seqwawa.seq.config.ConfigManager;
 import com.seqwawa.seq.managers.GuildPresenceManager;
 import com.seqwawa.seq.managers.GuildRaidProgressService;
 import com.seqwawa.seq.managers.LeafQuestService;
@@ -15,18 +14,10 @@ import com.seqwawa.seq.network.LeafEventStream;
 import com.seqwawa.seq.network.auth.AuthErrorCode;
 import com.seqwawa.seq.network.auth.MinecraftAuthService;
 import com.seqwawa.seq.network.auth.RaidProfilesSession;
-import com.seqwawa.seq.network.auth.StoredAuthSession;
 import com.seqwawa.seq.ui.unlock.UnlockOverlay;
 
 /** The steps a session's end takes in the game, each the call the game made for it before. */
 final class LiveSessionSteps implements SessionManager.Steps {
-
-    @Override
-    public String signedInAccount() {
-        ConfigManager config = SeqClient.getConfigManager();
-        StoredAuthSession stored = config == null ? null : config.getStoredAuthSession();
-        return stored == null ? null : stored.minecraftUuid();
-    }
 
     @Override
     public void resetGuildStorage() {

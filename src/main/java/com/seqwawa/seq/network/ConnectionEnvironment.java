@@ -11,6 +11,7 @@ import com.seqwawa.seq.managers.TreasuryOutManager;
 import com.seqwawa.seq.model.WynnClassType;
 import com.seqwawa.seq.network.auth.AuthErrorCode;
 import com.seqwawa.seq.network.auth.MinecraftAuthService;
+import com.seqwawa.seq.network.auth.StoredAuthSession;
 import com.seqwawa.seq.session.EndReason;
 import com.seqwawa.seq.session.SessionManager;
 import com.seqwawa.seq.utils.WynnClassCache;
@@ -107,6 +108,9 @@ record ConnectionEnvironment(
         void allowSignIn();
 
         boolean isSignedOutByUser();
+
+        /** The Minecraft name the current sign-in speaks for, or null while signed out. */
+        String signedInUsername();
     }
 
     /** The parts of the game the connection reads from, or reports to. */
@@ -223,6 +227,12 @@ record ConnectionEnvironment(
         public boolean isSignedOutByUser() {
             MinecraftAuthService auth = SeqClient.getAuthService();
             return auth != null && auth.isSignedOutByUser();
+        }
+
+        @Override
+        public String signedInUsername() {
+            StoredAuthSession signedIn = SeqClient.getAuthService().getCurrentSession();
+            return signedIn == null ? null : signedIn.minecraftUsername();
         }
     }
 

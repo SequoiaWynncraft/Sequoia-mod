@@ -16,6 +16,7 @@ import com.seqwawa.seq.model.war.WarPlannerSnapshot.RosterMember;
 import com.seqwawa.seq.network.ApiClient;
 import com.seqwawa.seq.network.ApiClient.ApiException;
 import com.seqwawa.seq.network.WynncraftServerPolicy;
+import com.seqwawa.seq.network.auth.MinecraftAuthService;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -171,11 +172,10 @@ public final class WarPlannerManager {
         tick(WynncraftServerPolicy.isCurrentServerAllowed(), hasSessionToken());
     }
 
-    /** Whether a backend session token is stored; logout and session invalidation clear it. */
+    /** Whether the session has a backend token; logout and session invalidation end it. */
     static boolean hasSessionToken() {
-        return SeqClient.getConfigManager() != null
-                && SeqClient.getConfigManager().getToken() != null
-                && !SeqClient.getConfigManager().getToken().isBlank();
+        var signedIn = MinecraftAuthService.getInstance().getCurrentSession();
+        return signedIn != null && signedIn.hasToken();
     }
 
     public synchronized void tick(boolean contextAllowed, boolean hasToken) {

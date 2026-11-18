@@ -11,7 +11,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.seqwawa.seq.model.WynnClassType;
 import com.seqwawa.seq.network.auth.AuthErrorCode;
 import com.seqwawa.seq.network.auth.AuthException;
-import com.seqwawa.seq.network.auth.StoredAuthSession;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -156,9 +155,8 @@ class ConnectionLifecycleTest {
     }
 
     @Test
-    void theOpenNoticeNamesTheAccountTheStoredSessionBelongsTo() {
-        harness.config.setAuthSession(new StoredAuthSession(
-                "stored", Instant.now().plusSeconds(3_600), ConnectionHarness.PROFILE.toString(), "Sequoian"));
+    void theOpenNoticeNamesTheAccountTheSignInSpeaksFor() {
+        harness.tokens.signedInUsername = "Sequoian";
         harness.connectManually();
 
         harness.open();

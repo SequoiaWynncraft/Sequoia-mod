@@ -1532,9 +1532,22 @@ public final class WarTerritoryQueueManager {
     }
 
     static final class RuntimeAvailabilityContext implements AvailabilityContext {
+        private final java.util.function.Supplier<WarPlannerManager> planner;
+        private final BooleanSupplier sessionActive;
+
+        RuntimeAvailabilityContext() {
+            this(SeqClient::getWarPlannerManager, WarPlannerManager::hasSessionToken);
+        }
+
+        /** Reads availability from {@code planner}, and the session from {@code sessionActive}. */
+        RuntimeAvailabilityContext(java.util.function.Supplier<WarPlannerManager> planner, BooleanSupplier sessionActive) {
+            this.planner = java.util.Objects.requireNonNull(planner, "planner");
+            this.sessionActive = java.util.Objects.requireNonNull(sessionActive, "sessionActive");
+        }
+
         @Override
         public boolean available() {
-            WarPlannerManager manager = SeqClient.getWarPlannerManager();
+            WarPlannerManager manager = planner.get();
             if (manager == null) {
                 return false;
             }
@@ -1544,24 +1557,24 @@ public final class WarTerritoryQueueManager {
 
         @Override
         public String playerUuid() {
-            WarPlannerManager manager = SeqClient.getWarPlannerManager();
+            WarPlannerManager manager = planner.get();
             return manager == null ? null : manager.playerUuid();
         }
 
         @Override
         public boolean sessionActive() {
-            return WarPlannerManager.hasSessionToken();
+            return sessionActive.getAsBoolean();
         }
 
         @Override
         public boolean accessDenied() {
-            WarPlannerManager manager = SeqClient.getWarPlannerManager();
+            WarPlannerManager manager = planner.get();
             return manager != null && manager.state() == WarPlannerManager.State.FORBIDDEN;
         }
 
         @Override
         public void refreshAvailability() {
-            WarPlannerManager manager = SeqClient.getWarPlannerManager();
+            WarPlannerManager manager = planner.get();
             if (manager != null) {
                 manager.refreshNow();
             }

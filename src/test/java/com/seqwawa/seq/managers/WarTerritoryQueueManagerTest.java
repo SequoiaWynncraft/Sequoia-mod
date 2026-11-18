@@ -6,16 +6,12 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.seqwawa.seq.client.SeqClient;
-import com.seqwawa.seq.config.ConfigManager;
 import com.seqwawa.seq.model.war.WarPlannerAccess;
 import com.seqwawa.seq.model.war.WarTerritoryQueueFeed;
 import com.seqwawa.seq.model.war.WarTerritoryQueueFeed.Participant;
 import com.seqwawa.seq.model.war.WarTerritoryQueueFeed.TerritoryQueue;
 import com.seqwawa.seq.network.ApiClient;
-import com.seqwawa.seq.network.auth.StoredAuthSession;
 import java.lang.reflect.Proxy;
-import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -30,15 +26,9 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
 import net.minecraft.network.chat.TextColor;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
 class WarTerritoryQueueManagerTest {
     private static final Instant NOW = Instant.parse("2026-08-24T12:00:00Z");
-    private static final StoredAuthSession SESSION =
-            new StoredAuthSession("session-token", NOW.plusSeconds(86_400), "self-uuid", "Self");
-
-    @TempDir
-    Path tempDir;
 
     @Test
     void activeQueuesOrderTiesAndAdvanceUsingServerTimeEvenWhenPollingFails() {
@@ -1578,11 +1568,11 @@ class WarTerritoryQueueManagerTest {
         MutableClock clock = new MutableClock(NOW);
         ArrayDeque<CompletableFuture<WarPlannerAccess>> accessResponses = new ArrayDeque<>();
         WarPlannerManager planner = new WarPlannerManager(plannerGateway(accessResponses), clock);
-        withRuntimeSession(planner, config -> {
+        withRuntimeSession(planner, session -> {
             FakeGateway gateway = new FakeGateway();
             gateway.ignoreFetchCancellation = true;
             WarTerritoryQueueManager manager = new WarTerritoryQueueManager(
-                    gateway, clock, new WarTerritoryQueueManager.RuntimeAvailabilityContext(), () -> true);
+                    gateway, clock, session.context(), () -> true);
             TerritoryQueue foreign =
                     queue(8, "Ragni", "other-uuid", "Other", NOW, NOW.plusSeconds(900), List.of());
             TerritoryQueue owned = queue(7, "Alekin", "self-uuid", "Self", NOW, NOW.plusSeconds(900), List.of());
@@ -1596,7 +1586,7 @@ class WarTerritoryQueueManagerTest {
             assertEquals(2, gateway.fetchCalls);
 
             // Mirrors /seq logout: the session token is cleared and planner access reset.
-            config.clearAuthSession();
+            session.signedIn.set(false);
             planner.reset();
             manager.tick();
 
@@ -1611,7 +1601,7 @@ class WarTerritoryQueueManagerTest {
             manager.tick();
             assertEquals(2, gateway.fetchCalls);
 
-            config.setAuthSession(SESSION);
+            session.signedIn.set(true);
             accessResponses.add(CompletableFuture.completedFuture(plannerAccess()));
             planner.tick(true, true);
             manager.tick();
@@ -1627,10 +1617,10 @@ class WarTerritoryQueueManagerTest {
         MutableClock clock = new MutableClock(NOW);
         ArrayDeque<CompletableFuture<WarPlannerAccess>> accessResponses = new ArrayDeque<>();
         WarPlannerManager planner = new WarPlannerManager(plannerGateway(accessResponses), clock);
-        withRuntimeSession(planner, config -> {
+        withRuntimeSession(planner, session -> {
             FakeGateway gateway = new FakeGateway();
             WarTerritoryQueueManager manager = new WarTerritoryQueueManager(
-                    gateway, clock, new WarTerritoryQueueManager.RuntimeAvailabilityContext(), () -> true);
+                    gateway, clock, session.context(), () -> true);
             TerritoryQueue foreign =
                     queue(8, "Ragni", "other-uuid", "Other", NOW, NOW.plusSeconds(900), List.of());
             accessResponses.add(CompletableFuture.completedFuture(plannerAccess()));
@@ -1654,26 +1644,18 @@ class WarTerritoryQueueManagerTest {
     }
 
     private interface SessionScenario {
-        void run(ConfigManager config) throws Exception;
+        void run(RuntimeSession session) throws Exception;
     }
 
-    /** Installs a real token store and planner as the runtime context sees them, then restores both. */
-    private void withRuntimeSession(WarPlannerManager planner, SessionScenario scenario) throws Exception {
-        ConfigManager previousConfig = SeqClient.configManager;
-        WarPlannerManager previousPlanner = SeqClient.warPlannerManager;
-        var constructor = ConfigManager.class.getDeclaredConstructor(Path.class, Path.class, boolean.class);
-        constructor.setAccessible(true);
-        ConfigManager config =
-                constructor.newInstance(tempDir.resolve("config.json"), tempDir.resolve("token"), false);
-        config.setAuthSession(SESSION);
-        SeqClient.configManager = config;
-        SeqClient.warPlannerManager = planner;
-        try {
-            scenario.run(config);
-        } finally {
-            SeqClient.configManager = previousConfig;
-            SeqClient.warPlannerManager = previousPlanner;
+    /** The planner and the sign-in as the runtime context reads them, signed in to start with. */
+    private record RuntimeSession(WarPlannerManager planner, java.util.concurrent.atomic.AtomicBoolean signedIn) {
+        WarTerritoryQueueManager.RuntimeAvailabilityContext context() {
+            return new WarTerritoryQueueManager.RuntimeAvailabilityContext(() -> planner, signedIn::get);
         }
+    }
+
+    private void withRuntimeSession(WarPlannerManager planner, SessionScenario scenario) throws Exception {
+        scenario.run(new RuntimeSession(planner, new java.util.concurrent.atomic.AtomicBoolean(true)));
     }
 
     private static WarPlannerAccess plannerAccess() {

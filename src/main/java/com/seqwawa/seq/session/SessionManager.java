@@ -2,7 +2,10 @@ package com.seqwawa.seq.session;
 
 import com.seqwawa.seq.client.ClientThread;
 import com.seqwawa.seq.client.SeqClient;
+import com.seqwawa.seq.managers.LeafQuestService;
 import com.seqwawa.seq.network.auth.AuthErrorCode;
+import com.seqwawa.seq.network.auth.MinecraftAuthService;
+import com.seqwawa.seq.network.auth.StoredAuthSession;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.Executor;
@@ -20,9 +23,6 @@ public final class SessionManager {
      * this class existed; {@link LiveSessionSteps} makes them, and a test records them.
      */
     public interface Steps {
-        /** The Minecraft account the current sign-in speaks for, as the backend said, or null. */
-        String signedInAccount();
-
         /** Hands pending guild reward bursts to the socket, so it runs while the previous account's is open. */
         void resetGuildStorage();
 
@@ -88,21 +88,34 @@ public final class SessionManager {
     private static SessionManager instance;
 
     private final Steps steps;
+    private final MinecraftAuthService auth;
     /** Where the game-side steps of an end that arrives from another thread run. */
     private final Executor gameThread;
     /** The account seen on the last tick. Game thread only. */
     private UUID lastSeenAccount;
+    /** Replaced on the game thread only; any thread may read it. */
+    private volatile Session current;
 
-    SessionManager(Steps steps, Executor gameThread) {
+    SessionManager(Steps steps, MinecraftAuthService auth, Executor gameThread) {
         this.steps = Objects.requireNonNull(steps, "steps");
+        this.auth = Objects.requireNonNull(auth, "auth");
         this.gameThread = Objects.requireNonNull(gameThread, "gameThread");
+        this.current = new Session(auth.currentSignIn(), auth::ensureSessionToken);
     }
 
     public static synchronized SessionManager getInstance() {
         if (instance == null) {
-            instance = new SessionManager(new LiveSessionSteps(), ClientThread.executor());
+            MinecraftAuthService auth = MinecraftAuthService.getInstance();
+            instance = new SessionManager(new LiveSessionSteps(), auth, ClientThread.executor());
+            // A board that found no session can read Leaf now, without waiting out its minute.
+            auth.whenSignedIn(session -> LeafQuestService.getInstance().markStale());
         }
         return instance;
+    }
+
+    /** The current session: the signed-in one, or a signed-out one waiting to sign in. */
+    public Session current() {
+        return current;
     }
 
     /**
@@ -121,7 +134,8 @@ public final class SessionManager {
         if (lastSeenAccount.equals(account)) {
             return false;
         }
-        boolean keepSignIn = signInSpeaksFor(account, steps.signedInAccount());
+        StoredAuthSession signedIn = auth.currentSignIn().token();
+        boolean keepSignIn = signInSpeaksFor(account, signedIn == null ? null : signedIn.minecraftUuid());
         SeqClient.LOGGER.info(
                 "[Seq] Active Minecraft account changed {} -> {} username={} preserveOperatorSession={}",
                 lastSeenAccount,
@@ -150,7 +164,11 @@ public final class SessionManager {
         }
     }
 
-    /** Ends the session, running the steps {@code reason} calls for, in order. */
+    /**
+     * Ends the current session, running the steps {@code reason} calls for, in order, and
+     * starts the next one. Game thread only, except for a rejected token, which arrives on
+     * the socket's thread: its sign-in ends at once and the rest follows on the game thread.
+     */
     public void end(EndReason reason) {
         switch (reason) {
             case EndReason.AccountSwitch accountSwitch -> endForAccountSwitch(accountSwitch.keepSignIn());
@@ -165,11 +183,25 @@ public final class SessionManager {
                 steps.tellPlayer("Backend session cleared. Run /seq connect to sign in again.");
             }
             case EndReason.TokenRejected rejected -> {
+                Session refused = current;
                 // At once, on the socket's thread: no request may use or renew the refused token.
                 steps.invalidateSignIn(rejected.code(), rejected.message());
-                gameThread.execute(this::endSessionState);
+                gameThread.execute(() -> {
+                    // Another end may have got there first; the session it started is not this one's to end.
+                    if (current == refused) {
+                        startNextSession();
+                    }
+                    endSessionState();
+                });
             }
         }
+    }
+
+    /** Leaves the current session ended, and starts the next one with the auth service's current sign-in. */
+    private void startNextSession() {
+        Session ended = current;
+        ended.end();
+        current = new Session(auth.currentSignIn(), auth::ensureSessionToken);
     }
 
     /**
@@ -195,6 +227,8 @@ public final class SessionManager {
             steps.resetConnectionForAccountChange();
             steps.clearSignIn();
         }
+        // Kept or not, the sign-in is the new account's now, and so is the session.
+        startNextSession();
         steps.forgetPartyClassBroadcast();
         steps.resetPartyFinder();
         steps.resetWynnPartySync();
@@ -218,8 +252,14 @@ public final class SessionManager {
      */
     private void signOut() {
         steps.signOut();
+        startNextSession();
         steps.disconnect();
         steps.resetPartyFinder();
         steps.clearRaidProfilesSignIn();
+        // What was read with the token goes at the next tick, as it did when the auth service reset it.
+        gameThread.execute(() -> {
+            steps.resetGuildRaidProgress();
+            steps.resetLeafQuests();
+        });
     }
 }

@@ -20,6 +20,7 @@ import com.seqwawa.seq.model.ChatItemPreview;
 import com.seqwawa.seq.model.RankPresentation;
 import com.seqwawa.seq.network.ConnectionManager;
 import com.seqwawa.seq.network.WynncraftServerPolicy;
+import com.seqwawa.seq.network.auth.MinecraftAuthService;
 import com.seqwawa.seq.utils.PacketTextNormalizer;
 import com.seqwawa.seq.utils.RankGradientAnimation;
 
@@ -69,7 +70,7 @@ public class ChatManager {
                 || WynncraftServerPolicy.currentScope() != WynncraftServerPolicy.Scope.MAIN) {
             return false;
         }
-        var session = SeqClient.getConfigManager().getStoredAuthSession();
+        var session = MinecraftAuthService.getInstance().getCurrentSession();
         return session != null && mc.getUser().getProfileId().toString().equalsIgnoreCase(session.minecraftUuid())
                 && shouldRelayForGuild(WynntilsGuildRankAccess.guildMembership(BACKEND_GUILD_NAME));
     }

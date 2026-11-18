@@ -11,6 +11,7 @@ import org.jetbrains.annotations.NotNull;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.network.ConnectionManager;
 import com.seqwawa.seq.managers.TreasuryOutManager;
+import com.seqwawa.seq.network.auth.StoredAuthSession;
 import com.seqwawa.seq.session.EndReason;
 import com.seqwawa.seq.session.SessionManager;
 import com.seqwawa.seq.utils.rendering.UiCanvas;
@@ -78,9 +79,9 @@ public class ConnectionScreen extends SequoiaPanelScreen {
         boolean treasuryAccount = isTreasuryAccount();
         boolean connected = showsConnected(
                 treasuryAccount, ConnectionManager.isTreasuryOutConnected(), ConnectionManager.isConnected());
-        boolean authenticated = SeqClient.getConfigManager().getToken() != null
-                && !SeqClient.getConfigManager().getToken().isBlank();
-        String minecraftUsername = SeqClient.getConfigManager().getMinecraftUsername();
+        StoredAuthSession signedIn = SeqClient.getAuthService().getCurrentSession();
+        boolean authenticated = signedIn != null && signedIn.hasToken();
+        String minecraftUsername = signedIn == null ? null : signedIn.minecraftUsername();
         String uptime = connectionManager.getUptimeString();
 
         float baseX = panelX + 34;
@@ -190,8 +191,8 @@ public class ConnectionScreen extends SequoiaPanelScreen {
             return true;
         }
 
-        String token = SeqClient.getConfigManager().getToken();
-        if (showsClearSession(token != null && !token.isBlank(), isTreasuryAccount()) && authButton().contains(at)) {
+        StoredAuthSession signedIn = SeqClient.getAuthService().getCurrentSession();
+        if (showsClearSession(signedIn != null && signedIn.hasToken(), isTreasuryAccount()) && authButton().contains(at)) {
             SessionManager.getInstance().end(EndReason.CLEAR_SESSION);
             return true;
         }

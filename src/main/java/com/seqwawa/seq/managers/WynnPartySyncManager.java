@@ -20,6 +20,7 @@ import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.config.Setting;
 import com.seqwawa.seq.model.Listing;
 import com.seqwawa.seq.network.ConnectionManager;
+import com.seqwawa.seq.network.auth.MinecraftAuthService;
 
 public class WynnPartySyncManager {
 
@@ -615,9 +616,8 @@ public class WynnPartySyncManager {
             localUsername = SeqClient.mc.player.getName().getString();
         }
         if (localUsername == null || localUsername.isBlank()) {
-            localUsername = SeqClient.getConfigManager() != null
-                    ? SeqClient.getConfigManager().getMinecraftUsername()
-                    : null;
+            var signedIn = MinecraftAuthService.getInstance().getCurrentSession();
+            localUsername = signedIn != null ? signedIn.minecraftUsername() : null;
         }
         if (localUsername == null || !MC_USERNAME_PATTERN.matcher(localUsername).matches()) {
             return null;

@@ -2,11 +2,22 @@ package com.seqwawa.seq.session;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.seqwawa.seq.client.TickQueue;
 import com.seqwawa.seq.network.auth.AuthErrorCode;
+import com.seqwawa.seq.network.auth.MinecraftAuthService;
+import com.seqwawa.seq.network.auth.NotSignedInException;
+import com.seqwawa.seq.network.auth.StoredAuthSession;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -23,10 +34,21 @@ class SessionManagerTest {
     private static final UUID OPERATOR = UUID.fromString("123e4567-e89b-12d3-a456-426614174000");
     private static final UUID SHARED_ACCOUNT = UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
 
-    private final RecordingSteps steps = new RecordingSteps();
+    /** Signed in as the operator; the backend names the account a token speaks for. */
+    private static final StoredAuthSession OPERATOR_SIGNED_IN = new StoredAuthSession(
+            "operator-token", Instant.now().plusSeconds(86_400), OPERATOR.toString(), "Operator");
+
+    /** The auth service, signed in; a token is handed out without asking the backend. */
+    private final MinecraftAuthService auth = new MinecraftAuthService(OPERATOR_SIGNED_IN) {
+        @Override
+        public CompletableFuture<String> ensureValidToken(boolean forceRefresh) {
+            return CompletableFuture.completedFuture(getCurrentSession().token());
+        }
+    };
+    private final RecordingSteps steps = new RecordingSteps(auth);
     /** The game thread: what an end from another thread hands over waits here until a test runs it. */
     private final TickQueue ticks = new TickQueue(() -> 0L);
-    private final SessionManager sessions = new SessionManager(steps, ticks);
+    private final SessionManager sessions = new SessionManager(steps, auth, ticks);
 
     @Test
     void anAccountSwitchResetsWhatThePreviousAccountHadInOrder() {
@@ -79,6 +101,11 @@ class SessionManagerTest {
                 "resetPartyFinder",
                 "clearRaidProfilesSignIn",
                 "resetWarPlanner"), steps.calls);
+
+        steps.calls.clear();
+        ticks.runDue();
+        assertEquals(List.of("resetGuildRaidProgress", "resetLeafQuests"), steps.calls,
+                "what was read with the token goes at the next tick, as it did before");
     }
 
     @Test
@@ -160,12 +187,81 @@ class SessionManagerTest {
 
     @Test
     void switchingBackToTheOperatorTheSignInSpeaksForKeepsIt() {
-        steps.signedInAccount = OPERATOR.toString();
         sessions.checkAccount(SHARED_ACCOUNT, "Shared");
 
         assertTrue(sessions.checkAccount(OPERATOR, "Operator"));
 
         assertFalse(steps.calls.contains("clearSignIn"));
+    }
+
+    @Test
+    void everyWayOutStartsANewSessionWithNoToken() {
+        for (EndReason reason : List.of(
+                new EndReason.AccountSwitch(OPERATOR, SHARED_ACCOUNT, false),
+                EndReason.SIGN_OUT,
+                EndReason.CLEAR_SESSION,
+                new EndReason.TokenRejected(AuthErrorCode.TOKEN_INVALID, "Rejected."))) {
+            Session before = sessions.current();
+
+            sessions.end(reason);
+            ticks.runDue();
+
+            assertTrue(before.isEnded(), reason + " ends the session");
+            assertNotSame(before, sessions.current(), reason + " starts another");
+            assertFalse(sessions.current().isEnded());
+            assertNull(sessions.current().signedIn(), reason + " leaves the next session signed out");
+            assertEquals(auth.sessionGeneration(), sessions.current().id(), "the auth service's count is the id");
+        }
+    }
+
+    @Test
+    void anEndedSessionsTokenRefusesWithoutSigningIn() {
+        Session signedIn = sessions.current();
+        assertEquals("operator-token", signedIn.token(false).join());
+
+        sessions.end(EndReason.SIGN_OUT);
+
+        assertNotSignedIn(signedIn.token(false));
+        assertNotSignedIn(signedIn.token(true));
+        assertNull(signedIn.signedIn());
+    }
+
+    @Test
+    void aSignInKeptAcrossASwitchServesOnlyTheNewSession() {
+        Session shared = sessions.current();
+
+        sessions.end(new EndReason.AccountSwitch(SHARED_ACCOUNT, OPERATOR, true));
+
+        assertEquals(shared.id(), sessions.current().id(), "the sign-in carries on");
+        assertEquals("operator-token", sessions.current().token(false).join());
+        assertNotSignedIn(shared.token(false));
+    }
+
+    @Test
+    void aRejectedTokenRefusesAtOnceAndTheNextSessionStartsOnTheGameThread() {
+        Session refused = sessions.current();
+
+        sessions.end(new EndReason.TokenRejected(AuthErrorCode.TOKEN_INVALID, "Rejected."));
+
+        assertSame(refused, sessions.current(), "the game thread has not caught up yet");
+        assertNotSignedIn(refused.token(false));
+
+        ticks.runDue();
+
+        assertTrue(refused.isEnded());
+        assertNotSame(refused, sessions.current());
+    }
+
+    @Test
+    void aRejectionThatLandsAfterAnotherEndLeavesTheNewSessionAlone() {
+        sessions.end(new EndReason.TokenRejected(AuthErrorCode.TOKEN_INVALID, "Rejected."));
+        sessions.end(EndReason.SIGN_OUT);
+        Session afterSignOut = sessions.current();
+
+        ticks.runDue();
+
+        assertSame(afterSignOut, sessions.current());
+        assertFalse(afterSignOut.isEnded());
     }
 
     @Test
@@ -176,18 +272,33 @@ class SessionManagerTest {
         assertTrue(SessionManager.signInSpeaksFor(OPERATOR, OPERATOR.toString()));
     }
 
-    /** Records each step by name, in the order it ran. */
+    private static void assertNotSignedIn(CompletableFuture<String> token) {
+        CompletionException failure = assertThrows(CompletionException.class, token::join);
+        assertInstanceOf(NotSignedInException.class, failure.getCause());
+    }
+
+    /** Records each step by name, in the order it ran; the sign-in steps also end the auth service's sign-in. */
     static final class RecordingSteps implements SessionManager.Steps {
         final List<String> calls = new ArrayList<>();
-        String signedInAccount;
+        private final MinecraftAuthService auth;
 
-        @Override public String signedInAccount() { return signedInAccount; }
+        RecordingSteps(MinecraftAuthService auth) {
+            this.auth = auth;
+        }
+
         @Override public void resetGuildStorage() { calls.add("resetGuildStorage"); }
         @Override public void resetConnectionForAccountChange() { calls.add("resetConnectionForAccountChange"); }
-        @Override public void clearSignIn() { calls.add("clearSignIn"); }
-        @Override public void signOut() { calls.add("signOut"); }
+        @Override public void clearSignIn() {
+            calls.add("clearSignIn");
+            auth.clearSession();
+        }
+        @Override public void signOut() {
+            calls.add("signOut");
+            auth.signOut();
+        }
         @Override public void invalidateSignIn(AuthErrorCode code, String message) {
             calls.add("invalidateSignIn: " + code + " " + message);
+            auth.invalidateSession(code, message);
         }
         @Override public void disconnect() { calls.add("disconnect"); }
         @Override public void dropPendingWarEvents() { calls.add("dropPendingWarEvents"); }

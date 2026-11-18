@@ -425,7 +425,7 @@ public class ConnectionManager {
         if (treasuryOnlyConnection) {
             notifyConnectionStatus("Connected for Treasury OUT. Verifying the cinfrascitizen Minecraft session...");
         } else {
-            String username = SeqClient.getConfigManager().getMinecraftUsername();
+            String username = environment.tokens().signedInUsername();
             notifyConnectionStatus(
                     username != null && !username.isBlank()
                             ? "Connected websocket for " + username + ". Waiting for backend authentication..."

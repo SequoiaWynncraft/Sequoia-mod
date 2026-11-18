@@ -55,6 +55,7 @@ import com.seqwawa.seq.model.war.WarTerritoryQueueFeed;
 import com.seqwawa.seq.network.auth.MinecraftAuthChallengeResponse;
 import com.seqwawa.seq.network.auth.MinecraftAuthCompleteRequest;
 import com.seqwawa.seq.network.auth.MinecraftAuthCompleteResponse;
+import com.seqwawa.seq.network.auth.MinecraftAuthService;
 import com.seqwawa.seq.utils.WynnClassCache;
 
 /**
@@ -1091,8 +1092,13 @@ public class ApiClient {
     }
 
     private HttpRequest.Builder newRequest(String resolvedBaseUrl, String path, boolean includeAuthHeader) {
-        return newRequestWithToken(
-                resolvedBaseUrl, path, includeAuthHeader ? SeqClient.getConfigManager().getToken() : null);
+        return newRequestWithToken(resolvedBaseUrl, path, includeAuthHeader ? signedInToken() : null);
+    }
+
+    /** The current session's token, expired or not; a 401 asks for a fresh one. */
+    private static String signedInToken() {
+        var signedIn = MinecraftAuthService.getInstance().getCurrentSession();
+        return signedIn == null ? null : signedIn.token();
     }
 
     /** A request carrying {@code token} as its bearer, or no Authorization header when it is null. */

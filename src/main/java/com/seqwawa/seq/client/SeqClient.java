@@ -418,6 +418,8 @@ public class SeqClient implements ClientModInitializer {
         worldEventManager = WorldEventManager.getInstance();
         ingredientGuideManager = IngredientGuideManager.getInstance();
         authService = MinecraftAuthService.getInstance();
+        // Before anything can sign in: it hears of each sign-in for the session it belongs to.
+        SessionManager.getInstance();
         SeqCommand.register();
         ImagePreviews.initialize();
         PrincessRaidCelebration.initialize();

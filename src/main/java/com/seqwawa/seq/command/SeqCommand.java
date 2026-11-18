@@ -776,8 +776,8 @@ public class SeqCommand {
 
         private static int runStatus(CommandContext<FabricClientCommandSource> ctx) {
                 boolean connected = ConnectionManager.isConnected();
-                String token = SeqClient.getConfigManager().getToken();
-                boolean hasToken = token != null && !token.isBlank();
+                var signedIn = SeqClient.getAuthService().getCurrentSession();
+                boolean hasToken = signedIn != null && signedIn.hasToken();
                 boolean tokenExpired = hasToken && SeqClient.getAuthService().isTokenExpired();
                 String uptime = ConnectionManager.getInstance().getUptimeString();
                 AuthException authError = SeqClient.getAuthService().getLastError();

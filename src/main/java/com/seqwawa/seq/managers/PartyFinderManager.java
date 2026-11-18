@@ -34,6 +34,7 @@ import com.seqwawa.seq.integrations.WynntilsWorldStateAccess;
 import com.seqwawa.seq.network.ApiClient;
 import com.seqwawa.seq.network.ConnectionManager;
 import com.seqwawa.seq.network.WynncraftServerPolicy;
+import com.seqwawa.seq.network.auth.MinecraftAuthService;
 import com.seqwawa.seq.network.auth.StoredAuthSession;
 import com.seqwawa.seq.utils.PlayerNameCache;
 
@@ -853,7 +854,7 @@ public class PartyFinderManager implements NotificationAccessor {
         }
         return resolveIdentityUuid(
                 currentPlayerUuid,
-                SeqClient.getConfigManager() != null ? SeqClient.getConfigManager().getStoredAuthSession() : null);
+                MinecraftAuthService.getInstance().getCurrentSession());
     }
 
     // ══════════════════════════════════════════════════════════════
