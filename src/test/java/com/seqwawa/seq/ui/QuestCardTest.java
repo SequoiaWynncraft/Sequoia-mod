@@ -34,6 +34,16 @@ class QuestCardTest {
     }
 
     @Test
+    void theRewardSaysTheXpBesideTheLeafWhileBothFit() {
+        // "+300" with its Leaf is 35, a 6 gap, and "+150 XP" is 42: 83 in all.
+        assertEquals(new QuestCard.RewardLine("+300", "+150 XP"), QuestCard.rewardLine(300, 150, 83, 6, LEAF, TEXT));
+        assertEquals(new QuestCard.RewardLine("+300", null), QuestCard.rewardLine(300, 150, 82, 6, LEAF, TEXT),
+                "the Leaf matters more, so the XP goes first");
+        assertEquals(new QuestCard.RewardLine("+300", null), QuestCard.rewardLine(300, 0, 200, 6, LEAF, TEXT));
+        assertNull(QuestCard.rewardLine(300, 150, 20, 6, LEAF, TEXT));
+    }
+
+    @Test
     void aShortQuestsBarHasAPartForEachRaid() {
         assertEquals(3, QuestCard.notches(3));
         assertEquals(12, QuestCard.notches(12));

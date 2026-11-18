@@ -80,8 +80,9 @@ class UnlockPopupTest {
 
     @Test
     void aLevelUpIsACeremony() {
-        assertEquals(new UnlockPopup(Kind.CEREMONY, "Sequoia level", "Level 8", "Leaf level up", 0, 0, "level", null),
-                from("level_up", "{\"level\":8}"));
+        assertEquals(new UnlockPopup(Kind.CEREMONY, "Sequoia level", "Level 8", "Leaf level up", 250, 0, "level", null),
+                from("level_up", "{\"level\":8,\"leaf\":250}"));
+        assertEquals(0, from("level_up", "{\"level\":8}").leaf(), "a level reached before levels paid Leaf");
     }
 
     @Test

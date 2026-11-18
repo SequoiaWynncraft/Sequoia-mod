@@ -96,7 +96,7 @@ final class RecentLeaf {
             }
             case "level_up" -> {
                 long level = number(data, "level");
-                yield new Row(Kind.LEVEL, null, "level", "Level " + level, "Level up", 0, level, at);
+                yield new Row(Kind.LEVEL, null, "level", "Level " + level, "Level up", number(data, "leaf"), level, at);
             }
             default -> null;
         };

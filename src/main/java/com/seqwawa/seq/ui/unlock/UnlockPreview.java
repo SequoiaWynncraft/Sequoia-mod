@@ -196,7 +196,7 @@ public final class UnlockPreview {
                 event(3, "achievement_paid", at.minus(Duration.ofHours(3)),
                         "{\"ladder\":\"raid:NOTG\",\"milestone\":\"gold\",\"tier\":\"gold\",\"threshold\":100,"
                                 + "\"label\":\"Gold\",\"leaf\":1000,\"xp\":1000}"),
-                event(2, "level_up", at.minus(Duration.ofHours(3)), "{\"level\":7}"),
+                event(2, "level_up", at.minus(Duration.ofHours(3)), "{\"level\":7,\"leaf\":225}"),
                 event(1, "leaf_earned", at.minus(Duration.ofHours(5)),
                         "{\"source\":\"war\",\"leaf\":26,\"xp\":26,\"detail\":\"Ragni\",\"in_claim\":false}"));
         return new LeafQuestService.Snapshot(new LeafAccount(12_480, 13_120, new LeafAccount.Level(7, 640, 2_500)), quests,
@@ -226,7 +226,7 @@ public final class UnlockPreview {
                         + "\"threshold\":100,\"label\":\"Gold\",\"leaf\":1000,\"xp\":1000}"),
                 popup("achievement_paid", "{\"ladder\":\"raid:TNA\",\"milestone\":\"diamond\",\"tier\":\"diamond\","
                         + "\"threshold\":1000,\"label\":\"Diamond\",\"leaf\":5000,\"xp\":5000}"),
-                popup("level_up", "{\"level\":8}"));
+                popup("level_up", "{\"level\":8,\"leaf\":250}"));
     }
 
     private static UnlockPopup popup(String type, String data) {

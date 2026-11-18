@@ -66,7 +66,7 @@ public record UnlockPopup(
                         number(data, "leaf"), number(data, "xp"), tier, emblem(text(data, "ladder")));
             }
             case "level_up" -> new UnlockPopup(Kind.CEREMONY, "Sequoia level", "Level " + number(data, "level"),
-                    "Leaf level up", 0, 0, "level", null);
+                    "Leaf level up", number(data, "leaf"), 0, "level", null);
             default -> null;
         };
     }

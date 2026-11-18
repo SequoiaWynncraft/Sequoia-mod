@@ -41,10 +41,11 @@ class RecentLeafTest {
     }
 
     @Test
-    void aLevelUpShowsTheLevelInsteadOfAnAmount() {
-        Row row = RecentLeaf.row(event(1, "level_up", "{\"level\":8}"));
+    void aLevelUpShowsTheLevelAndTheLeafItPaid() {
+        Row row = RecentLeaf.row(event(1, "level_up", "{\"level\":8,\"leaf\":250}"));
 
-        assertEquals(new Row(Kind.LEVEL, null, "level", "Level 8", "Level up", 0, 8, AT), row);
+        assertEquals(new Row(Kind.LEVEL, null, "level", "Level 8", "Level up", 250, 8, AT), row);
+        assertEquals(0, RecentLeaf.row(event(1, "level_up", "{\"level\":8}")).leaf());
     }
 
     @Test

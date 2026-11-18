@@ -44,8 +44,7 @@ final class QuestCard {
 
     /**
      * The Leaf a quest pays as it fits in {@code room}: in full, then shortened
-     * ("+12.5k"). Null when even that does not fit. The XP is left to the header's
-     * bar, so the card says only what matters.
+     * ("+12.5k"). Null when even that does not fit.
      *
      * @param leafWidth how wide an amount is drawn with its Leaf
      */
@@ -54,6 +53,26 @@ final class QuestCard {
         if (leafWidth.apply(full) <= room) return full;
         String shortened = "+" + QuestBoardScreen.shortCount(leaf);
         return leafWidth.apply(shortened) <= room ? shortened : null;
+    }
+
+    /** A quest's reward line: the Leaf, and the XP beside it, or null when it does not fit. */
+    record RewardLine(String leaf, String xp) {}
+
+    /**
+     * What a quest pays, as it fits in {@code room}: the Leaf and the XP
+     * ("+300 [leaf]  +150 XP"), then the Leaf alone. Null when not even the Leaf fits.
+     *
+     * @param gap the space between the Leaf and the XP
+     * @param leafWidth how wide an amount is drawn with its Leaf
+     * @param xpWidth how wide the XP is drawn
+     */
+    static RewardLine rewardLine(long leaf, long xp, float room, float gap, Function<String, Float> leafWidth,
+            Function<String, Float> xpWidth) {
+        String leafText = rewardText(leaf, room, leafWidth);
+        if (leafText == null) return null;
+        String xpText = xp > 0 ? "+" + QuestBoardScreen.formatCount(xp) + " XP" : null;
+        boolean both = xpText != null && leafWidth.apply(leafText) + gap + xpWidth.apply(xpText) <= room;
+        return new RewardLine(leafText, both ? xpText : null);
     }
 
     /** Splits text into lines no wider than {@code width}, breaking at spaces. */
@@ -147,12 +166,20 @@ final class QuestCard {
             PixelArt.text(canvas, title.get(i), cx, titleY + i * 6 * p, 10, color(TEXT_PRIMARY), HorizontalAlign.CENTER);
         }
 
-        // The Leaf it pays, then the bar with how far along written on it.
-        String reward = quest.reward() == null ? null : rewardText(quest.reward().leaf(), inner,
-                text -> PixelArt.leafAmountWidth(text, 10, p));
+        // The Leaf and XP it pays, as the popups write them, then the bar with how far along written on it.
+        float gap = 3 * p;
+        RewardLine reward = quest.reward() == null ? null : rewardLine(quest.reward().leaf(), quest.reward().xp(), inner,
+                gap, text -> PixelArt.leafAmountWidth(text, 10, p), text -> PixelArt.outlinedInkWidth(text, 10));
         if (reward != null) {
-            float rewardWidth = PixelArt.leafAmountWidth(reward, 10, p);
-            PixelArt.leafAmount(canvas, reward, PixelArt.snap(cx - rewardWidth / 2, p), y + 61 * p, 10, 1f, p);
+            float rewardWidth = PixelArt.leafAmountWidth(reward.leaf(), 10, p)
+                    + (reward.xp() == null ? 0 : gap + PixelArt.outlinedInkWidth(reward.xp(), 10));
+            float rewardY = y + 61 * p;
+            float after = PixelArt.leafAmount(canvas, reward.leaf(), PixelArt.snap(cx - rewardWidth / 2, p), rewardY, 10,
+                    1f, p);
+            if (reward.xp() != null) {
+                PixelArt.outlinedText(canvas, reward.xp(), after + gap, rewardY, 10, color(TEXT_SECONDARY), 1f,
+                        HorizontalAlign.LEFT);
+            }
         }
         float barX = x + PAD * p;
         float barY = y + 67 * p;
