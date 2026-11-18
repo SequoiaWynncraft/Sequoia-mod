@@ -37,6 +37,8 @@ public final class LeafEventStream {
     private volatile Thread worker;
     private volatile Stream<String> open;
     private volatile String lastEventId;
+    /** Moves on at each {@link #reset()}; a worker's popups carry the value it started under. */
+    private long generation;
 
     private LeafEventStream() {}
 
@@ -48,7 +50,8 @@ public final class LeafEventStream {
     public synchronized void tick(boolean allowed) {
         boolean wanted = allowed && WynncraftServerPolicy.isCurrentServerAllowed() && ConnectionManager.isConnected();
         if (wanted && worker == null) {
-            Thread thread = new Thread(this::run, "seq-leaf-events");
+            long startedFor = generation;
+            Thread thread = new Thread(() -> run(startedFor), "seq-leaf-events");
             thread.setDaemon(true);
             worker = thread;
             thread.start();
@@ -61,6 +64,24 @@ public final class LeafEventStream {
     public synchronized void reset() {
         stop();
         lastEventId = null;
+        generation++;
+    }
+
+    synchronized long generation() {
+        return generation;
+    }
+
+    /**
+     * {@code show}, for the client thread to run, unless the stream has been reset by then.
+     * An account change resets the stream and clears the popups in one tick, so a popup
+     * posted just before would otherwise still show the previous account's unlock.
+     */
+    Runnable unlessResetSince(long startedFor, Runnable show) {
+        return () -> {
+            if (generation() == startedFor) {
+                show.run();
+            }
+        };
     }
 
     public synchronized void stop() {
@@ -71,7 +92,7 @@ public final class LeafEventStream {
         if (thread != null) thread.interrupt();
     }
 
-    private void run() {
+    private void run(long startedFor) {
         long retryMs = FIRST_RETRY_MS;
         boolean freshToken = false;
         while (worker == Thread.currentThread()) {
@@ -94,7 +115,7 @@ public final class LeafEventStream {
                 } else {
                     retryMs = FIRST_RETRY_MS;
                     waitMs = 1_000;
-                    read(response.body());
+                    read(response.body(), startedFor);
                 }
             } catch (InterruptedException interrupted) {
                 return;
@@ -111,7 +132,7 @@ public final class LeafEventStream {
         }
     }
 
-    private void read(Stream<String> lines) {
+    private void read(Stream<String> lines, long startedFor) {
         open = lines;
         try (lines) {
             SseParser parser = new SseParser();
@@ -119,7 +140,10 @@ public final class LeafEventStream {
             while (worker == Thread.currentThread() && iterator.hasNext()) {
                 SseParser.Event event = parser.accept(iterator.next());
                 if (parser.lastEventId() != null) lastEventId = parser.lastEventId();
-                if (event != null) dispatch(event, popup -> SeqClient.mc.execute(() -> UnlockOverlay.getInstance().enqueue(popup)));
+                if (event != null) {
+                    dispatch(event, popup -> SeqClient.mc.execute(
+                            unlessResetSince(startedFor, () -> UnlockOverlay.getInstance().enqueue(popup))));
+                }
             }
         } finally {
             open = null;
