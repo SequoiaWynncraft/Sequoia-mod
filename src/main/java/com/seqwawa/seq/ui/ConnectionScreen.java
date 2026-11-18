@@ -113,11 +113,9 @@ public class ConnectionScreen extends Screen {
 
     private void renderStatusPanel(UiCanvas canvas, String fontName, float panelX, float panelWidth, float screenHeight) {
         ConnectionManager connectionManager = ConnectionManager.getInstance();
-        boolean treasuryAccount = SeqClient.mc.getUser() != null
-                && TreasuryOutManager.isTreasuryMinecraftAccount(SeqClient.mc.getUser().getName());
-        boolean connected = treasuryAccount
-                ? ConnectionManager.isTreasuryOutConnected()
-                : ConnectionManager.isConnected();
+        boolean treasuryAccount = isTreasuryAccount();
+        boolean connected = showsConnected(
+                treasuryAccount, ConnectionManager.isTreasuryOutConnected(), ConnectionManager.isConnected());
         boolean authenticated = SeqClient.getConfigManager().getToken() != null
                 && !SeqClient.getConfigManager().getToken().isBlank();
         String minecraftUsername = SeqClient.getConfigManager().getMinecraftUsername();
@@ -254,7 +252,9 @@ public class ConnectionScreen extends Screen {
         ConnectionManager connectionManager = ConnectionManager.getInstance();
         ButtonBounds connectionButton = getConnectionButtonBounds();
         if (isHovered(mx, my, connectionButton.x(), connectionButton.y(), connectionButton.w(), connectionButton.h())) {
-            if (ConnectionManager.isTreasuryOutConnected()) {
+            // The same test as the label, so a button reading "Disconnect" disconnects.
+            if (showsConnected(
+                    isTreasuryAccount(), ConnectionManager.isTreasuryOutConnected(), ConnectionManager.isConnected())) {
                 connectionManager.disconnectManually();
             } else {
                 connectionManager.connectManually();
@@ -272,6 +272,19 @@ public class ConnectionScreen extends Screen {
         }
 
         return super.mouseClicked(click, outsideScreen);
+    }
+
+    /**
+     * Whether the screen shows this account as connected, which also makes the connection
+     * button read and act as Disconnect. The Treasury account has only its own connection.
+     */
+    static boolean showsConnected(boolean treasuryAccount, boolean treasuryConnected, boolean connected) {
+        return treasuryAccount ? treasuryConnected : connected;
+    }
+
+    private static boolean isTreasuryAccount() {
+        return SeqClient.mc.getUser() != null
+                && TreasuryOutManager.isTreasuryMinecraftAccount(SeqClient.mc.getUser().getName());
     }
 
     private ButtonBounds getConnectionButtonBounds() {
