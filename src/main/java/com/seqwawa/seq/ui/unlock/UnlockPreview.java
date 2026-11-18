@@ -150,8 +150,8 @@ public final class UnlockPreview {
                 // A new run folder opens Minecraft's accessibility onboarding first. Close it as Esc would.
                 if (mc.screen instanceof AccessibilityOnboardingScreen onboarding) {
                     onboarding.onClose();
-                } else if (mc.screen instanceof TitleScreen && SeqClient.assetManager != null
-                        && SeqClient.assetManager.getAsset("unlock_medal_gold") != null && inStage > 60) {
+                } else if (mc.screen instanceof TitleScreen && SeqClient.getAssetManager() != null
+                        && SeqClient.getAssetManager().getAsset("unlock_medal_gold") != null && inStage > 60) {
                     // Nor should the movement tutorial's hint sit over the screenshots.
                     mc.getTutorial().setStep(TutorialSteps.NONE);
                     createWorld(mc);

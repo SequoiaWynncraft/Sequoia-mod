@@ -14,9 +14,9 @@ final class AchievementBadgeRenderer {
 
     static boolean draw(UiCanvas canvas, AchievementsScreen.Row row, float x, float y, float size) {
         String key = assetKey(row);
-        AssetManager.Asset asset = SeqClient.assetManager == null ? null : SeqClient.assetManager.getAsset(key);
+        AssetManager.Asset asset = SeqClient.getAssetManager() == null ? null : SeqClient.getAssetManager().getAsset(key);
         boolean fallback = asset == null || asset.getImage() == null;
-        if (fallback && SeqClient.assetManager != null) asset = SeqClient.assetManager.getAsset("icon");
+        if (fallback && SeqClient.getAssetManager() != null) asset = SeqClient.getAssetManager().getAsset("icon");
         if (asset == null || asset.getImage() == null) return false;
 
         boolean framed = fallback || "raid".equals(row.kind());

@@ -1828,8 +1828,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     }
 
     private AssetManager.Asset getClassIcon(String className) {
-        if (className == null || SeqClient.assetManager == null) return null;
-        return SeqClient.assetManager.getAsset(className);
+        if (className == null || SeqClient.getAssetManager() == null) return null;
+        return SeqClient.getAssetManager().getAsset(className);
     }
 
     private boolean hasGazEarsMember(PartyListing party) {

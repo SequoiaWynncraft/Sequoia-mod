@@ -479,7 +479,7 @@ final class WorldEventMapMode {
     }
 
     private static AssetManager.Asset worldEventMarkerAsset() {
-        return SeqClient.assetManager == null ? null : SeqClient.assetManager.getAsset(WORLD_EVENT_MARKER_ASSET);
+        return SeqClient.getAssetManager() == null ? null : SeqClient.getAssetManager().getAsset(WORLD_EVENT_MARKER_ASSET);
     }
 
     private void applyWorldEventAutocompleteSelection() {

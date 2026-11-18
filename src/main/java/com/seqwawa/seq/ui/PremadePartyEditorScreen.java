@@ -417,9 +417,9 @@ public class PremadePartyEditorScreen extends Screen {
 
     /** Pulls whoever is in the player's Wynncraft party right now. */
     private void addCurrentParty() {
-        List<String> current = SeqClient.wynnPartySyncManager == null
+        List<String> current = SeqClient.getWynnPartySyncManager() == null
                 ? List.of()
-                : SeqClient.wynnPartySyncManager.getObservedMemberUsernames();
+                : SeqClient.getWynnPartySyncManager().getObservedMemberUsernames();
         String localUsername = SeqClient.mc != null && SeqClient.mc.getUser() != null
                 ? SeqClient.mc.getUser().getName()
                 : null;

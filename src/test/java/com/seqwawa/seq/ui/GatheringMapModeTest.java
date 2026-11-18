@@ -2,6 +2,7 @@ package com.seqwawa.seq.ui;
 
 import static org.junit.jupiter.api.Assertions.*;
 import com.seqwawa.seq.map.*;
+import com.seqwawa.seq.client.AppServices;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.managers.FontManager;
 import java.lang.reflect.Proxy;
@@ -65,9 +66,8 @@ class GatheringMapModeTest {
         boolean mapPanelExpanded = settings.sidebarPanelExpanded(WorldMapSidebarPanel.MAP_AND_TERRITORY);
         var resources = Set.copyOf(settings.resourceFilters());
         var professions = Map.copyOf(settings.professionToggles());
-        FontManager previousFont = SeqClient.fontManager;
+        AppServices previousApp = SeqClient.installApp(AppServices.builder().fontManager(new FontManager()).build());
         try {
-            SeqClient.fontManager = new FontManager();
             settings.setGatheringNodeSource(GatheringNodeSource.STATIC);
             settings.setSidebarPanelExpanded(WorldMapSidebarPanel.MAP_AND_TERRITORY, true);
             settings.setShowClusters(false);
@@ -179,7 +179,7 @@ class GatheringMapModeTest {
             assertEquals(viewport.worldToScreenX(50), rectangles.getFirst()[0] + rectangles.getFirst()[2] / 2);
             mode.close();
         } finally {
-            SeqClient.fontManager = previousFont;
+            SeqClient.installApp(previousApp);
             settings.setShowClusters(clusters);
             settings.setShowTerritories(territories);
             settings.setShowTerritoryNames(names);

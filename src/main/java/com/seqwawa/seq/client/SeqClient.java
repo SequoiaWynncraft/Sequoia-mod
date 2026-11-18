@@ -1,6 +1,5 @@
 package com.seqwawa.seq.client;
 
-import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.logging.LogUtils;
 import java.util.List;
 import java.util.UUID;
@@ -10,11 +9,8 @@ import lombok.Getter;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
-import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.Identifier;
-import org.lwjgl.glfw.GLFW;
 import com.seqwawa.seq.command.SeqCommand;
 import com.seqwawa.seq.config.ConfigManager;
 import com.seqwawa.seq.config.Setting;
@@ -34,7 +30,6 @@ import com.seqwawa.seq.managers.CombatState;
 import com.seqwawa.seq.managers.GuildRewardAutomationManager;
 import com.seqwawa.seq.managers.GuildStorageTracker;
 import com.seqwawa.seq.managers.GuildWarTrackerHandle;
-import com.seqwawa.seq.managers.GuildWarTrackers;
 import com.seqwawa.seq.managers.DiscordRankService;
 import com.seqwawa.seq.managers.IngredientGuideManager;
 import com.seqwawa.seq.managers.LeaderboardBadgeService;
@@ -50,7 +45,6 @@ import com.seqwawa.seq.managers.PrivateMessageGuildTagDecorator;
 import com.seqwawa.seq.managers.RaidPartySnapshotTracker;
 import com.seqwawa.seq.managers.RaidProfileStore;
 import com.seqwawa.seq.managers.SeqBadgeNametagRendererHandle;
-import com.seqwawa.seq.managers.SeqBadgeNametagRenderers;
 import com.seqwawa.seq.managers.ThemeManager;
 import com.seqwawa.seq.managers.TreasuryOutManager;
 import com.seqwawa.seq.managers.WynnPartySyncManager;
@@ -59,14 +53,12 @@ import com.seqwawa.seq.managers.WarPlannerManager;
 import com.seqwawa.seq.managers.WarTerritoryQueueManager;
 import com.seqwawa.seq.managers.WarTerritoryBoundsReminder;
 import com.seqwawa.seq.map.IngredientWaypointRenderer;
-import com.seqwawa.seq.model.WynnClassType;
 import com.seqwawa.seq.network.ConnectionManager;
 import com.seqwawa.seq.network.WynncraftServerPolicy;
 import com.seqwawa.seq.network.auth.MinecraftAuthService;
 import com.seqwawa.seq.network.auth.UnlinkedAccountWarning;
 import com.seqwawa.seq.radiance.RadianceCheckerClient;
 import com.seqwawa.seq.raids.tna.TnaLineupHelper;
-import com.seqwawa.seq.raids.tna.TnaSahurSoundDetector;
 import com.seqwawa.seq.scroll.CraftedScrollRangeVisualiserClient;
 import com.seqwawa.seq.session.SessionManager;
 import com.seqwawa.seq.ui.GuildMembersScreen;
@@ -84,7 +76,6 @@ import com.seqwawa.seq.ui.WorldMapScreen;
 import com.seqwawa.seq.ui.WarPlannerScreen;
 import com.seqwawa.seq.ui.WarTerritoryQueueHudRenderer;
 import com.seqwawa.seq.update.UpdateManager;
-import com.seqwawa.seq.utils.WynnClassCache;
 import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import org.slf4j.Logger;
 
@@ -95,17 +86,123 @@ public class SeqClient implements ClientModInitializer {
 
     public static final Minecraft mc = Minecraft.getInstance();
 
-    @Getter
-    public static FontManager fontManager;
+    /** Everything long-lived the mod keeps; see {@link AppServices}. */
+    private static volatile AppServices app;
 
-    public static GameManager gameManager;
-    public static AssetManager assetManager;
+    /**
+     * The long-lived parts of the mod, for mixins and commands. Null until the mod starts,
+     * and in a test that has not installed its own.
+     */
+    public static AppServices app() {
+        return app;
+    }
 
-    @Getter
-    public static ConfigManager configManager;
+    /** Installs {@code services} as the app, and returns the one it replaces. For tests; the mod installs its own. */
+    public static AppServices installApp(AppServices services) {
+        AppServices previous = app;
+        app = services;
+        return previous;
+    }
 
-    @Getter
-    public static PartyFinderManager partyFinderManager;
+    public static FontManager getFontManager() {
+        AppServices services = app;
+        return services == null ? null : services.fontManager();
+    }
+
+    public static GameManager getGameManager() {
+        AppServices services = app;
+        return services == null ? null : services.gameManager();
+    }
+
+    public static AssetManager getAssetManager() {
+        AppServices services = app;
+        return services == null ? null : services.assetManager();
+    }
+
+    public static ConfigManager getConfigManager() {
+        AppServices services = app;
+        return services == null ? null : services.configManager();
+    }
+
+    public static PartyFinderManager getPartyFinderManager() {
+        AppServices services = app;
+        return services == null ? null : services.partyFinderManager();
+    }
+
+    public static WarTerritoryBoundsReminder getWarTerritoryBoundsReminder() {
+        AppServices services = app;
+        return services == null ? null : services.warTerritoryBoundsReminder();
+    }
+
+    public static MinecraftAuthService getAuthService() {
+        AppServices services = app;
+        return services == null ? null : services.authService();
+    }
+
+    public static ChatManager getChatManager() {
+        AppServices services = app;
+        return services == null ? null : services.chatManager();
+    }
+
+    public static ChatRegexFilterManager getChatRegexFilterManager() {
+        AppServices services = app;
+        return services == null ? null : services.chatRegexFilterManager();
+    }
+
+    public static BombShareManager getBombShareManager() {
+        AppServices services = app;
+        return services == null ? null : services.bombShareManager();
+    }
+
+    public static TreasuryOutManager getTreasuryOutManager() {
+        AppServices services = app;
+        return services == null ? null : services.treasuryOutManager();
+    }
+
+    public static WynnPartySyncManager getWynnPartySyncManager() {
+        AppServices services = app;
+        return services == null ? null : services.wynnPartySyncManager();
+    }
+
+    public static GuildWarTrackerHandle getGuildWarTracker() {
+        AppServices services = app;
+        return services == null ? null : services.guildWarTracker();
+    }
+
+    public static GuildStorageTracker getGuildStorageTracker() {
+        AppServices services = app;
+        return services == null ? null : services.guildStorageTracker();
+    }
+
+    public static GuildRewardAutomationManager getGuildRewardAutomationManager() {
+        AppServices services = app;
+        return services == null ? null : services.guildRewardAutomationManager();
+    }
+
+    public static LeaderboardBadgeService getLeaderboardBadgeService() {
+        AppServices services = app;
+        return services == null ? null : services.leaderboardBadgeService();
+    }
+
+    public static DiscordRankService getDiscordRankService() {
+        AppServices services = app;
+        return services == null ? null : services.discordRankService();
+    }
+
+    public static SeqBadgeNametagRendererHandle getSeqBadgeNametagRenderer() {
+        AppServices services = app;
+        return services == null ? null : services.seqBadgeNametagRenderer();
+    }
+
+    public static WorldEventManager getWorldEventManager() {
+        AppServices services = app;
+        return services == null ? null : services.worldEventManager();
+    }
+
+    public static IngredientGuideManager getIngredientGuideManager() {
+        AppServices services = app;
+        return services == null ? null : services.ingredientGuideManager();
+    }
 
     /** The current session's war planner. */
     public static WarPlannerManager getWarPlannerManager() {
@@ -117,26 +214,10 @@ public class SeqClient implements ClientModInitializer {
         return SessionManager.getInstance().current().warQueue();
     }
 
-    public static WarTerritoryBoundsReminder warTerritoryBoundsReminder;
-
     /** The current session's Princess raid count and leaderboard. */
     public static PrincessRaidStatsManager getPrincessRaidStatsManager() {
         return SessionManager.getInstance().current().princessStats();
     }
-
-    @Getter
-    public static MinecraftAuthService authService;
-
-    public static ChatManager chatManager;
-
-    @Getter
-    public static ChatRegexFilterManager chatRegexFilterManager;
-
-    @Getter
-    public static BombShareManager bombShareManager;
-
-    @Getter
-    public static TreasuryOutManager treasuryOutManager;
 
     // ── Network config settings ──
     @Getter
@@ -347,42 +428,6 @@ public class SeqClient implements ClientModInitializer {
     @Getter
     public static Setting.BooleanSetting warPlannerLockTerritoriesSetting;
 
-    @Getter
-    public static WynnPartySyncManager wynnPartySyncManager;
-
-    @Getter
-    public static GuildWarTrackerHandle guildWarTracker;
-
-    @Getter
-    public static GuildStorageTracker guildStorageTracker;
-
-    @Getter
-    public static GuildRewardAutomationManager guildRewardAutomationManager;
-
-    @Getter
-    public static LeaderboardBadgeService leaderboardBadgeService;
-
-    @Getter
-    public static DiscordRankService discordRankService;
-
-    @Getter
-    public static SeqBadgeNametagRendererHandle seqBadgeNametagRenderer;
-
-    @Getter
-    public static WorldEventManager worldEventManager;
-
-    @Getter
-    public static IngredientGuideManager ingredientGuideManager;
-
-    private static KeyMapping openScreenKey;
-    private static KeyMapping openPartyFinderKey;
-    private static KeyMapping openWarPlannerKey;
-    private static KeyMapping openWorldMapKey;
-    private static KeyMapping openIngredientGuideKey;
-    private static KeyMapping shareBombsKey;
-    private static WynnClassType lastBroadcastPartyClass;
-    private static boolean wasInPartyFinder;
-    private static long lastProductionRecoveryAttemptAtMs;
 
     @Override
     public void onInitializeClient() {
@@ -390,35 +435,10 @@ public class SeqClient implements ClientModInitializer {
         ClientThread.install();
         ServerScopeTracker scopes = ServerScopeTracker.get();
         scopes.install();
-        TnaSahurSoundDetector.initialize();
-        fontManager = new FontManager();
-        gameManager = new GameManager();
-        partyFinderManager = new PartyFinderManager();
-        warTerritoryBoundsReminder = new WarTerritoryBoundsReminder();
-        wynnPartySyncManager = new WynnPartySyncManager();
-        guildWarTracker = GuildWarTrackers.create();
-        guildStorageTracker = GuildStorageTracker.getInstance();
-        guildRewardAutomationManager = new GuildRewardAutomationManager();
-        chatManager = new ChatManager();
-        bombShareManager = new BombShareManager();
-        treasuryOutManager = new TreasuryOutManager();
-        ConnectionManager.onTreasuryOutRecorded(treasuryOutManager::handleRecorded);
-        ConnectionManager.onTreasuryOutError(treasuryOutManager::handleError);
-        configManager = new ConfigManager();
-        chatRegexFilterManager = new ChatRegexFilterManager();
-        chatRegexFilterManager.settings().forEach(configManager::register);
-        chatRegexFilterManager.registerIncomingHooks();
-        configManager.load();
-        configManager.migrateToken();
-        ThemeManager.initialize();
-        leaderboardBadgeService = LeaderboardBadgeService.getInstance();
-        discordRankService = DiscordRankService.getInstance();
-        seqBadgeNametagRenderer = SeqBadgeNametagRenderers.createIfAvailable();
-        worldEventManager = WorldEventManager.getInstance();
-        ingredientGuideManager = IngredientGuideManager.getInstance();
-        authService = MinecraftAuthService.getInstance();
-        // Before anything can sign in: it hears of each sign-in for the session it belongs to.
-        SessionManager.getInstance();
+        AppServices services = new AppServices();
+        // Installed before it starts: the parts started later read the ones before them through it.
+        app = services;
+        services.start();
         SeqCommand.register();
         ImagePreviews.initialize();
         PrincessRaidCelebration.initialize();
@@ -443,29 +463,13 @@ public class SeqClient implements ClientModInitializer {
             gearSharingProtectionManager.onWorldChange(
                     autoDisableWynntilsGearsharingSetting != null && autoDisableWynntilsGearsharingSetting.getValue());
             resetWarTrackingState();
-            warTerritoryBoundsReminder.clear();
+            services.warTerritoryBoundsReminder().clear();
         });
         listenForServerScope(scopes);
         LightRoom.init();
 
-        KeyMapping.Category category =
-                KeyMapping.Category.register(Identifier.fromNamespaceAndPath("sequoia-mod", "controls"));
-
-        openScreenKey = KeyBindingHelper.registerKeyBinding(
-                new KeyMapping("key.sequoia-mod.open_settings", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_O, category));
-        openPartyFinderKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
-                "key.sequoia-mod.open_party_finder", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, category));
-        openWarPlannerKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
-                "key.sequoia-mod.open_war_planner", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, category));
-        openWorldMapKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
-                "key.sequoia-mod.open_world_map", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, category));
-        openIngredientGuideKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
-                "key.sequoia-mod.open_ingredient_guide",
-                InputConstants.Type.KEYSYM,
-                GLFW.GLFW_KEY_UNKNOWN,
-                category));
-        shareBombsKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
-                "key.sequoia-mod.share_bombs", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, category));
+        services.registerKeys();
+        AppServices.Keys keys = services.keys();
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             // Listens for Leaf rewards only on Wynncraft and while connected to Sequoia; it checks both itself.
@@ -473,34 +477,34 @@ public class SeqClient implements ClientModInitializer {
             CombatState.tick();
             PrivateMessageGuildTagDecorator.tick();
             ConnectionManager.tickGuildRankObservations();
-            while (openScreenKey.consumeClick()) {
+            while (keys.openScreen().consumeClick()) {
                 if (client.screen == null) {
                     openMainScreen();
                 }
             }
-            while (openPartyFinderKey.consumeClick()) {
+            while (keys.openPartyFinder().consumeClick()) {
                 if (client.screen == null) {
                     openPartyFinderScreen();
                 }
             }
-            while (openWarPlannerKey.consumeClick()) {
+            while (keys.openWarPlanner().consumeClick()) {
                 if (client.screen == null) {
                     openWarPlannerScreen();
                 }
             }
-            while (openWorldMapKey.consumeClick()) {
+            while (keys.openWorldMap().consumeClick()) {
                 if (client.screen == null) {
                     openWorldMapScreen();
                 }
             }
-            while (openIngredientGuideKey.consumeClick()) {
+            while (keys.openIngredientGuide().consumeClick()) {
                 if (client.screen == null) {
                     openIngredientGuideScreen();
                 }
             }
-            while (shareBombsKey.consumeClick()) {
-                if (bombShareManager != null) {
-                    bombShareManager.tryHotkeyShareLatestPendingPrompt();
+            while (keys.shareBombs().consumeClick()) {
+                if (services.bombShareManager() != null) {
+                    services.bombShareManager().tryHotkeyShareLatestPendingPrompt();
                 }
             }
 
@@ -510,8 +514,8 @@ public class SeqClient implements ClientModInitializer {
             boolean minecraftAccountChanged =
                     SessionManager.getInstance().checkAccount(currentMinecraftProfileId(), currentMinecraftUsername());
             com.seqwawa.seq.managers.WorldEventLootTracker.getInstance().tick(client);
-            if (worldEventManager != null) {
-                worldEventManager.tick(
+            if (services.worldEventManager() != null) {
+                services.worldEventManager().tick(
                         client,
                         serverScope,
                         notifyTrackedWorldEventsSetting != null && notifyTrackedWorldEventsSetting.getValue());
@@ -527,67 +531,46 @@ public class SeqClient implements ClientModInitializer {
                 return;
             }
 
-            maybeRecoverProductionConnection(serverScope, scope.previous(), scope.host());
+            maybeRecoverProductionConnection(services, serverScope, scope.previous(), scope.host());
 
             getWarPlannerManager().tick();
             getWarTerritoryQueueManager().tick();
-            if (warTerritoryBoundsReminder != null) {
-                warTerritoryBoundsReminder.tick(client);
+            if (services.warTerritoryBoundsReminder() != null) {
+                services.warTerritoryBoundsReminder().tick(client);
             }
 
-            if (partyFinderManager != null) {
-                partyFinderManager.tickOpenPartyAnnouncements();
+            PartyFinderManager partyFinder = services.partyFinderManager();
+            if (partyFinder != null) {
+                partyFinder.tickOpenPartyAnnouncements();
             }
-            if (wynnPartySyncManager != null) {
-                wynnPartySyncManager.tick();
+            if (services.wynnPartySyncManager() != null) {
+                services.wynnPartySyncManager().tick();
             }
             if (showPartyHealthBarsSetting == null || showPartyHealthBarsSetting.getValue()) {
                 PartyHealthCache.tick();
             }
             RaidPartySnapshotTracker.tick();
-            if (guildWarTracker != null) {
-                guildWarTracker.tick();
+            if (services.guildWarTracker() != null) {
+                services.guildWarTracker().tick();
             }
-            if (guildStorageTracker != null) {
-                guildStorageTracker.tick();
+            if (services.guildStorageTracker() != null) {
+                services.guildStorageTracker().tick();
             }
-            if (guildRewardAutomationManager != null) {
-                guildRewardAutomationManager.tick();
+            if (services.guildRewardAutomationManager() != null) {
+                services.guildRewardAutomationManager().tick();
             }
             // One poll feeds both the badge and the rank indexes.
             RankProfileRoster.getInstance().tick();
             if (showDiscordRanksSetting != null && showDiscordRanksSetting.getValue()) {
                 SequoiaGuildMembership.getInstance().tick();
             }
-            if (seqBadgeNametagRenderer != null) {
-                seqBadgeNametagRenderer.tick();
+            if (services.seqBadgeNametagRenderer() != null) {
+                services.seqBadgeNametagRenderer().tick();
             }
             RadianceCheckerClient.tick(client);
             ConnectionManager.flushPendingOutbound();
 
-            boolean inPartyFinder = partyFinderManager != null && partyFinderManager.isInParty();
-            if (!inPartyFinder) {
-                wasInPartyFinder = false;
-                lastBroadcastPartyClass = null;
-                return;
-            }
-
-            if (!ConnectionManager.isConnected()) {
-                wasInPartyFinder = true;
-                return;
-            }
-
-            WynnClassType currentClass = WynnClassCache.resolveLocalClassType();
-            if (currentClass == null) {
-                wasInPartyFinder = true;
-                return;
-            }
-
-            if (!wasInPartyFinder || currentClass != lastBroadcastPartyClass) {
-                ConnectionManager.getInstance().sendPartyClassUpdate(currentClass);
-                lastBroadcastPartyClass = currentClass;
-            }
-            wasInPartyFinder = true;
+            services.partyClass().tick(partyFinder != null && partyFinder.isInParty());
         });
     }
 
@@ -596,8 +579,10 @@ public class SeqClient implements ClientModInitializer {
      * The previous account's session told the backend, not this one's.
      */
     public static void forgetPartyClassBroadcast() {
-        wasInPartyFinder = false;
-        lastBroadcastPartyClass = null;
+        AppServices services = app;
+        if (services != null) {
+            services.partyClass().forget();
+        }
     }
 
     /**
@@ -616,13 +601,13 @@ public class SeqClient implements ClientModInitializer {
             RadianceCheckerClient.reset();
             ConnectionManager.disconnectForBlockedServer();
             forgetPartyClassBroadcast();
-            if (wynnPartySyncManager != null) {
-                wynnPartySyncManager.reset();
+            if (getWynnPartySyncManager() != null) {
+                getWynnPartySyncManager().reset();
             }
             RaidPartySnapshotTracker.onServerUnavailable();
             resetWarTrackingState();
-            if (guildStorageTracker != null) {
-                guildStorageTracker.reset();
+            if (getGuildStorageTracker() != null) {
+                getGuildStorageTracker().reset();
             }
             if (tick.host() == null) {
                 resetWarPlanningStateForWorldTransition();
@@ -640,8 +625,8 @@ public class SeqClient implements ClientModInitializer {
     }
 
     private static void resetWarTrackingState() {
-        if (guildWarTracker != null) {
-            guildWarTracker.reset();
+        if (getGuildWarTracker() != null) {
+            getGuildWarTracker().reset();
         } else {
             MinecraftWarTowerTracker.getInstance().reset();
         }
@@ -673,6 +658,7 @@ public class SeqClient implements ClientModInitializer {
     }
 
     private static void maybeRecoverProductionConnection(
+            AppServices services,
             WynncraftServerPolicy.Scope serverScope,
             WynncraftServerPolicy.Scope previousScope,
             String currentHost) {
@@ -681,7 +667,7 @@ public class SeqClient implements ClientModInitializer {
         }
 
         if (ConnectionManager.isConnected()) {
-            lastProductionRecoveryAttemptAtMs = System.currentTimeMillis();
+            services.productionRecoveryAttempted(System.currentTimeMillis());
             return;
         }
 
@@ -696,13 +682,13 @@ public class SeqClient implements ClientModInitializer {
                 previousScope,
                 true,
                 now,
-                lastProductionRecoveryAttemptAtMs,
+                services.lastProductionRecoveryAttemptAtMs(),
                 MAIN_SCOPE_RECOVERY_INTERVAL_MS);
         if (trigger == AutoConnectTrigger.NONE) {
             return;
         }
 
-        lastProductionRecoveryAttemptAtMs = now;
+        services.productionRecoveryAttempted(now);
         LOGGER.info(
                 "[Seq] Triggering production reconnect reason={} host={} manualSuppressed={}",
                 trigger.logName,
@@ -813,15 +799,17 @@ public class SeqClient implements ClientModInitializer {
     }
 
     public static boolean isBombShareHotkeyDown() {
-        return shareBombsKey != null && shareBombsKey.isDown();
+        AppServices services = app;
+        AppServices.Keys keys = services == null ? null : services.keys();
+        return keys != null && keys.shareBombs().isDown();
     }
 
     /** Called on the game thread as Minecraft's constructor returns. */
     public static void onMinecraftFinishedLoading() {
         GlobalSoundListener.initialize();
         MinecraftUiRenderer.initialize();
-        SeqClient.gameManager.loadFont();
-        SeqClient.assetManager = new AssetManager();
+        app.gameManager().loadFont();
+        app.loadAssets();
 
         // Network settings
         autoConnectSetting = new Setting.BooleanSetting("auto_connect", "network", true);

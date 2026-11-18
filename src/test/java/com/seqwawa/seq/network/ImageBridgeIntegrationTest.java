@@ -8,7 +8,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
-import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.config.ConfigManager;
 import com.seqwawa.seq.images.BridgeMedia;
 import com.seqwawa.seq.images.ImagePreviewSettings;
@@ -90,7 +89,7 @@ class ImageBridgeIntegrationTest {
     @Test
     void mediaVisibilityPersistsWithoutLosingTheSavedPreviewOptIn() throws Exception {
         Files.writeString(directory.resolve("config.json"), "{\"chat.image_previews\":true}");
-        ConfigManager config = SeqClient.configManager;
+        ConfigManager config = harness.config;
         config.register(ImagePreviewSettings.mediaSetting());
         config.register(ImagePreviewSettings.setting());
         config.load();
@@ -113,11 +112,11 @@ class ImageBridgeIntegrationTest {
 
     @Test
     void mediaUpdatesRespectIgnoredBridgeUsers() throws Exception {
-        SeqClient.configManager.addIgnoredBridgeUser("BridgeTester");
+        harness.config.addIgnoredBridgeUser("BridgeTester");
         harness.receive(payload("discord_media", null, VIDEO));
         assertNull(received.get());
 
-        SeqClient.configManager.removeIgnoredBridgeUser("BridgeTester");
+        harness.config.removeIgnoredBridgeUser("BridgeTester");
         harness.receive(payload("discord_media", null, VIDEO));
         assertNotNull(received.get());
         assertEquals(VIDEO, received.get().message());
