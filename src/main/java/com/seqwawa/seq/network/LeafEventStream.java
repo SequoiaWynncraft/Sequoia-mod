@@ -84,9 +84,23 @@ public final class LeafEventStream {
         return lastEventId;
     }
 
-    /** Remembers the last event seen. */
-    void advanceCursor(String eventId) {
+    /**
+     * Remembers the last event {@code reader} saw, while it is still the stream's worker. Checked
+     * under the lock {@link #stop()} takes, so once stop() returns the place no longer moves, and
+     * the next session copies it whole. Says whether {@code reader} may go on.
+     */
+    synchronized boolean advanceCursor(Thread reader, String eventId) {
+        if (worker != reader) return false;
         if (eventId != null) lastEventId = eventId;
+        return true;
+    }
+
+    /** Reads {@code lines} on the calling thread as if it were the stream's worker, for a test. */
+    void readAsWorker(Stream<String> lines) {
+        synchronized (this) {
+            worker = Thread.currentThread();
+        }
+        read(lines);
     }
 
     public synchronized void stop() {
@@ -144,7 +158,8 @@ public final class LeafEventStream {
             Iterator<String> iterator = lines.iterator();
             while (worker == Thread.currentThread() && iterator.hasNext()) {
                 SseParser.Event event = parser.accept(iterator.next());
-                advanceCursor(parser.lastEventId());
+                // A line read as the stream stops is the next session's to show.
+                if (!advanceCursor(Thread.currentThread(), parser.lastEventId())) return;
                 if (event != null) {
                     dispatch(event, popup -> {
                         leafChanged.run();
