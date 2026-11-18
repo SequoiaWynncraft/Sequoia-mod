@@ -20,6 +20,9 @@ import org.junit.jupiter.api.Test;
 class QuestBoardScreenTest {
 
     private static final Instant NOW = Instant.parse("2026-11-17T17:48:00Z");
+    // The 16:00 window, open until 18:00; the next opens at 20:00.
+    private static final LeafQuests.Timed TIMED =
+            new LeafQuests.Timed(Instant.parse("2026-11-17T18:00:00Z"), Instant.parse("2026-11-17T20:00:00Z"));
 
     private static Quest quest(String slot, Objective objective, long progress, long target, Instant expiresAt,
             Instant completedAt) {
@@ -28,19 +31,22 @@ class QuestBoardScreenTest {
     }
 
     @Test
-    void showsOneCardPerSlotInTheOrderDailyWeeklyEndless() {
-        LeafQuests quests = new LeafQuests(new Daily(2, 3, Instant.parse("2026-11-18T00:00:00Z")), List.of(
+    void showsOneCardPerSlotInTheOrderDailyWeeklyTimed() {
+        Instant timedEnds = Instant.parse("2026-11-17T19:00:00Z");
+        LeafQuests quests = new LeafQuests(new Daily(2, 3, Instant.parse("2026-11-18T00:00:00Z")), TIMED, List.of(
                 quest("repeatable", new Objective("raids", null), 3, 8, null, null),
+                quest("timed", new Objective("raids", null), 1, 2, timedEnds, null),
                 quest("daily", new Objective("raids", "nol"), 1, 3, null, null),
                 quest("weekly", new Objective("raids", "tcc"), 5, 12, Instant.parse("2026-11-23T00:00:00Z"), null)),
                 List.of());
 
         List<QuestBoardScreen.Card> cards = QuestBoardScreen.cards(quests, NOW);
 
-        assertEquals(List.of("daily", "weekly", "repeatable"), cards.stream().map(QuestBoardScreen.Card::slot).toList());
-        assertEquals(List.of("Daily (2/3)", "Weekly", "Endless"),
+        assertEquals(List.of("daily", "weekly", "timed"), cards.stream().map(QuestBoardScreen.Card::slot).toList(),
+                "a repeatable quest gets no card");
+        assertEquals(List.of("Daily (2/3)", "Weekly", "Timed"),
                 cards.stream().map(QuestBoardScreen.Card::heading).toList());
-        assertEquals(List.of("Next daily in 6h 12m", "Ends in 5d 6h", "Next one when done"),
+        assertEquals(List.of("Next daily in 6h 12m", "Ends in 5d 6h", "Ends in 1h 12m"),
                 cards.stream().map(QuestBoardScreen.Card::timer).toList());
         assertEquals(List.of(2, 0, 0), cards.stream().map(QuestBoardScreen.Card::banked).toList());
         assertEquals(List.of(3, 0, 0), cards.stream().map(QuestBoardScreen.Card::bankSize).toList(),
@@ -49,13 +55,13 @@ class QuestBoardScreenTest {
 
     @Test
     void saysTheBankIsFullWhenNoMoreDailiesCanArrive() {
-        assertEquals("Bank full", QuestBoardScreen.timer("daily", null, new Daily(3, 3, null), NOW));
+        assertEquals("Bank full", QuestBoardScreen.timer("daily", null, new Daily(3, 3, null), null, NOW));
     }
 
     @Test
     void anEmptyDailySlotSaysWhenTheNextOneArrives() {
         Daily daily = new Daily(0, 3, Instant.parse("2026-11-18T00:00:00Z"));
-        List<QuestBoardScreen.Card> cards = QuestBoardScreen.cards(new LeafQuests(daily, List.of(), List.of()), NOW);
+        List<QuestBoardScreen.Card> cards = QuestBoardScreen.cards(new LeafQuests(daily, null, List.of(), List.of()), NOW);
 
         QuestBoardScreen.Card card = cards.getFirst();
         assertNull(card.quest());
@@ -68,7 +74,23 @@ class QuestBoardScreenTest {
         Quest weekly = quest("weekly", new Objective("wars", null), 15, 15, Instant.parse("2026-11-23T00:00:00Z"),
                 NOW.minusSeconds(60));
 
-        assertEquals("Done · new weekly in 5d 6h", QuestBoardScreen.timer("weekly", weekly, new Daily(1, 3, null), NOW));
+        assertEquals("Done · new weekly in 5d 6h",
+                QuestBoardScreen.timer("weekly", weekly, new Daily(1, 3, null), null, NOW));
+    }
+
+    @Test
+    void aTimedCardSaysWhenTheNextQuestOpensOnceThisOneIsDoneOrBetweenWindows() {
+        Daily daily = new Daily(1, 3, null);
+        Quest done = quest("timed", new Objective("wars", null), 3, 3, TIMED.endsAt(), NOW.minusSeconds(60));
+        LeafQuests.Timed between = new LeafQuests.Timed(null, TIMED.nextAt());
+
+        assertEquals("Done · next in 2h 12m", QuestBoardScreen.timer("timed", done, daily, TIMED, NOW));
+        assertEquals("Next in 2h 12m", QuestBoardScreen.timer("timed", null, daily, between, NOW));
+        QuestBoardScreen.Card empty = QuestBoardScreen.cards(new LeafQuests(daily, between, List.of(), List.of()), NOW)
+                .getLast();
+        assertEquals("A timed quest opens for the whole guild every four hours.", empty.emptyLine());
+        assertEquals("Every four hours", QuestBoardScreen.timer("timed", null, daily, null, NOW),
+                "an older Leaf sends no timed block");
     }
 
     @Test
@@ -103,7 +125,7 @@ class QuestBoardScreenTest {
     void framesEachSlotInItsOwnTierColour() {
         assertEquals(UiColor.ACHIEVEMENT_GOLD, QuestBoardScreen.slotAccent("daily"));
         assertEquals(UiColor.ACHIEVEMENT_DIAMOND, QuestBoardScreen.slotAccent("weekly"));
-        assertEquals(UiColor.ACHIEVEMENT_BRONZE, QuestBoardScreen.slotAccent("repeatable"));
+        assertEquals(UiColor.ACHIEVEMENT_OBSIDIAN, QuestBoardScreen.slotAccent("timed"));
     }
 
     @Test

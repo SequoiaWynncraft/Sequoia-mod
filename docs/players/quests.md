@@ -25,7 +25,7 @@ Under it are three quests:
 
 - **Daily.** One new daily becomes available each UTC day, and up to three bank up, shown as pips beside the title. Playing every third day loses nothing, and there are no streaks. Finishing one starts the next banked one at once.
 - **Weekly.** One per week, Monday to Monday in UTC. It ends with the week.
-- **Endless.** The next one starts as soon as you finish it.
+- **Timed.** A new one opens every four hours, at 00:00, 04:00, 08:00 UTC and so on, and stays open for two hours. Everyone in the guild gets the same one, and it pays more than a daily. Between windows the card says when the next one opens.
 
 Each card shows what to do, the Leaf and XP it pays, and how far along you are.
 

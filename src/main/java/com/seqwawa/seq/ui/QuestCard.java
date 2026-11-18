@@ -144,7 +144,7 @@ final class QuestCard {
         return target >= 2 && target <= 12 ? (int) target : 0;
     }
 
-    /** "Daily", "Weekly" or "Endless". */
+    /** "Daily", "Weekly" or "Timed". */
     static String slotName(String slot) {
         return UnlockPopup.slotName(slot);
     }
@@ -175,11 +175,9 @@ final class QuestCard {
             canvas.fillRect(px, py, PIP * p, PIP * p, i < card.banked() ? accent : PixelArt.mix(accent, color(CONTROL_INPUT), 0.8f));
             if (i < card.banked()) canvas.fillRect(px, py, PIP * p, p, PixelArt.mix(accent, Color.WHITE, 0.5f));
         }
-        // When the next daily comes or the weekly ends. An endless quest needs no clock: the next one comes when it is done.
-        if (!LeafQuests.REPEATABLE.equals(card.slot())) {
-            PixelArt.text(canvas, PixelArt.fit(card.timer(), inner, 10), cx, y + 17 * p, 10, color(TEXT_MUTED),
-                    HorizontalAlign.CENTER);
-        }
+        // When the next daily comes, or when the weekly or timed quest ends.
+        PixelArt.text(canvas, PixelArt.fit(card.timer(), inner, 10), cx, y + 17 * p, 10, color(TEXT_MUTED),
+                HorizontalAlign.CENTER);
 
         Quest quest = card.quest();
         if (quest == null) {

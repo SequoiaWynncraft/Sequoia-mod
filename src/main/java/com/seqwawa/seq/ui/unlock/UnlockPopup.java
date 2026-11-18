@@ -136,7 +136,7 @@ public record UnlockPopup(
         return ladder;
     }
 
-    /** "Daily", "Weekly" or "Endless": players know Leaf's {@code repeatable} slot as Endless. */
+    /** "Daily", "Weekly", "Timed", or "Endless" for Leaf's {@code repeatable} slot, which old completions name. */
     public static String slotName(String slot) {
         if (slot == null || slot.isEmpty()) return "Quest";
         if ("repeatable".equals(slot)) return "Endless";
@@ -147,6 +147,7 @@ public record UnlockPopup(
     public static String questTier(String slot) {
         if ("daily".equals(slot)) return "gold";
         if ("weekly".equals(slot)) return "diamond";
+        if ("timed".equals(slot)) return "obsidian";
         return "bronze";
     }
 

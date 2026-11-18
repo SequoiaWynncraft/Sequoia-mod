@@ -19,6 +19,7 @@ class LeafApiTest {
     /** What Leaf's GET /v1/me/quests answered for a member with two banked dailies. */
     private static final String QUESTS = """
             {"daily":{"charges":2,"charge_cap":3,"next_charge_at":"2026-11-18T00:00:00.000Z"},
+             "timed":{"ends_at":null,"next_at":"2026-11-17T20:00:00.000Z"},
              "quests":[
                {"id":"daily:4","slot":"daily","title":"Complete 3 NOL raids or 9 wars",
                 "objective":{"type":"wars","raid":null},"progress":4,"target":9,
@@ -55,7 +56,11 @@ class LeafApiTest {
                         new LeafQuests.Goal("season_rating", null, "Earn 6,000 season rating", 6000, 6000)),
                 weekly.goalsOrObjective(), "a quest from a Leaf without goals has its objective as its one goal");
         assertEquals(Instant.parse("2026-11-17T13:02:11.500Z"), weekly.completedAt());
-        assertNull(quests.quest(LeafQuests.REPEATABLE));
+        assertEquals(new LeafQuests.Timed(null, Instant.parse("2026-11-17T20:00:00Z")), quests.timed(),
+                "between windows there is no end, only when the next opens");
+        assertNull(quests.quest(LeafQuests.TIMED));
+        assertNull(GSON.fromJson("{\"daily\":{\"charges\":0,\"charge_cap\":3},\"quests\":[]}", LeafQuests.class)
+                .timed(), "an older Leaf sends no timed block");
     }
 
     @Test
