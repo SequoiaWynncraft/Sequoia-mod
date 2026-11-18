@@ -95,6 +95,13 @@ class UnlockArtTest {
         BufferedImage leaf = load("leaf", "leaf_glyph");
         assertEquals(9, leaf.getWidth());
         assertEquals(9, leaf.getHeight());
+        boolean top = false;
+        boolean bottom = false;
+        for (int x = 0; x < 9; x++) {
+            top |= visible(leaf, x, 0);
+            bottom |= visible(leaf, x, 8);
+        }
+        assertTrue(top && bottom, "the Leaf's ink runs from the top row to the bottom one, like a digit's");
         for (int y = 0; y < 9; y++) {
             for (int x = 0; x < 9; x++) {
                 // Its stem runs from the bottom left to the tip at the top right.

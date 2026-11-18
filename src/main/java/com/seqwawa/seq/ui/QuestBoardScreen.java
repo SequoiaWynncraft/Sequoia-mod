@@ -322,6 +322,11 @@ public final class QuestBoardScreen extends Screen {
         return super.mouseClicked(click, outsideScreen);
     }
 
+    /** Scrolls the board by {@code amount} UI pixels, down for positive; kept within the board at the next frame. */
+    public void scrollBy(float amount) {
+        scrollOffset = Math.max(0, scrollOffset + amount);
+    }
+
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         Panel panel = panel(MinecraftUiRenderer.screenWidth(), MinecraftUiRenderer.screenHeight());

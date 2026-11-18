@@ -245,8 +245,7 @@ public class SettingsScreen extends Screen {
             float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
 
             var destinations = SequoiaSidebarNavigation.destinations();
-            var sidebarLayout = SequoiaSidebarNavigation.sidebarLayout(
-                    screenHeight, destinations.size(), SIDEBAR_BUTTON_HEIGHT, SIDEBAR_BUTTON_SPACING);
+            var sidebarLayout = settingsSidebarLayout(screenHeight, destinations.size());
             for (int row = 0; row < destinations.size(); row++) {
                 var destination = destinations.get(row);
                 drawSidebarButton(
@@ -580,6 +579,16 @@ public class SettingsScreen extends Screen {
         canvas.restore();
     }
 
+    /**
+     * The sidebar's buttons, packed to leave the Princess mode prompt its place
+     * above the profile card when the prompt may show, so neither covers the other.
+     */
+    private static SequoiaSidebarNavigation.SidebarLayout settingsSidebarLayout(float screenHeight, int rows) {
+        float below = SidebarProfile.reserved(screenHeight)
+                + (princessPromptAllowed() ? PRINCESS_PROMPT_HEIGHT + SIDEBAR_BUTTON_SPACING : 0);
+        return SequoiaSidebarNavigation.sidebarLayout(screenHeight, rows, SIDEBAR_BUTTON_HEIGHT, SIDEBAR_BUTTON_SPACING, below);
+    }
+
     /** The prompt sits at the sidebar's foot, above the profile card while that shows. */
     private static float princessPromptY(float screenHeight, float progress) {
         float bottom = screenHeight - SidebarProfile.reserved(screenHeight);
@@ -640,8 +649,7 @@ public class SettingsScreen extends Screen {
             float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
 
             var destinations = SequoiaSidebarNavigation.destinations();
-            var sidebarLayout = SequoiaSidebarNavigation.sidebarLayout(
-                    screenHeight, destinations.size(), SIDEBAR_BUTTON_HEIGHT, SIDEBAR_BUTTON_SPACING);
+            var sidebarLayout = settingsSidebarLayout(screenHeight, destinations.size());
             for (int row = 0; row < destinations.size(); row++) {
                 if (!isHovered(mx, my, btnX, sidebarLayout.buttonY(row), btnW, sidebarLayout.buttonHeight())) {
                     continue;

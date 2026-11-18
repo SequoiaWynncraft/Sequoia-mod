@@ -14,12 +14,12 @@ import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.LongSupplier;
 import java.util.regex.Pattern;
 
 /** Shared head images for local players and the war-map telemetry roster. */
@@ -32,10 +32,13 @@ public final class MapPlayerHeadRenderer implements AutoCloseable {
             .connectTimeout(Duration.ofSeconds(10)).build();
     private final Map<String, CompletableFuture<byte[]>> faceDownloads = new HashMap<>();
     private final Map<String, UiImage> faces = new HashMap<>();
-    private final Set<String> invalidFaces = new HashSet<>();
+    /** Heads that could not be had, and when to ask again: a failure may only mean the player was offline. */
+    private final Map<String, Long> retryAt = new HashMap<>();
+    static final long RETRY_MS = 60_000;
     private final Function<String, CompletableFuture<byte[]>> downloadFace;
     private final Function<byte[], UiImage> createImage;
     private final Consumer<UiImage> deleteImage;
+    private final LongSupplier clock;
 
     public MapPlayerHeadRenderer() {
         this(MapPlayerHeadRenderer::downloadFace,
@@ -44,9 +47,15 @@ public final class MapPlayerHeadRenderer implements AutoCloseable {
 
     MapPlayerHeadRenderer(Function<String, CompletableFuture<byte[]>> downloadFace,
             Function<byte[], UiImage> createImage, Consumer<UiImage> deleteImage) {
+        this(downloadFace, createImage, deleteImage, System::currentTimeMillis);
+    }
+
+    MapPlayerHeadRenderer(Function<String, CompletableFuture<byte[]>> downloadFace,
+            Function<byte[], UiImage> createImage, Consumer<UiImage> deleteImage, LongSupplier clock) {
         this.downloadFace = downloadFace;
         this.createImage = createImage;
         this.deleteImage = deleteImage;
+        this.clock = clock;
     }
 
     public boolean render(UiCanvas canvas, String username, float x, float y) {
@@ -88,28 +97,33 @@ public final class MapPlayerHeadRenderer implements AutoCloseable {
         faces.values().forEach(deleteImage);
         faces.clear();
         faceDownloads.clear();
-        invalidFaces.clear();
+        retryAt.clear();
     }
 
     private UiImage face(String username) {
         UiImage existing = faces.get(username);
-        if (existing != null || invalidFaces.contains(username)) return existing;
+        if (existing != null) return existing;
+        Long retry = retryAt.get(username);
+        if (retry != null) {
+            if (clock.getAsLong() < retry) return null;
+            retryAt.remove(username);
+        }
 
         CompletableFuture<byte[]> download = faceDownloads.computeIfAbsent(username, downloadFace);
         if (!download.isDone()) return null;
         byte[] bytes = download.getNow(null);
         faceDownloads.remove(username);
         if (bytes == null) {
-            invalidFaces.add(username);
+            retryAt.put(username, clock.getAsLong() + RETRY_MS);
             return null;
         }
         try {
             UiImage image = createImage.apply(bytes);
-            if (image == null) invalidFaces.add(username);
+            if (image == null) retryAt.put(username, clock.getAsLong() + RETRY_MS);
             else faces.put(username, image);
             return image;
         } catch (RuntimeException exception) {
-            invalidFaces.add(username);
+            retryAt.put(username, clock.getAsLong() + RETRY_MS);
             return null;
         }
     }
@@ -142,7 +156,7 @@ public final class MapPlayerHeadRenderer implements AutoCloseable {
             entry.getValue().cancel(true);
             return true;
         });
-        invalidFaces.removeIf(username -> !live.contains(username));
+        retryAt.keySet().removeIf(username -> !live.contains(username));
     }
 
 }

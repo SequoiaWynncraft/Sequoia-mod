@@ -30,4 +30,11 @@ class PixelArtTest {
         assertEquals(90.5f, PixelArt.leafTop(100, 20));
         assertEquals(85.5f, PixelArt.leafTop(100, 30));
     }
+
+    @Test
+    void aShortBarGetsOnlyTheNotchesItHasRoomFor() {
+        assertEquals(10, PixelArt.notchesThatFit(10, 200, 2));
+        assertEquals(3, PixelArt.notchesThatFit(10, 18, 2));
+        assertEquals(0, PixelArt.notchesThatFit(10, 2, 2), "a one-pixel track has no room for any");
+    }
 }

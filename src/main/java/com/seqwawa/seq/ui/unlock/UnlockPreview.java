@@ -8,9 +8,11 @@ import com.seqwawa.seq.model.LeafAccount;
 import com.seqwawa.seq.model.LeafEvents;
 import com.seqwawa.seq.model.LeafQuests;
 import com.seqwawa.seq.ui.QuestBoardScreen;
+import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
@@ -42,7 +44,7 @@ public final class UnlockPreview {
     private static int ticks;
     private static int stageStart;
     private static int frame;
-    private static int uiSizeBefore = 100;
+    private static boolean pauseOnLostFocusBefore = true;
 
     private UnlockPreview() {}
 
@@ -50,6 +52,7 @@ public final class UnlockPreview {
         if (!FabricLoader.getInstance().isDevelopmentEnvironment() || !Boolean.getBoolean("seq.unlockPreview")) return;
         SeqClient.LOGGER.info("[Unlock preview] Running the scripted tour");
         ClientTickEvents.END_CLIENT_TICK.register(UnlockPreview::tick);
+        ClientLifecycleEvents.CLIENT_STOPPING.register(UnlockPreview::restore);
     }
 
     private static void tick(Minecraft mc) {
@@ -64,7 +67,9 @@ public final class UnlockPreview {
             case WAIT_FOR_TITLE -> {
                 if (mc.screen instanceof TitleScreen && SeqClient.assetManager != null
                         && SeqClient.assetManager.getAsset("unlock_medal_gold") != null && inStage > 60) {
-                    // The pause menu would hold the popups back whenever the window loses focus.
+                    // The pause menu would hold the popups back whenever the window loses focus. Put back when
+                    // the preview ends, however it ends, so the developer's own setting is what gets saved.
+                    pauseOnLostFocusBefore = mc.options.pauseOnLostFocus;
                     mc.options.pauseOnLostFocus = false;
                     createWorld(mc);
                     next(Stage.WAIT_FOR_WORLD);
@@ -86,22 +91,19 @@ public final class UnlockPreview {
             }
             case BOARD -> {
                 if (inStage == 40) grab(mc, "preview-quest-board.png");
-                if (inStage == 44 && mc.screen != null) {
+                if (inStage == 44 && mc.screen instanceof QuestBoardScreen board) {
                     // Down to the recent Leaf under the cards.
-                    double x = mc.getWindow().getGuiScaledWidth() * 0.6;
-                    double y = mc.getWindow().getGuiScaledHeight() * 0.6;
-                    mc.screen.mouseScrolled(x, y, 0, -40);
+                    board.scrollBy(10_000);
                 }
                 if (inStage == 52) grab(mc, "preview-quest-board-recent.png");
                 if (inStage == 54) {
-                    // A narrow board: the same window with the mod's UI at its largest size.
-                    uiSizeBefore = SeqClient.getUiSizePercentSetting().getValue();
-                    SeqClient.getUiSizePercentSetting().setValue(150);
+                    // A narrow board: the same window with the mod's UI at its largest size, for the preview only.
+                    MinecraftUiRenderer.previewUiScale = 1.5f;
                     mc.resizeDisplay();
                 }
                 if (inStage == 62) grab(mc, "preview-quest-board-narrow.png");
                 if (inStage == 64) {
-                    SeqClient.getUiSizePercentSetting().setValue(uiSizeBefore);
+                    MinecraftUiRenderer.previewUiScale = null;
                     mc.resizeDisplay();
                 }
                 if (inStage == 70) {
@@ -121,6 +123,12 @@ public final class UnlockPreview {
                 }
             }
         }
+    }
+
+    /** Puts back what the preview changed for itself, so none of it is saved. */
+    private static void restore(Minecraft mc) {
+        MinecraftUiRenderer.previewUiScale = null;
+        if (mc.options != null) mc.options.pauseOnLostFocus = pauseOnLostFocusBefore;
     }
 
     private static void next(Stage nextStage) {

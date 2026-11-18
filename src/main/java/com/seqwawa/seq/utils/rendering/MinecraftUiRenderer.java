@@ -30,7 +30,12 @@ public final class MinecraftUiRenderer {
                 uiScale());
     }
 
+    /** A UI size the development preview shows the screens at, without touching the saved setting. Null otherwise. */
+    public static volatile Float previewUiScale;
+
     public static float uiScale() {
+        Float preview = previewUiScale;
+        if (preview != null) return UiRenderMetrics.clampUiScale(preview);
         var setting = SeqClient.getUiSizePercentSetting();
         return UiRenderMetrics.clampUiScale(setting == null ? 1f : setting.getValue() / 100f);
     }

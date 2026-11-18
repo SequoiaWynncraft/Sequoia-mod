@@ -72,4 +72,22 @@ class MapPlayerHeadRendererTest {
         assertEquals(1, downloads.get());
         assertTrue(draws.isEmpty());
     }
+
+    @Test
+    void triesAFailedHeadAgainAfterAMinuteInCaseThePlayerWasOffline() {
+        var downloads = new AtomicInteger();
+        var now = new java.util.concurrent.atomic.AtomicLong(1_000);
+        var renderer = new MapPlayerHeadRenderer(name -> {
+            downloads.incrementAndGet();
+            return downloads.get() == 1 ? CompletableFuture.completedFuture(null)
+                    : CompletableFuture.completedFuture(new byte[] {1});
+        }, bytes -> face, image -> {}, now::get);
+        assertFalse(renderer.render(canvas, "Player", 0, 0));
+        now.addAndGet(MapPlayerHeadRenderer.RETRY_MS - 1);
+        assertFalse(renderer.render(canvas, "Player", 0, 0));
+        assertEquals(1, downloads.get());
+        now.addAndGet(1);
+        assertTrue(renderer.render(canvas, "Player", 0, 0));
+        assertEquals(2, downloads.get());
+    }
 }

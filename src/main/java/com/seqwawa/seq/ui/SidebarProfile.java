@@ -162,6 +162,10 @@ public final class SidebarProfile {
         }
         LeafAccount account = service.snapshot().account();
         LeafAccount.Level level = account.levelOrFirst();
+        if (service.refreshFailed()) {
+            // The last balance Leaf gave, which may be out of date: marked the way the quest board marks it.
+            PixelArt.outlinedText(canvas, "!", right, headY + 12 * p, 10, color(CONTROL_WARNING), 1f, HorizontalAlign.RIGHT);
+        }
         String lv = "Lv " + level.number();
         PixelArt.levelText(canvas, lv, left, rowY, 10, 1f, HorizontalAlign.LEFT);
         float room = right - left - PixelArt.outlinedInkWidth(lv, 10) - 3 * p;

@@ -74,13 +74,19 @@ public final class PixelArt {
             Color fill, float a, int notches) {
         if (w < 3 * p || h < 3 * p) return;
         drawBar(canvas, x, y, w, h, p, ratio, fill, a);
-        if (notches < 2) return;
         float innerW = w - 2 * p;
+        notches = notchesThatFit(notches, innerW, p);
+        if (notches < 2) return;
         Color line = withAlpha(new Color(8, 6, 12), 0.45f * a);
         for (int i = 1; i < notches; i++) {
             float nx = x + p + snap(innerW * i / notches, p);
             canvas.fillRect(nx, y + p, p, h - 2 * p, line);
         }
+    }
+
+    /** At most as many parts as leave each three art pixels, so a short bar's notches never crowd its outline. */
+    static int notchesThatFit(int notches, float inner, float p) {
+        return Math.min(notches, (int) Math.floor(inner / p / 3));
     }
 
     private static void drawBar(UiCanvas canvas, float x, float y, float w, float h, float p, float ratio,
