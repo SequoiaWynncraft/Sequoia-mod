@@ -313,6 +313,22 @@ def checkReleaseJarSize = tasks.register("checkReleaseJarSize") {
 }
 tasks.named("build") { dependsOn checkReleaseJarSize }
 
+// Minecraft started the way players run the mod: from a release JAR and Fabric API alone, not from
+// the dev classes and their mappings. Release step 4 runs it on the draft's own JAR with
+// -Pmod_jar=PATH; without that it runs the JAR this build makes, which Loom adds by default.
+dependencies {
+    productionRuntimeMods "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+}
+tasks.register("runProductionClient", net.fabricmc.loom.task.prod.ClientProductionRunTask) {
+    description = "Starts Minecraft with Fabric API and a release JAR: -Pmod_jar=PATH, or this build's"
+    def modJar = providers.gradleProperty("mod_jar")
+    if (modJar.isPresent()) {
+        // In place of this build's JAR, so testing a downloaded release builds nothing.
+        mods.setFrom(configurations.productionRuntimeMods, file(modJar.get()))
+    }
+    runDir = layout.projectDirectory.dir("run-production")
+}
+
 // configure the maven publication
 publishing {
     publications {

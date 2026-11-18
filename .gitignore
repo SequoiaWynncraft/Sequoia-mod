@@ -118,6 +118,7 @@ bin
 # Common working directory
 run/
 runs/
+run-production/
 
 # Avoid ignoring Gradle wrapper jar file (.jar files are usually ignored)
 !gradle-wrapper.jar
