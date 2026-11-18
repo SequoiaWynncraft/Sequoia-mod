@@ -884,7 +884,7 @@ public class GuildMembersScreen extends Screen {
         cursorX += PROFILE_BUTTON_W + HEADER_CONTROL_GAP;
 
         boolean refreshing = presence().isRefreshing();
-        boolean canRefresh = presence().canRefresh(System.currentTimeMillis());
+        boolean canRefresh = presence().canRefresh();
         refreshButtonBounds = new Rect(cursorX, controlY, REFRESH_BUTTON_W, HEADER_CONTROL_H);
         renderButton(
                 canvas,
@@ -1924,7 +1924,7 @@ public class GuildMembersScreen extends Screen {
         }
 
         if (refreshButtonBounds != null && refreshButtonBounds.contains(mx, my)) {
-            if (presence().canRefresh(System.currentTimeMillis())) {
+            if (presence().canRefresh()) {
                 presence().refresh(true);
                 profiles().refresh();
                 PlayerHeadCache.retryFailed();

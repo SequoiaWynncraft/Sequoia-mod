@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.seqwawa.seq.client.TickQueue;
 import com.seqwawa.seq.model.PrincessRaidStats;
 import java.time.Clock;
 import java.time.Instant;
@@ -16,6 +17,9 @@ import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Test;
 
 class PrincessRaidStatsManagerTest {
+    /** The game thread: the backend's answers wait here until a test lets it catch up. */
+    private final TickQueue ticks = new TickQueue(() -> 0);
+
     private static final Instant NOW = Instant.parse("2026-08-19T12:00:00Z");
 
     @Test
@@ -27,6 +31,7 @@ class PrincessRaidStatsManagerTest {
 
         assertEquals(PrincessRaidStatsManager.State.LOADING, manager.snapshot().state());
         gateway.leaderboard.complete(stats(12, 3));
+        ticks.runDue();
 
         assertEquals(PrincessRaidStatsManager.State.READY, manager.snapshot().state());
         assertEquals(12, manager.snapshot().ownRaidCount());
@@ -39,12 +44,14 @@ class PrincessRaidStatsManagerTest {
         PrincessRaidStatsManager manager = manager(gateway);
         manager.refresh();
         gateway.leaderboard.complete(stats(12, 3));
+        ticks.runDue();
 
         PrincessRaidStatsManager.Completion completion = manager.recordCompletion("The Nameless Anomaly");
 
         assertEquals(13, completion.displayedRaidCount());
         assertEquals(completion.eventId(), gateway.recordedEventIds.getFirst());
         gateway.records.getFirst().complete(stats(13, 2));
+        ticks.runDue();
         assertEquals(13, completion.confirmedRaidCount().join());
     }
 
@@ -60,6 +67,7 @@ class PrincessRaidStatsManagerTest {
         assertNull(duplicate);
         assertEquals(0, completion.displayedRaidCount());
         gateway.records.getFirst().complete(stats(81, 1));
+        ticks.runDue();
         assertEquals(81, completion.confirmedRaidCount().join());
     }
 
@@ -71,8 +79,23 @@ class PrincessRaidStatsManagerTest {
 
         manager.reset();
         gateway.records.getFirst().complete(stats(44, 4));
+        ticks.runDue();
 
         assertEquals(PrincessRaidStatsManager.State.IDLE, manager.snapshot().state());
+        assertTrue(completion.confirmedRaidCount().isCompletedExceptionally());
+    }
+
+    @Test
+    void aFailedRecordChangesNothingUntilTheGameThreadRunsIt() {
+        FakeGateway gateway = new FakeGateway();
+        PrincessRaidStatsManager manager = manager(gateway);
+        PrincessRaidStatsManager.Completion completion = manager.recordCompletion("The Nameless Anomaly");
+
+        gateway.records.getFirst().completeExceptionally(new IllegalStateException("offline"));
+        assertEquals(PrincessRaidStatsManager.State.IDLE, manager.snapshot().state());
+        ticks.runDue();
+
+        assertEquals(PrincessRaidStatsManager.State.UNAVAILABLE, manager.snapshot().state());
         assertTrue(completion.confirmedRaidCount().isCompletedExceptionally());
     }
 
@@ -82,10 +105,12 @@ class PrincessRaidStatsManagerTest {
         PrincessRaidStatsManager manager = manager(gateway);
         manager.refresh();
         gateway.leaderboard.complete(stats(9, 5));
+        ticks.runDue();
         gateway.leaderboard = new CompletableFuture<>();
 
         manager.refresh();
         gateway.leaderboard.completeExceptionally(new IllegalStateException("offline"));
+        ticks.runDue();
 
         assertEquals(PrincessRaidStatsManager.State.UNAVAILABLE, manager.snapshot().state());
         assertTrue(manager.snapshot().countKnown());
@@ -100,7 +125,10 @@ class PrincessRaidStatsManagerTest {
         PrincessRaidStatsManager.Completion completion = manager.recordCompletion("The Nameless Anomaly");
 
         gateway.records.getFirst().complete(stats(13, 2));
+
+        ticks.runDue();
         gateway.leaderboard.complete(stats(12, 3));
+        ticks.runDue();
 
         assertEquals(13, completion.confirmedRaidCount().join());
         assertEquals(2, manager.snapshot().ownRank());
@@ -114,7 +142,10 @@ class PrincessRaidStatsManagerTest {
         PrincessRaidStatsManager.Completion completion = manager.recordCompletion("The Nameless Anomaly");
 
         gateway.records.getFirst().complete(stats(13, 2));
+
+        ticks.runDue();
         gateway.leaderboard.completeExceptionally(new IllegalStateException("old failure"));
+        ticks.runDue();
 
         assertEquals(13, completion.confirmedRaidCount().join());
         assertEquals(PrincessRaidStatsManager.State.READY, manager.snapshot().state());
@@ -128,15 +159,18 @@ class PrincessRaidStatsManagerTest {
         manager.refresh();
 
         gateway.leaderboard.completeExceptionally(new IllegalStateException("newer failure"));
+
+        ticks.runDue();
         gateway.records.getFirst().complete(stats(13, 2));
+        ticks.runDue();
 
         assertEquals(13, completion.confirmedRaidCount().join());
         assertEquals(PrincessRaidStatsManager.State.UNAVAILABLE, manager.snapshot().state());
         assertNull(manager.snapshot().ownRank());
     }
 
-    private static PrincessRaidStatsManager manager(FakeGateway gateway) {
-        return new PrincessRaidStatsManager(gateway, Clock.fixed(NOW, ZoneOffset.UTC));
+    private PrincessRaidStatsManager manager(FakeGateway gateway) {
+        return new PrincessRaidStatsManager(gateway, Clock.fixed(NOW, ZoneOffset.UTC), ticks);
     }
 
     private static PrincessRaidStats stats(long ownCount, Integer ownRank) {

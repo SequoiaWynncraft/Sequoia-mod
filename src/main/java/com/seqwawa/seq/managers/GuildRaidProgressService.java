@@ -1,19 +1,26 @@
 package com.seqwawa.seq.managers;
 
+import com.seqwawa.seq.client.ClientThread;
+import com.seqwawa.seq.client.Clocks;
+import com.seqwawa.seq.client.Refreshable;
 import com.seqwawa.seq.client.SeqClient;
+import com.seqwawa.seq.client.TickQueue;
 import com.seqwawa.seq.model.GuildRaidProgress;
 import com.seqwawa.seq.network.ApiClient;
 import com.seqwawa.seq.network.ConnectionManager;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.function.BooleanSupplier;
 import java.util.function.BiConsumer;
-import java.util.function.Consumer;
+import java.util.function.BooleanSupplier;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 
+/**
+ * The guild's raid progress for the achievements screen, read from the backend while
+ * it is connected, and again a few seconds after the player finishes a raid. Game
+ * thread only, except the readers.
+ */
 public final class GuildRaidProgressService {
 
     public enum State {
@@ -24,177 +31,130 @@ public final class GuildRaidProgressService {
 
     static final long REFRESH_INTERVAL_MS = Duration.ofMinutes(5).toMillis();
 
-    private static final long RAID_SETTLE_DELAY_MS = Duration.ofSeconds(6).toMillis();
+    /** How long after a raid the backend has counted it. */
+    static final long RAID_SETTLE_DELAY_MS = Duration.ofSeconds(6).toMillis();
 
     private static GuildRaidProgressService instance;
 
-    private final Supplier<CompletableFuture<GuildRaidProgress>> fetcher;
-    private final LongSupplier clock;
     private final BooleanSupplier connected;
-    private final Consumer<Runnable> raidDelay;
+    private final TickQueue ticks;
     private final BiConsumer<List<String>, BooleanSupplier> announcer;
+    /** A failed read keeps what is already on screen. */
+    private final Refreshable<GuildRaidProgress> progress;
 
-    private volatile GuildRaidProgress progress = GuildRaidProgress.EMPTY;
-    private volatile State state = State.LOADING;
-    private volatile boolean loading;
-    private volatile boolean forcedRefreshPending;
-    private volatile long lastAttemptAtMs;
-    private volatile int generation;
-    private volatile boolean wasConnected;
-
-    GuildRaidProgressService(
-            Supplier<CompletableFuture<GuildRaidProgress>> fetcher,
-            LongSupplier clock,
-            BooleanSupplier connected,
-            Consumer<Runnable> raidDelay) {
-        this(fetcher, clock, connected, raidDelay, (messages, valid) -> {});
-    }
+    /** Counts sessions: a new connection, a disconnect and a reset each start one. Announcements check it. */
+    private long session;
+    private boolean wasConnected;
+    /** Whether the last tick could not read: disconnected, or a scope that doesn't allow it. */
+    private boolean offline;
+    private TickQueue.Timer pendingRaidRefresh;
+    private GuildRaidProgress lastLogged = GuildRaidProgress.EMPTY;
 
     GuildRaidProgressService(
             Supplier<CompletableFuture<GuildRaidProgress>> fetcher,
             LongSupplier clock,
             BooleanSupplier connected,
-            Consumer<Runnable> raidDelay,
+            TickQueue ticks,
             BiConsumer<List<String>, BooleanSupplier> announcer) {
-        this.fetcher = fetcher;
-        this.clock = clock;
         this.connected = connected;
-        this.raidDelay = raidDelay;
+        this.ticks = ticks;
         this.announcer = announcer;
         this.wasConnected = connected.getAsBoolean();
+        this.progress = Refreshable.builder("guild raid progress", fetcher)
+                .clock(clock)
+                .handBack(ticks)
+                .refreshEveryMs(REFRESH_INTERVAL_MS)
+                .emptyValue(GuildRaidProgress.EMPTY)
+                .whenFetched(this::fetched)
+                .whenFailed(failure -> SeqClient.LOGGER.warn("[Achievements] Could not read guild raid progress", failure))
+                .build();
     }
 
     public static synchronized GuildRaidProgressService getInstance() {
         if (instance == null) {
             instance = new GuildRaidProgressService(
                     () -> ApiClient.getInstance().getGuildRaidProgress(),
-                    System::currentTimeMillis,
+                    Clocks::monotonicMillis,
                     ConnectionManager::isConnected,
-                    GuildRaidProgressService::runAfterSettleDelay,
+                    ClientThread.queue(),
                     ChatManager::announceAchievements);
         }
         return instance;
     }
 
     public GuildRaidProgress progress() {
-        return progress;
+        return progress.value();
     }
 
     public State state() {
-        return state;
+        Refreshable.State<GuildRaidProgress> current = progress.state();
+        if (current.hasValue()) return State.READY;
+        if (current.loading()) return State.LOADING;
+        return current.failure() != null || offline ? State.UNAVAILABLE : State.LOADING;
     }
 
-    public synchronized void reset() {
-        generation++;
-        loading = false;
-        forcedRefreshPending = false;
-        lastAttemptAtMs = 0;
-        progress = GuildRaidProgress.EMPTY;
-        state = State.LOADING;
+    /** Forgets everything, for a different account or session; the next tick reads at once. */
+    public void reset() {
+        session++;
+        cancelRaidRefresh();
+        progress.reset();
     }
 
     public void tick() {
         tick(true);
     }
 
-    public synchronized void tick(boolean allowRefresh) {
+    /** Called every client tick; {@code allowRefresh} is false where the server scope doesn't allow reading. */
+    public void tick(boolean allowRefresh) {
         boolean online = connected.getAsBoolean();
         if (online && !wasConnected) {
             reset();
         } else if (!online && wasConnected) {
-            generation++;
-            loading = false;
-            forcedRefreshPending = false;
+            // A read for the lost connection must not land, but what is on screen stays.
+            session++;
+            cancelRaidRefresh();
+            progress.cancel();
         }
         wasConnected = online;
-
-        if (online && allowRefresh) {
-            requestRefresh();
-        } else if (state == State.LOADING && !loading) {
-            state = State.UNAVAILABLE;
+        offline = !online || !allowRefresh;
+        if (!offline) {
+            progress.request();
         }
     }
 
+    /** Reads again once the backend has had time to count the raid, whatever the interval. */
     public void onLocalRaidCompleted() {
-        int scheduledFor = generation;
-        raidDelay.accept(() -> forceRefresh(scheduledFor));
-    }
-
-    public synchronized boolean requestRefresh() {
-        long now = clock.getAsLong();
-        if (lastAttemptAtMs != 0 && now - lastAttemptAtMs < REFRESH_INTERVAL_MS) {
-            return false;
-        }
-        return start(now);
-    }
-
-    private synchronized boolean forceRefresh(int scheduledFor) {
-        if (scheduledFor != generation) {
-            return false;
-        }
-        if (!connected.getAsBoolean()) {
-            return false;
-        }
-        if (loading) {
-            forcedRefreshPending = true;
-            return true;
-        }
-        return start(clock.getAsLong());
-    }
-
-    private synchronized boolean start(long now) {
-        if (loading) {
-            return false;
-        }
-        loading = true;
-        lastAttemptAtMs = now;
-        if (state != State.READY) {
-            state = State.LOADING;
-        }
-        int startedFor = generation;
-        try {
-            fetcher.get().whenComplete((fetched, failure) -> accept(startedFor, fetched, failure));
-        } catch (RuntimeException failure) {
-            accept(startedFor, null, failure);
-        }
-        return true;
-    }
-
-    private static void runAfterSettleDelay(Runnable action) {
-        CompletableFuture.delayedExecutor(RAID_SETTLE_DELAY_MS, TimeUnit.MILLISECONDS).execute(action);
-    }
-
-    private synchronized void accept(int startedFor, GuildRaidProgress fetched, Throwable failure) {
-        if (startedFor != generation) {
-            return;
-        }
-        loading = false;
-        if (fetched == null) {
-            if (state != State.READY) {
-                state = State.UNAVAILABLE;
+        cancelRaidRefresh();
+        pendingRaidRefresh = ticks.after(RAID_SETTLE_DELAY_MS, () -> {
+            pendingRaidRefresh = null;
+            if (!connected.getAsBoolean()) {
+                return;
             }
-            SeqClient.LOGGER.warn("[Achievements] Could not read guild raid progress", failure);
-            runPendingForceRefresh();
-            return;
-        }
-        if (!fetched.equals(progress)) {
-            SeqClient.LOGGER.info("[Achievements] Guild raid progress updated, {} completions", fetched.totalCount());
-        }
-        progress = fetched;
-        state = State.READY;
-        if (!fetched.announcements().isEmpty()) {
-            announcer.accept(fetched.announcements(), () -> startedFor == generation && connected.getAsBoolean());
-        }
-        runPendingForceRefresh();
+            // Behind a read already running, this reads again once that one is done.
+            progress.markStale();
+            progress.request();
+        });
     }
 
-    private void runPendingForceRefresh() {
-        if (!forcedRefreshPending) {
-            return;
+    public boolean requestRefresh() {
+        return progress.request();
+    }
+
+    private void cancelRaidRefresh() {
+        if (pendingRaidRefresh != null) {
+            pendingRaidRefresh.cancel();
+            pendingRaidRefresh = null;
         }
-        forcedRefreshPending = false;
-        if (connected.getAsBoolean()) {
-            start(clock.getAsLong());
+    }
+
+    private void fetched(GuildRaidProgress fetched) {
+        if (!fetched.equals(lastLogged)) {
+            SeqClient.LOGGER.info("[Achievements] Guild raid progress updated, {} completions", fetched.totalCount());
+            lastLogged = fetched;
+        }
+        if (!fetched.announcements().isEmpty()) {
+            long fetchedIn = session;
+            announcer.accept(fetched.announcements(), () -> fetchedIn == session && connected.getAsBoolean());
         }
     }
 }

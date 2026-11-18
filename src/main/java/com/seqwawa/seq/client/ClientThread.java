@@ -43,6 +43,11 @@ public final class ClientThread {
         return QUEUE;
     }
 
+    /** The queue itself, for a service that both hands results back and waits; a test passes its own. */
+    public static TickQueue queue() {
+        return QUEUE;
+    }
+
     /** Runs {@code task} on the game thread at the start of the next tick, even when called from it. */
     public static void execute(Runnable task) {
         QUEUE.execute(task);

@@ -231,6 +231,70 @@ class RefreshableTest {
     }
 
     @Test
+    void cancelDropsTheRunningFetchAndKeepsTheValue() {
+        Refreshable<String> value = builder().build();
+        value.request();
+        reply("kept");
+        now.addAndGet(REFRESH);
+        value.request();
+
+        value.cancel();
+        assertFalse(value.isLoading());
+        replies.remove().complete("for a connection that is gone");
+        ticks.runDue();
+
+        assertEquals("kept", value.value());
+        assertFalse(value.request(), "the interval still counts from the cancelled fetch");
+    }
+
+    @Test
+    void aChangeMadeWhileAFetchRunsIsMadeAgainToItsAnswer() {
+        Refreshable<String> value = builder().build();
+        value.request();
+        reply("v1");
+        now.addAndGet(REFRESH);
+        value.request();
+
+        value.mutate(current -> current + "+push");
+        assertEquals("v1+push", value.value(), "shown at once");
+        reply("v2 answered before the push");
+
+        assertEquals("v2 answered before the push+push", value.value());
+        now.addAndGet(REFRESH);
+        value.request();
+        reply("v3");
+        assertEquals("v3", value.value(), "a later fetch already has it, so it is not made again");
+    }
+
+    @Test
+    void aChangeThatCannotBeMadeToTheAnswerFailsThatFetch() {
+        Refreshable<String> value = builder().build();
+        value.request();
+        CompletableFuture<Refreshable.State<String>> settled = value.settled();
+        value.mutate(current -> {
+            if (current.startsWith("bad")) throw new IllegalStateException("cannot apply");
+            return current + "+push";
+        });
+        reply("bad answer");
+
+        assertFalse(value.isLoading());
+        assertInstanceOf(IllegalStateException.class, value.state().failure());
+        assertEquals("+push", value.value(), "what was shown stays");
+        assertTrue(settled.isDone());
+    }
+
+    @Test
+    void aChangeSurvivesAFailedFetchAndCountsAsAValue() {
+        Refreshable<String> value = builder().build();
+        value.request();
+        value.mutate(current -> current + "pushed");
+        fail(new IllegalStateException("offline"));
+
+        assertEquals("pushed", value.value());
+        assertEquals(Phase.READY, value.state().phase());
+    }
+
+    @Test
     void aSeedShowsUntilAFetchReplacesItAndNeverOverwritesOne() {
         Refreshable<String> value = builder().build();
         assertTrue(value.seed("cached"));

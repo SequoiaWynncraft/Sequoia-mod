@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.gson.JsonParser;
@@ -206,44 +205,49 @@ class RaidProfileStoreTest {
     }
 
     @Test
-    void aRefreshAskedForMidFetchRunsAgainSoTheOlderResponseCannotWin(@TempDir Path directory) {
-        // The save race: a fetch is out, the player saves, and the refresh that follows
-        // the save arrives while that older fetch is still pending. Its pre-save data
-        // must not be what the panel ends up showing.
+    void aSaveDuringAFetchSurvivesThatFetchsOlderAnswer(@TempDir Path directory) {
+        // The save race: a fetch is out when the player saves, and its answer, which may
+        // predate the save, lands after it. The panel must end up showing the save.
         List<CompletableFuture<RaidProfilesResponse>> fetches = new ArrayList<>();
         RaidProfileStore store = storeWithManualFetches(directory, fetches);
         store.load();
+        store.refresh();
+        fetches.get(0).complete(payloadWithBlousyBuild("HADAL"));
 
         CompletableFuture<Void> first = store.refresh();
         CompletableFuture<Void> duringFetch = store.refresh();
+        assertEquals(2, fetches.size(), "no second request while one is out");
+        assertFalse(duringFetch.isDone(), "the caller waits on the fetch already running");
 
-        assertEquals(1, fetches.size(), "no second request while one is out");
-        assertSame(first, duringFetch, "the caller waits on the fetch already running");
+        store.applyProfileUpdate(payloadWithBlousyBuild("ASCENDANCY").profiles().getFirst());
+        fetches.get(1).complete(payloadWithBlousyBuild("HADAL"));
 
-        fetches.get(0).complete(payloadWithBlousyBuild("HADAL"));
-        assertEquals(2, fetches.size(), "the queued refresh starts once the first one lands");
-        assertEquals(Set.of("HADAL"), store.profileForUuid(BLOUSY_UUID).buildKeys());
-
-        fetches.get(1).complete(payloadWithBlousyBuild("ASCENDANCY"));
+        assertTrue(first.isDone() && duringFetch.isDone());
         assertEquals(Set.of("ASCENDANCY"), store.profileForUuid(BLOUSY_UUID).buildKeys());
+        RaidProfileStore restarted = new RaidProfileStore(
+                directory.resolve("raid-profile.json"), directory.resolve("cache/raid-profiles.json"),
+                () -> new CompletableFuture<>());
+        restarted.load();
+        assertEquals(Set.of("ASCENDANCY"), restarted.profileForUuid(BLOUSY_UUID).buildKeys(),
+                "the cache written from that answer has the save too");
         assertFalse(store.isFetching());
-        assertEquals(2, fetches.size(), "and nothing runs after that");
+        assertEquals(2, fetches.size(), "and no extra fetch is needed for it");
     }
 
     @Test
-    void aQueuedRefreshStillRunsWhenTheFetchAheadOfItFails(@TempDir Path directory) {
+    void aSaveDuringAFetchThatFailsStays(@TempDir Path directory) {
         List<CompletableFuture<RaidProfilesResponse>> fetches = new ArrayList<>();
         RaidProfileStore store = storeWithManualFetches(directory, fetches);
         store.load();
+        store.refresh();
+        fetches.get(0).complete(payloadWithBlousyBuild("HADAL"));
 
         store.refresh();
-        store.refresh();
-        fetches.get(0).completeExceptionally(new IllegalStateException("timed out"));
+        store.applyProfileUpdate(payloadWithBlousyBuild("ASCENDANCY").profiles().getFirst());
+        fetches.get(1).completeExceptionally(new IllegalStateException("timed out"));
 
-        assertEquals(2, fetches.size(), "a failure ahead of it must not swallow the queued refresh");
-        fetches.get(1).complete(payloadWithBlousyBuild("ASCENDANCY"));
         assertEquals(Set.of("ASCENDANCY"), store.profileForUuid(BLOUSY_UUID).buildKeys());
-        assertNull(store.lastError(), "the success clears the earlier failure");
+        assertNotNull(store.lastError());
     }
 
     @Test

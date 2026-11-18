@@ -4,16 +4,113 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.seqwawa.seq.client.TickQueue;
 import com.seqwawa.seq.model.GuildMemberPresence;
 import com.seqwawa.seq.model.GuildMemberPresence.GuildRank;
+import com.seqwawa.seq.network.WynncraftGuildClient;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
 import org.junit.jupiter.api.Test;
 
 class GuildPresenceManagerTest {
 
     private static final Predicate<String> NOBODY_BUSY = username -> false;
+
+    private final AtomicLong now = new AtomicLong(1_000);
+    private final TickQueue ticks = new TickQueue(now::get);
+    private final ArrayDeque<CompletableFuture<GuildPresenceManager.Read>> reads = new ArrayDeque<>();
+    private final List<String> knownPrefixes = new ArrayList<>();
+    private final AtomicBoolean catalogLoaded = new AtomicBoolean(true);
+    private final AtomicReference<Consumer<List<String>>> connectedAnswer = new AtomicReference<>();
+
+    private GuildPresenceManager presence() {
+        return new GuildPresenceManager(knownPrefix -> {
+            knownPrefixes.add(String.valueOf(knownPrefix));
+            CompletableFuture<GuildPresenceManager.Read> read = new CompletableFuture<>();
+            reads.add(read);
+            return read;
+        }, catalogLoaded::get, connectedAnswer::set, now::get, ticks);
+    }
+
+    private static GuildPresenceManager.Read roster(String prefix, boolean withoutCatalog) {
+        return new GuildPresenceManager.Read(prefix,
+                new WynncraftGuildClient.GuildRoster(prefix, prefix, 1, List.of(), Map.of()), withoutCatalog);
+    }
+
+    private void answer(GuildPresenceManager.Read read) {
+        reads.remove().complete(read);
+        ticks.runDue();
+    }
+
+    @Test
+    void readsTheRosterThenWaitsWynncraftsIntervalAndRetriesAFailureSooner() {
+        GuildPresenceManager presence = presence();
+        presence.refresh(false);
+        assertTrue(presence.isRefreshing());
+        answer(roster("SEQ", false));
+        assertTrue(presence.hasLoaded());
+        assertFalse(presence.canRefresh(), "Wynncraft caches the roster for a minute");
+
+        now.addAndGet(GuildPresenceManager.refreshIntervalMs(false));
+        presence.refresh(false);
+        reads.remove().completeExceptionally(new IllegalStateException("Could not reach Wynncraft."));
+        ticks.runDue();
+        assertEquals("Could not reach Wynncraft.", presence.lastError());
+        assertFalse(presence.canRefresh());
+        now.addAndGet(GuildPresenceManager.RETRY_AFTER_FAILURE_MS);
+        assertTrue(presence.canRefresh(), "a failure fetched nothing, so the next read comes sooner");
+        assertEquals(List.of("null", "SEQ"), knownPrefixes, "the guild is resolved once and then remembered");
+    }
+
+    @Test
+    void aResetDropsTheReadForThePreviousAccountAndForgetsItsGuild() {
+        GuildPresenceManager presence = presence();
+        presence.refresh(false);
+        answer(roster("SEQ", false));
+        now.addAndGet(GuildPresenceManager.refreshIntervalMs(false));
+        presence.refresh(false);
+
+        presence.reset();
+        answer(roster("SEQ", false));
+        assertFalse(presence.hasLoaded(), "the previous account's roster never lands");
+        presence.refresh(false);
+        assertEquals(List.of("null", "SEQ", "null"), knownPrefixes, "the new account's guild is resolved again");
+    }
+
+    @Test
+    void aRosterReadWithoutTheCatalogIsReadAgainOnceTheCatalogIsIn() {
+        catalogLoaded.set(false);
+        GuildPresenceManager presence = presence();
+        presence.refresh(false);
+        answer(roster("SEQ", true));
+        assertFalse(presence.canRefresh());
+
+        catalogLoaded.set(true);
+        assertTrue(presence.canRefresh(), "its clear counts all came out as zero");
+        presence.refresh(false);
+        assertEquals(1, reads.size());
+    }
+
+    @Test
+    void whoIsConnectedLandsOnTheGameThread() throws InterruptedException {
+        GuildPresenceManager presence = presence();
+        presence.refresh(false);
+
+        Thread socket = Thread.ofPlatform().start(() -> connectedAnswer.get().accept(List.of("Alice")));
+        socket.join();
+        assertFalse(presence.isSequoiaConnected("alice"));
+        ticks.runDue();
+        assertTrue(presence.isSequoiaConnected("alice"));
+    }
 
     private static GuildMemberPresence member(String username, String world) {
         return new GuildMemberPresence(username, "uuid-" + username, GuildRank.RECRUIT, world, false);
