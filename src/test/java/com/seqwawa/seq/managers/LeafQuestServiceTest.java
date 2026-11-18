@@ -27,9 +27,6 @@ class LeafQuestServiceTest {
             new AtomicReference<>(CompletableFuture.completedFuture(snapshot(12_480)));
 
     private final AtomicReference<BooleanSupplier> sessionCurrent = new AtomicReference<>();
-    private final AtomicReference<LeafQuestService.Read> lastRead = new AtomicReference<>();
-    /** The auth service's session, as it counts them. */
-    private final AtomicLong authSession = new AtomicLong();
     /** The game thread: finished reads wait here until a test lets it catch up. */
     private final TickQueue ticks = new TickQueue(now::get);
 
@@ -41,9 +38,8 @@ class LeafQuestServiceTest {
         return new LeafQuestService(read -> {
             calls.incrementAndGet();
             sessionCurrent.set(read.wanted());
-            lastRead.set(read);
             return answer.get();
-        }, now::get, readDeadline, authSession::get, ticks);
+        }, now::get, readDeadline, ticks);
     }
 
     private static Snapshot snapshot(long leaf) {
@@ -250,24 +246,6 @@ class LeafQuestServiceTest {
         assertEquals(0, signIns.get());
     }
 
-    @Test
-    void aReadStartedWhileTheSessionIsBeingClearedBelongsToTheOldOne() {
-        LeafQuestService service = service();
-        // Clearing the session has moved the auth service on, and has not reset the board yet.
-        authSession.set(1);
-
-        service.requestRefresh();
-
-        ticks.runDue();
-
-        assertEquals(0, lastRead.get().session(), "so the auth service will not sign it in");
-        service.reset();
-        now.addAndGet(LeafQuestService.REFRESH_INTERVAL_MS);
-        service.requestRefresh();
-        ticks.runDue();
-        assertEquals(1, lastRead.get().session(), "reads after the reset belong to the new session");
-    }
-
     private static final com.seqwawa.seq.network.auth.StoredAuthSession SIGNED_IN =
             new com.seqwawa.seq.network.auth.StoredAuthSession("session-token",
                     java.time.Instant.now().plusSeconds(86_400), "123e4567-e89b-12d3-a456-426614174000", "Player");
@@ -283,11 +261,13 @@ class LeafQuestServiceTest {
             }
         };
         AtomicReference<CompletableFuture<String>> token = new AtomicReference<>();
+        // The board reads with its own session's tokens, as a session hands them out.
+        long session = auth.sessionGeneration();
         LeafQuestService service = new LeafQuestService(read -> {
             token.set(LeafQuestService.sessionToken(read.wanted(),
-                    force -> auth.ensureSessionToken(force, read.session())).apply(false));
+                    force -> auth.ensureSessionToken(force, session)).apply(false));
             return new CompletableFuture<>();
-        }, now::get, LeafQuestService.READ_DEADLINE, auth::sessionGeneration, ticks);
+        }, now::get, LeafQuestService.READ_DEADLINE, ticks);
 
         // The session is cleared; this board's reset has not run yet when a refresh starts.
         auth.clearSession();
@@ -322,11 +302,11 @@ class LeafQuestServiceTest {
                 return CompletableFuture.completedFuture("token");
             }
         };
+        long session = auth.sessionGeneration();
         LeafQuestService service = new LeafQuestService(read -> LeafQuestService.sessionToken(read.wanted(),
-                        force -> auth.ensureSessionToken(force, read.session()))
+                        force -> auth.ensureSessionToken(force, session))
                 .apply(false)
-                .thenApply(token -> snapshot(12_480)), now::get, LeafQuestService.READ_DEADLINE, auth::sessionGeneration,
-                ticks);
+                .thenApply(token -> snapshot(12_480)), now::get, LeafQuestService.READ_DEADLINE, ticks);
 
         service.requestRefresh();
 

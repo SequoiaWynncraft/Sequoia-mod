@@ -25,7 +25,7 @@ final class LiveSessionServices implements Session.Services {
 
     @Override
     public LeafQuestService leafQuests(Session session) {
-        LeafQuestService quests = LeafQuestService.forSession(session.id(), session::token);
+        LeafQuestService quests = LeafQuestService.forSession(session::token);
         session.onEnd(quests::reset);
         return quests;
     }
