@@ -11,6 +11,7 @@ import com.seqwawa.seq.model.LeafQuests;
 import com.seqwawa.seq.network.ApiClient;
 import com.seqwawa.seq.network.auth.MinecraftAuthService;
 import com.seqwawa.seq.network.auth.NotSignedInException;
+import com.seqwawa.seq.session.SessionManager;
 import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
@@ -70,8 +71,6 @@ public final class LeafQuestService {
     /** How long the recent events may take before the board shows the rest without them. */
     static final Duration EVENTS_DEADLINE = Duration.ofSeconds(20);
 
-    private static LeafQuestService instance;
-
     /**
      * One read of Leaf: the sign-in session it belongs to, and whether the board
      * still wants it.
@@ -119,20 +118,23 @@ public final class LeafQuestService {
                 .build();
     }
 
-    public static synchronized LeafQuestService getInstance() {
-        if (instance == null) {
-            instance = new LeafQuestService(LeafQuestService::fetch, Clocks::monotonicMillis, READ_DEADLINE,
-                    () -> SeqClient.getAuthService() == null ? 0 : SeqClient.getAuthService().sessionGeneration(),
-                    ClientThread.queue());
-        }
-        return instance;
+    /** The current session's. */
+    public static LeafQuestService getInstance() {
+        return SessionManager.getInstance().current().leafQuests();
     }
 
-    private static CompletableFuture<Snapshot> fetch(Read read) {
+    /**
+     * Reads Leaf for the session {@code sessionId} names, with {@code tokens}, the session's
+     * own: once it has ended they refuse, and no read of its can sign the player in again.
+     */
+    public static LeafQuestService forSession(long sessionId, Function<Boolean, CompletableFuture<String>> tokens) {
+        return new LeafQuestService(read -> fetch(read, tokens), Clocks::monotonicMillis, READ_DEADLINE,
+                () -> sessionId, ClientThread.queue());
+    }
+
+    private static CompletableFuture<Snapshot> fetch(Read read, Function<Boolean, CompletableFuture<String>> tokens) {
         ApiClient api = ApiClient.getInstance();
-        MinecraftAuthService auth = SeqClient.getAuthService();
-        Function<Boolean, CompletableFuture<String>> tokenFor = sessionToken(read.wanted(),
-                force -> auth.ensureSessionToken(force, read.session()));
+        Function<Boolean, CompletableFuture<String>> tokenFor = sessionToken(read.wanted(), tokens);
         // Quests first: with sync=1 Leaf pays what was just finished, so the balance read after it includes it.
         // The recent events are a nicety: without them the board still shows the balance and the quests, and
         // says the list could not be read. A blank answer is an empty list, not a failure.
@@ -192,7 +194,7 @@ public final class LeafQuestService {
         return preview == null && current.hasValue() && current.failure() != null;
     }
 
-    /** Forgets everything, for a different account. Game thread only. */
+    /** Forgets everything and drops the read running, for a session that ended. Game thread only. */
     public void reset() {
         session = authSession.getAsLong();
         preview = null;

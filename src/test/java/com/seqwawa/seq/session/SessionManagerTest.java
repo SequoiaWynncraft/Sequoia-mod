@@ -48,16 +48,19 @@ class SessionManagerTest {
     private final RecordingSteps steps = new RecordingSteps(auth);
     /** The game thread: what an end from another thread hands over waits here until a test runs it. */
     private final TickQueue ticks = new TickQueue(() -> 0L);
-    private final SessionManager sessions = new SessionManager(steps, auth, ticks);
+    private final RecordingServices services = new RecordingServices(steps.calls);
+    private final SessionManager sessions = new SessionManager(steps, auth, services, ticks);
 
     @Test
     void anAccountSwitchResetsWhatThePreviousAccountHadInOrder() {
+        services.recordEndOf(sessions.current());
         sessions.end(new EndReason.AccountSwitch(OPERATOR, SHARED_ACCOUNT, false));
 
         assertEquals(List.of(
                 "resetGuildStorage",
                 "resetConnectionForAccountChange",
                 "clearSignIn",
+                "end session",
                 "forgetPartyClassBroadcast",
                 "resetPartyFinder",
                 "resetWynnPartySync",
@@ -65,14 +68,10 @@ class SessionManagerTest {
                 "resetGuildPresence",
                 "resetGuildMembership",
                 "resetNicknames",
-                "clearRaidProfilesSignIn",
-                "resetGuildRaidProgress",
-                "resetLeafQuests",
                 "resetLeafEvents",
                 "clearPopups",
                 "resetWarTracking",
-                "resetWarPlanning",
-                "resetPrincessStats"), steps.calls);
+                "resetWarPlanning"), steps.calls);
     }
 
     @Test
@@ -84,40 +83,38 @@ class SessionManagerTest {
 
     @Test
     void switchingToTheAccountTheSignInSpeaksForKeepsTheConnectionAndSignIn() {
+        services.recordEndOf(sessions.current());
         sessions.end(new EndReason.AccountSwitch(SHARED_ACCOUNT, OPERATOR, true));
 
         assertFalse(steps.calls.contains("resetConnectionForAccountChange"));
         assertFalse(steps.calls.contains("clearSignIn"));
-        assertTrue(steps.calls.contains("resetLeafQuests"), "the account's own state still goes");
+        assertTrue(steps.calls.contains("end session"), "the account's own state still goes");
     }
 
     @Test
     void signingOutEndsTheSignInBeforeClosingTheConnection() {
+        services.recordEndOf(sessions.current());
         sessions.end(EndReason.SIGN_OUT);
 
         assertEquals(List.of(
                 "signOut",
+                "end session",
                 "disconnect",
                 "resetPartyFinder",
-                "clearRaidProfilesSignIn",
                 "resetWarPlanner"), steps.calls);
-
-        steps.calls.clear();
-        ticks.runDue();
-        assertEquals(List.of("resetGuildRaidProgress", "resetLeafQuests"), steps.calls,
-                "what was read with the token goes at the next tick, as it did before");
     }
 
     @Test
     void clearingTheSessionSignsOutAndForgetsTheDiscordNameAndQueuedWarEvents() {
+        services.recordEndOf(sessions.current());
         sessions.end(EndReason.CLEAR_SESSION);
 
         assertEquals(List.of(
                 "dropPendingWarEvents",
                 "signOut",
+                "end session",
                 "disconnect",
                 "resetPartyFinder",
-                "clearRaidProfilesSignIn",
                 "forgetDiscordName",
                 "tellPlayer: Backend session cleared. Run /seq connect to sign in again."), steps.calls);
     }
@@ -131,20 +128,18 @@ class SessionManagerTest {
 
     @Test
     void aRejectedTokenEndsTheWholeSessionOnTheGameThreadButKeepsTheLeafCursor() {
+        services.recordEndOf(sessions.current());
         sessions.end(new EndReason.TokenRejected(AuthErrorCode.TOKEN_EXPIRED, "Backend token expired."));
         steps.calls.clear();
 
         ticks.runDue();
 
         assertEquals(List.of(
+                "end session",
                 "resetPartyFinder",
-                "clearRaidProfilesSignIn",
-                "resetGuildRaidProgress",
-                "resetLeafQuests",
                 "endLeafEventsKeepingCursor",
                 "clearPopups",
-                "resetWarPlanning",
-                "resetPrincessStats"), steps.calls);
+                "resetWarPlanning"), steps.calls);
     }
 
     @Test
@@ -176,12 +171,13 @@ class SessionManagerTest {
 
     @Test
     void aDifferentAccountEndsTheSessionOnce() {
+        services.recordEndOf(sessions.current());
         sessions.checkAccount(OPERATOR, "Operator");
 
         assertTrue(sessions.checkAccount(SHARED_ACCOUNT, "Shared"));
         assertFalse(sessions.checkAccount(SHARED_ACCOUNT, "Shared"), "the next tick is the same account");
 
-        assertEquals(1, steps.calls.stream().filter("resetLeafQuests"::equals).count());
+        assertEquals(1, steps.calls.stream().filter("end session"::equals).count());
         assertTrue(steps.calls.contains("clearSignIn"));
     }
 
@@ -272,9 +268,96 @@ class SessionManagerTest {
         assertTrue(SessionManager.signInSpeaksFor(OPERATOR, OPERATOR.toString()));
     }
 
+    @Test
+    void eachSessionHasItsOwnLeafQuestsRaidProgressPrincessStatsAndRaidProfileSignIn() {
+        Session first = sessions.current();
+        var quests = first.leafQuests();
+        var progress = first.raidProgress();
+        var princess = first.princessStats();
+        var raidProfiles = first.raidProfiles();
+        assertSame(quests, first.leafQuests(), "made once, the first time it is asked for");
+
+        sessions.end(EndReason.SIGN_OUT);
+        Session next = sessions.current();
+
+        assertNotSame(quests, next.leafQuests());
+        assertNotSame(progress, next.raidProgress());
+        assertNotSame(princess, next.princessStats());
+        assertNotSame(raidProfiles, next.raidProfiles());
+    }
+
+    @Test
+    void endingASessionStopsWhatItsObjectsHadRunningAndNothingElse() {
+        Session first = sessions.current();
+        first.leafQuests();
+        first.raidProfiles();
+
+        sessions.end(EndReason.SIGN_OUT);
+
+        assertEquals(List.of("leafQuests stopped", "raidProfiles stopped"), services.stopped,
+                "only what the session made, once each");
+        sessions.current().princessStats();
+        sessions.end(EndReason.CLEAR_SESSION);
+        assertEquals(List.of("leafQuests stopped", "raidProfiles stopped", "princessStats stopped"), services.stopped);
+    }
+
+    @Test
+    void aRejectedTokenStopsTheSessionsObjectsOnTheGameThread() {
+        sessions.current().raidProgress();
+
+        sessions.end(new EndReason.TokenRejected(AuthErrorCode.TOKEN_INVALID, "Rejected."));
+        assertEquals(List.of(), services.stopped, "not on the socket's thread");
+
+        ticks.runDue();
+        assertEquals(List.of("raidProgress stopped"), services.stopped);
+    }
+
     private static void assertNotSignedIn(CompletableFuture<String> token) {
         CompletionException failure = assertThrows(CompletionException.class, token::join);
         assertInstanceOf(NotSignedInException.class, failure.getCause());
+    }
+
+    /**
+     * The game's own objects for each session, recording when a session ends and which of
+     * them it stopped. Nothing here reads the network until asked to.
+     */
+    static final class RecordingServices implements Session.Services {
+        private final Session.Services live = new LiveSessionServices();
+        private final List<String> calls;
+        final List<String> stopped = new ArrayList<>();
+        private final java.util.Set<Session> watched = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+
+        RecordingServices(List<String> calls) {
+            this.calls = calls;
+        }
+
+        /** Notes in the step list the moment {@code session} ends. */
+        void recordEndOf(Session session) {
+            if (watched.add(session)) {
+                session.onEnd(() -> calls.add("end session"));
+            }
+        }
+
+        private void watch(Session session, String name) {
+            session.onEnd(() -> stopped.add(name + " stopped"));
+        }
+
+        @Override public com.seqwawa.seq.managers.LeafQuestService leafQuests(Session session) {
+            watch(session, "leafQuests");
+            return live.leafQuests(session);
+        }
+        @Override public com.seqwawa.seq.managers.GuildRaidProgressService raidProgress(Session session) {
+            watch(session, "raidProgress");
+            return live.raidProgress(session);
+        }
+        @Override public com.seqwawa.seq.managers.PrincessRaidStatsManager princessStats(Session session) {
+            watch(session, "princessStats");
+            return live.princessStats(session);
+        }
+        @Override public com.seqwawa.seq.network.auth.RaidProfilesSession raidProfiles(Session session) {
+            watch(session, "raidProfiles");
+            return live.raidProfiles(session);
+        }
     }
 
     /** Records each step by name, in the order it ran; the sign-in steps also end the auth service's sign-in. */
@@ -311,15 +394,11 @@ class SessionManagerTest {
         @Override public void resetGuildPresence() { calls.add("resetGuildPresence"); }
         @Override public void resetGuildMembership() { calls.add("resetGuildMembership"); }
         @Override public void resetNicknames() { calls.add("resetNicknames"); }
-        @Override public void clearRaidProfilesSignIn() { calls.add("clearRaidProfilesSignIn"); }
-        @Override public void resetGuildRaidProgress() { calls.add("resetGuildRaidProgress"); }
-        @Override public void resetLeafQuests() { calls.add("resetLeafQuests"); }
         @Override public void resetLeafEvents() { calls.add("resetLeafEvents"); }
         @Override public void endLeafEventsKeepingCursor() { calls.add("endLeafEventsKeepingCursor"); }
         @Override public void clearPopups() { calls.add("clearPopups"); }
         @Override public void resetWarTracking() { calls.add("resetWarTracking"); }
         @Override public void resetWarPlanning() { calls.add("resetWarPlanning"); }
         @Override public void resetWarPlanner() { calls.add("resetWarPlanner"); }
-        @Override public void resetPrincessStats() { calls.add("resetPrincessStats"); }
     }
 }

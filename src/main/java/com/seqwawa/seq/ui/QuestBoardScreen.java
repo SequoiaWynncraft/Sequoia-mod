@@ -52,8 +52,11 @@ public final class QuestBoardScreen extends SequoiaPanelScreen {
     private static final float MIN_CARD_WIDTH = 140;
     private static final float SCROLL_SPEED = 30;
 
-    private final LeafQuestService service = LeafQuestService.getInstance();
     private final ScrollPane scroll = new ScrollPane();
+    /** The current session's, asked each time: a session that ends while the board is open leaves it. */
+    private static LeafQuestService service() {
+        return LeafQuestService.getInstance();
+    }
 
     private State state = State.LOADING;
     private Snapshot shown = Snapshot.EMPTY;
@@ -68,19 +71,19 @@ public final class QuestBoardScreen extends SequoiaPanelScreen {
         super.init();
         scroll.reset();
         // Runs again on every resize, so it takes the once-a-minute limit like the rest.
-        service.requestRefresh();
-        state = service.state();
-        shown = service.snapshot();
-        stale = service.refreshFailed();
+        service().requestRefresh();
+        state = service().state();
+        shown = service().snapshot();
+        stale = service().refreshFailed();
     }
 
     @Override
     protected void beforeFrame() {
-        service.requestRefresh();
-        if (state != service.state() || !shown.equals(service.snapshot()) || stale != service.refreshFailed()) {
-            state = service.state();
-            shown = service.snapshot();
-            stale = service.refreshFailed();
+        service().requestRefresh();
+        if (state != service().state() || !shown.equals(service().snapshot()) || stale != service().refreshFailed()) {
+            state = service().state();
+            shown = service().snapshot();
+            stale = service().refreshFailed();
             triggerImmediateNarration(true);
         }
     }

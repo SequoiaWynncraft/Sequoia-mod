@@ -2,9 +2,9 @@ package com.seqwawa.seq.session;
 
 import com.seqwawa.seq.client.ClientThread;
 import com.seqwawa.seq.client.SeqClient;
-import com.seqwawa.seq.managers.LeafQuestService;
 import com.seqwawa.seq.network.auth.AuthErrorCode;
 import com.seqwawa.seq.network.auth.MinecraftAuthService;
+import com.seqwawa.seq.network.auth.RaidProfilesSession;
 import com.seqwawa.seq.network.auth.StoredAuthSession;
 import java.util.Objects;
 import java.util.UUID;
@@ -59,13 +59,6 @@ public final class SessionManager {
 
         void resetNicknames();
 
-        /** Its token speaks for the previous account, so a save would land on their profile. */
-        void clearRaidProfilesSignIn();
-
-        void resetGuildRaidProgress();
-
-        void resetLeafQuests();
-
         /** Stops the Leaf stream and forgets where it was: the next account's starts from now. */
         void resetLeafEvents();
 
@@ -81,14 +74,13 @@ public final class SessionManager {
 
         /** The war planner alone, as /seq logout did. */
         void resetWarPlanner();
-
-        void resetPrincessStats();
     }
 
-    private static SessionManager instance;
+    private static volatile SessionManager instance;
 
     private final Steps steps;
     private final MinecraftAuthService auth;
+    private final Session.Services services;
     /** Where the game-side steps of an end that arrives from another thread run. */
     private final Executor gameThread;
     /** The account seen on the last tick. Game thread only. */
@@ -96,21 +88,45 @@ public final class SessionManager {
     /** Replaced on the game thread only; any thread may read it. */
     private volatile Session current;
 
-    SessionManager(Steps steps, MinecraftAuthService auth, Executor gameThread) {
+    SessionManager(Steps steps, MinecraftAuthService auth, Session.Services services, Executor gameThread) {
         this.steps = Objects.requireNonNull(steps, "steps");
         this.auth = Objects.requireNonNull(auth, "auth");
+        this.services = Objects.requireNonNull(services, "services");
         this.gameThread = Objects.requireNonNull(gameThread, "gameThread");
-        this.current = new Session(auth.currentSignIn(), auth::ensureSessionToken);
+        this.current = newSession();
+        // A board that found no session can read Leaf now, without waiting out its minute.
+        auth.whenSignedIn(this::signedIn);
     }
 
-    public static synchronized SessionManager getInstance() {
-        if (instance == null) {
-            MinecraftAuthService auth = MinecraftAuthService.getInstance();
-            instance = new SessionManager(new LiveSessionSteps(), auth, ClientThread.executor());
-            // A board that found no session can read Leaf now, without waiting out its minute.
-            auth.whenSignedIn(session -> LeafQuestService.getInstance().markStale());
+    public static SessionManager getInstance() {
+        SessionManager manager = instance;
+        if (manager != null) {
+            return manager;
         }
-        return instance;
+        synchronized (SessionManager.class) {
+            if (instance == null) {
+                SessionManager created = new SessionManager(
+                        new LiveSessionSteps(),
+                        MinecraftAuthService.getInstance(),
+                        new LiveSessionServices(),
+                        ClientThread.executor());
+                RaidProfilesSession.findCurrentWith(() -> created.current().raidProfiles());
+                instance = created;
+            }
+            return instance;
+        }
+    }
+
+    private Session newSession() {
+        return new Session(auth.currentSignIn(), auth::ensureSessionToken, services);
+    }
+
+    /** A sign-in completed, on the auth thread: the session it was for can read Leaf at once. */
+    private void signedIn(long sessionId) {
+        Session session = current;
+        if (session.id() == sessionId) {
+            session.leafQuests().markStale();
+        }
     }
 
     /** The current session: the signed-in one, or a signed-out one waiting to sign in. */
@@ -197,28 +213,28 @@ public final class SessionManager {
         }
     }
 
-    /** Leaves the current session ended, and starts the next one with the auth service's current sign-in. */
+    /**
+     * Starts the next session with the auth service's current sign-in, then ends the one
+     * before it, which stops everything it owned: what it read with its token, and its
+     * raid-profile sign-in.
+     */
     private void startNextSession() {
         Session ended = current;
+        current = newSession();
         ended.end();
-        current = new Session(auth.currentSignIn(), auth::ensureSessionToken);
     }
 
     /**
-     * Everything that belonged to the sign-in, for a session that ends while the account
-     * stays: what was read with its token, what was waiting to show, and the raid-profile
-     * sign-in. The Leaf stream resumes from where it was, since the events are the same
-     * player's. The connection reconnects by itself, so it is not touched here.
+     * The rest of what belonged to the sign-in, for a session that ends while the account
+     * stays: the party it was in, what was waiting to show, and the war planner. The Leaf
+     * stream resumes from where it was, since the events are the same player's. The
+     * connection reconnects by itself, so it is not touched here.
      */
     private void endSessionState() {
         steps.resetPartyFinder();
-        steps.clearRaidProfilesSignIn();
-        steps.resetGuildRaidProgress();
-        steps.resetLeafQuests();
         steps.endLeafEventsKeepingCursor();
         steps.clearPopups();
         steps.resetWarPlanning();
-        steps.resetPrincessStats();
     }
 
     private void endForAccountSwitch(boolean keepSignIn) {
@@ -236,14 +252,10 @@ public final class SessionManager {
         steps.resetGuildPresence();
         steps.resetGuildMembership();
         steps.resetNicknames();
-        steps.clearRaidProfilesSignIn();
-        steps.resetGuildRaidProgress();
-        steps.resetLeafQuests();
         steps.resetLeafEvents();
         steps.clearPopups();
         steps.resetWarTracking();
         steps.resetWarPlanning();
-        steps.resetPrincessStats();
     }
 
     /**
@@ -255,11 +267,5 @@ public final class SessionManager {
         startNextSession();
         steps.disconnect();
         steps.resetPartyFinder();
-        steps.clearRaidProfilesSignIn();
-        // What was read with the token goes at the next tick, as it did when the auth service reset it.
-        gameThread.execute(() -> {
-            steps.resetGuildRaidProgress();
-            steps.resetLeafQuests();
-        });
     }
 }

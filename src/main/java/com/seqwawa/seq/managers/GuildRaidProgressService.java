@@ -8,6 +8,7 @@ import com.seqwawa.seq.client.TickQueue;
 import com.seqwawa.seq.model.GuildRaidProgress;
 import com.seqwawa.seq.network.ApiClient;
 import com.seqwawa.seq.network.ConnectionManager;
+import com.seqwawa.seq.session.SessionManager;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -33,8 +34,6 @@ public final class GuildRaidProgressService {
 
     /** How long after a raid the backend has counted it. */
     static final long RAID_SETTLE_DELAY_MS = Duration.ofSeconds(6).toMillis();
-
-    private static GuildRaidProgressService instance;
 
     private final BooleanSupplier connected;
     private final TickQueue ticks;
@@ -70,16 +69,19 @@ public final class GuildRaidProgressService {
                 .build();
     }
 
-    public static synchronized GuildRaidProgressService getInstance() {
-        if (instance == null) {
-            instance = new GuildRaidProgressService(
-                    () -> ApiClient.getInstance().getGuildRaidProgress(),
-                    Clocks::monotonicMillis,
-                    ConnectionManager::isConnected,
-                    ClientThread.queue(),
-                    ChatManager::announceAchievements);
-        }
-        return instance;
+    /** The current session's. */
+    public static GuildRaidProgressService getInstance() {
+        return SessionManager.getInstance().current().raidProgress();
+    }
+
+    /** Reads through the backend connection, and announces what the backend says to. */
+    public static GuildRaidProgressService create() {
+        return new GuildRaidProgressService(
+                () -> ApiClient.getInstance().getGuildRaidProgress(),
+                Clocks::monotonicMillis,
+                ConnectionManager::isConnected,
+                ClientThread.queue(),
+                ChatManager::announceAchievements);
     }
 
     public GuildRaidProgress progress() {

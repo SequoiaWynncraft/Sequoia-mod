@@ -119,8 +119,10 @@ public class SeqClient implements ClientModInitializer {
 
     public static WarTerritoryBoundsReminder warTerritoryBoundsReminder;
 
-    @Getter
-    public static PrincessRaidStatsManager princessRaidStatsManager;
+    /** The current session's Princess raid count and leaderboard. */
+    public static PrincessRaidStatsManager getPrincessRaidStatsManager() {
+        return SessionManager.getInstance().current().princessStats();
+    }
 
     @Getter
     public static MinecraftAuthService authService;
@@ -395,7 +397,6 @@ public class SeqClient implements ClientModInitializer {
         warPlannerManager = new WarPlannerManager();
         warTerritoryQueueManager = new WarTerritoryQueueManager();
         warTerritoryBoundsReminder = new WarTerritoryBoundsReminder();
-        princessRaidStatsManager = new PrincessRaidStatsManager();
         wynnPartySyncManager = new WynnPartySyncManager();
         guildWarTracker = GuildWarTrackers.create();
         guildStorageTracker = GuildStorageTracker.getInstance();

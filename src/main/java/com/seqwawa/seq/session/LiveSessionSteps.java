@@ -3,8 +3,6 @@ package com.seqwawa.seq.session;
 import com.seqwawa.seq.accessors.NotificationAccessor;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.managers.GuildPresenceManager;
-import com.seqwawa.seq.managers.GuildRaidProgressService;
-import com.seqwawa.seq.managers.LeafQuestService;
 import com.seqwawa.seq.managers.MinecraftWarTowerTracker;
 import com.seqwawa.seq.managers.NicknameResolverCache;
 import com.seqwawa.seq.managers.RaidPartySnapshotTracker;
@@ -13,7 +11,6 @@ import com.seqwawa.seq.network.ConnectionManager;
 import com.seqwawa.seq.network.LeafEventStream;
 import com.seqwawa.seq.network.auth.AuthErrorCode;
 import com.seqwawa.seq.network.auth.MinecraftAuthService;
-import com.seqwawa.seq.network.auth.RaidProfilesSession;
 import com.seqwawa.seq.ui.unlock.UnlockOverlay;
 
 /** The steps a session's end takes in the game, each the call the game made for it before. */
@@ -112,21 +109,6 @@ final class LiveSessionSteps implements SessionManager.Steps {
     }
 
     @Override
-    public void clearRaidProfilesSignIn() {
-        RaidProfilesSession.getInstance().clear();
-    }
-
-    @Override
-    public void resetGuildRaidProgress() {
-        GuildRaidProgressService.getInstance().reset();
-    }
-
-    @Override
-    public void resetLeafQuests() {
-        LeafQuestService.getInstance().reset();
-    }
-
-    @Override
     public void resetLeafEvents() {
         LeafEventStream.getInstance().reset();
     }
@@ -162,13 +144,6 @@ final class LiveSessionSteps implements SessionManager.Steps {
     public void resetWarPlanner() {
         if (SeqClient.getWarPlannerManager() != null) {
             SeqClient.getWarPlannerManager().reset();
-        }
-    }
-
-    @Override
-    public void resetPrincessStats() {
-        if (SeqClient.getPrincessRaidStatsManager() != null) {
-            SeqClient.getPrincessRaidStatsManager().reset();
         }
     }
 }
