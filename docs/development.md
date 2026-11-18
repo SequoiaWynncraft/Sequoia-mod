@@ -128,7 +128,16 @@ jobs install their tools without a cache.
 3. The Release workflow runs `release:check`, builds and tests the tagged commit, and runs
    `release:stage`. The draft holds the JAR, the sources JAR, `sequoia-images-native-source.zip`
    and a `.sha256` file for each. The run summary shows the JAR's SHA-256.
-4. Test the draft's own JAR.
+4. Test the draft's own JAR. Download it, check it against the SHA-256 in the run summary, and
+   start Minecraft with it and Fabric API alone, as players run it:
+
+   ```sh
+   gh release download v1.12.0 -p 'sequoia-*.jar' -D /tmp/draft
+   sha256sum /tmp/draft/sequoia-1.12.0.jar
+   mise run release:try /tmp/draft/sequoia-1.12.0.jar
+   ```
+
+   The game runs in `run-production/`. Check that the mod loads without mixin errors.
 5. Run the Promote release workflow with the tag and that SHA-256. `release:promote` checks the
    Modrinth token, then checks that the draft holds the accepted JAR built from the tag. It
    publishes the draft as the latest GitHub release, uploads the same JAR and source zip to

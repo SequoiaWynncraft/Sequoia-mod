@@ -49,6 +49,12 @@ run = "./gradlew runClient"
 run_windows = "gradlew.bat runClient"
 raw_args = true
 
+[tasks."release:try"]
+description = "Start Minecraft as players run it, with Fabric API and a release JAR: release:try PATH"
+usage = 'arg "<jar>" help="The release JAR to run, such as sequoia-VERSION.jar from the draft"'
+run = './gradlew runProductionClient "-Pmod_jar=$usage_jar"'
+run_windows = 'gradlew.bat runProductionClient "-Pmod_jar=%usage_jar%"'
+
 [tasks.fmt]
 description = "Format the image decoder's Rust code; --check only reports changes"
 dir = "native/decoder"
