@@ -6,7 +6,7 @@ Press `O` or run `/seq` to open the menu. The sidebar links to the same screens.
 | --- | --- |
 | `/seq p`, `/seq party` | Open party finder. |
 | `/seq achievement` | Open achievements. |
-| `/seq quests` | Open the quest board. |
+| `/seq quests` | Open the quest board. See [Quests and Leaf](quests.md). |
 | `/seq map` | Open the world map. |
 | `/seq members`, `/seq member` | Open the guild members panel. |
 | `/seq war` | Open the war planner, when authorized. |
