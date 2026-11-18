@@ -36,6 +36,14 @@ final class LiveSessionSteps implements SessionManager.Steps {
     }
 
     @Override
+    public void carrySignInOver() {
+        MinecraftAuthService auth = SeqClient.getAuthService();
+        if (auth != null) {
+            auth.carrySignInOver();
+        }
+    }
+
+    @Override
     public void signOut() {
         MinecraftAuthService auth = SeqClient.getAuthService();
         if (auth != null) {

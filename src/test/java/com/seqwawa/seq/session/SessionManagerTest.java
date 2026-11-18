@@ -3,6 +3,7 @@ package com.seqwawa.seq.session;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -11,6 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.seqwawa.seq.client.TickQueue;
 import com.seqwawa.seq.network.auth.AuthErrorCode;
+import com.seqwawa.seq.network.auth.AuthState;
 import com.seqwawa.seq.network.auth.MinecraftAuthService;
 import com.seqwawa.seq.network.auth.NotSignedInException;
 import com.seqwawa.seq.network.auth.StoredAuthSession;
@@ -221,9 +223,22 @@ class SessionManagerTest {
 
         sessions.end(new EndReason.AccountSwitch(SHARED_ACCOUNT, OPERATOR, true));
 
-        assertEquals(shared.id(), sessions.current().id(), "the sign-in carries on");
+        assertNotEquals(shared.id(), sessions.current().id(), "the token carries on, in a sign-in of its own");
+        assertEquals(auth.sessionGeneration(), sessions.current().id());
         assertEquals("operator-token", sessions.current().token(false).join());
         assertNotSignedIn(shared.token(false));
+    }
+
+    @Test
+    void aRenewalTheEndedSessionAskedForIsNotStoredForTheOneThatKeptItsToken() {
+        long shared = sessions.current().id();
+
+        sessions.end(new EndReason.AccountSwitch(SHARED_ACCOUNT, OPERATOR, true));
+
+        assertNotEquals(shared, auth.sessionGeneration(),
+                "a sign-in it had running finishes for a session that has ended, so it is never stored");
+        assertNotSignedIn(auth.ensureSessionToken(true, shared));
+        assertEquals(AuthState.AUTHENTICATED, auth.getState(), "the kept token still counts as signed in");
     }
 
     @Test
@@ -525,6 +540,10 @@ class SessionManagerTest {
         @Override public void clearSignIn() {
             calls.add("clearSignIn");
             auth.clearSession();
+        }
+        @Override public void carrySignInOver() {
+            calls.add("carrySignInOver");
+            auth.carrySignInOver();
         }
         @Override public void signOut() {
             calls.add("signOut");

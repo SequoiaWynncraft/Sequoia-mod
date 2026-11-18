@@ -32,6 +32,9 @@ public final class SessionManager {
         /** Ends the sign-in without signing out, so the next account signs in as usual. */
         void clearSignIn();
 
+        /** Ends the sign-in, handing its token on to the next session's; the connection stays. */
+        void carrySignInOver();
+
         /** Ends the sign-in; nothing signs the player in again until they connect. */
         void signOut();
 
@@ -228,7 +231,10 @@ public final class SessionManager {
 
     private void endForAccountSwitch(boolean keepSignIn) {
         steps.resetGuildStorage();
-        if (!keepSignIn) {
+        if (keepSignIn) {
+            // A fresh sign-in with the same token: what the ended session started never reaches the next.
+            steps.carrySignInOver();
+        } else {
             steps.resetConnectionForAccountChange();
             steps.clearSignIn();
         }

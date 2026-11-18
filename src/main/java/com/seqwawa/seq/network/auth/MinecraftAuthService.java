@@ -370,6 +370,18 @@ public class MinecraftAuthService {
         endSession(true);
     }
 
+    /**
+     * Hands the sign-in on to the next session, as switching back to the account it speaks for
+     * does: its token moves to a fresh sign-in with the next id, and the ended one keeps none, so
+     * a renewal it started is never stored for its replacement. The connection stays. Only
+     * {@code SessionManager.end} calls it.
+     */
+    public synchronized void carrySignInOver() {
+        StoredAuthSession token = current.token();
+        startNextSession(token);
+        setState(token == null ? AuthState.IDLE : AuthState.AUTHENTICATED, null);
+    }
+
     /** The player asked to connect, so a sign-out of theirs no longer holds. */
     public synchronized void allowSignIn() {
         signedOutByUser = false;
@@ -381,7 +393,7 @@ public class MinecraftAuthService {
 
     private synchronized void endSession(boolean byUser) {
         signedOutByUser = byUser;
-        startNextSession();
+        startNextSession(null);
         setState(AuthState.IDLE, null);
     }
 
@@ -398,18 +410,19 @@ public class MinecraftAuthService {
             return null;
         }
         SignIn refused = current;
-        startNextSession();
+        startNextSession(null);
         setState(AuthState.FAILED, new AuthException(code, message, true));
         return refused;
     }
 
     /**
-     * Ends the current session's sign-in, dropping its token, and starts the next one signed
-     * out. A sign-in still running finishes for the ended one, so it is dropped too.
+     * Ends the current session's sign-in, dropping its token, and starts the next one with
+     * {@code token}, or signed out. A sign-in still running finishes for the ended one, so it
+     * is dropped too.
      */
-    private void startNextSession() {
+    private void startNextSession(StoredAuthSession token) {
         SignIn ended = current;
-        current = new SignIn(ended.id() + 1, null);
+        current = new SignIn(ended.id() + 1, token);
         ended.setToken(null);
         inFlightAuthentication = null;
     }
