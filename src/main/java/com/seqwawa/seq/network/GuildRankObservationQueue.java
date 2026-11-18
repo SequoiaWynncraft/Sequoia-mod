@@ -48,6 +48,13 @@ public final class GuildRankObservationQueue {
         pending.remove(id);
     }
 
+    /** Forgets every observation; for tests, which share the connection's one queue. */
+    synchronized void clear() {
+        pending.clear();
+        lastKey = null;
+        lastAt = Instant.EPOCH;
+    }
+
     private static JsonObject identity(GuildRankEventParser.Identity identity) {
         JsonObject value = new JsonObject();
         value.addProperty("display_name", identity.displayName());

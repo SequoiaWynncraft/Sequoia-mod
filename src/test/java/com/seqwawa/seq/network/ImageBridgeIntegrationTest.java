@@ -12,8 +12,6 @@ import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.config.ConfigManager;
 import com.seqwawa.seq.images.BridgeMedia;
 import com.seqwawa.seq.images.ImagePreviewSettings;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.net.URI;
 import java.nio.file.Path;
 import java.nio.file.Files;
@@ -31,38 +29,22 @@ class ImageBridgeIntegrationTest {
     @TempDir
     Path directory;
 
-    private ConfigManager oldConfig;
-    private Object oldHandler;
-    private Field handlerField;
-    private Method handleMessage;
-    private ConnectionManager connection;
+    private ConnectionHarness harness;
     private final AtomicReference<ConnectionManager.DiscordChatMessage> received = new AtomicReference<>();
 
     @BeforeEach
-    void setUp() throws Exception {
-        oldConfig = SeqClient.configManager;
-        var configConstructor = ConfigManager.class.getDeclaredConstructor(Path.class, Path.class, boolean.class);
-        configConstructor.setAccessible(true);
-        SeqClient.configManager =
-                configConstructor.newInstance(directory.resolve("config.json"), directory.resolve("token"), false);
-        handlerField = ConnectionManager.class.getDeclaredField("discordChatHandler");
-        handlerField.setAccessible(true);
-        oldHandler = handlerField.get(null);
+    void setUp() {
+        harness = new ConnectionHarness(directory);
         ConnectionManager.onDiscordChat(received::set);
-        var constructor = ConnectionManager.class.getDeclaredConstructor();
-        constructor.setAccessible(true);
-        connection = constructor.newInstance();
-        handleMessage = ConnectionManager.class.getDeclaredMethod("handleMessage", String.class);
-        handleMessage.setAccessible(true);
+        harness.connection();
         ImagePreviewSettings.setting().setValue(true);
         ImagePreviewSettings.mediaSetting().reset();
         BridgeMedia.clear();
     }
 
     @AfterEach
-    void tearDown() throws Exception {
-        handlerField.set(null, oldHandler);
-        SeqClient.configManager = oldConfig;
+    void tearDown() {
+        harness.close();
         ImagePreviewSettings.setting().reset();
         ImagePreviewSettings.mediaSetting().reset();
         BridgeMedia.clear();
@@ -82,7 +64,7 @@ class ImageBridgeIntegrationTest {
 
     @Test
     void signedAttachmentReachesTheChatHandlerWithItsSender() throws Exception {
-        handleMessage.invoke(connection, payload("discord_chat", BARE, SIGNED));
+        harness.receive(payload("discord_chat", BARE, SIGNED));
 
         assertNotNull(received.get());
         assertEquals(SIGNED, received.get().message());
@@ -95,11 +77,11 @@ class ImageBridgeIntegrationTest {
     void hiddenMediaDropsMediaOnlyMessagesBeforeDispatchAndPreservesTextAndIdentity() throws Exception {
         ImagePreviewSettings.mediaSetting().setValue(false);
         assertFalse(ImagePreviewSettings.enabled());
-        handleMessage.invoke(connection, payload("discord_chat", BARE, SIGNED));
+        harness.receive(payload("discord_chat", BARE, SIGNED));
         assertNull(received.get());
-        handleMessage.invoke(connection, payload("discord_media", null, VIDEO));
+        harness.receive(payload("discord_media", null, VIDEO));
         assertNull(received.get());
-        handleMessage.invoke(connection, payload("discord_chat", "hello " + BARE + " https://example.com/help", SIGNED));
+        harness.receive(payload("discord_chat", "hello " + BARE + " https://example.com/help", SIGNED));
         assertEquals("hello https://example.com/help", received.get().message());
         assertEquals("BridgeTester", received.get().username());
         assertEquals("123", received.get().discordId());
@@ -125,18 +107,18 @@ class ImageBridgeIntegrationTest {
         assertTrue(ImagePreviewSettings.enabled());
         ImagePreviewSettings.setting().setValue(false);
         String original = payload("discord_chat", BARE, SIGNED);
-        handleMessage.invoke(connection, original);
+        harness.receive(original);
         assertEquals(BARE, received.get().message(), "links mode must preserve the original URL");
     }
 
     @Test
     void mediaUpdatesRespectIgnoredBridgeUsers() throws Exception {
         SeqClient.configManager.addIgnoredBridgeUser("BridgeTester");
-        handleMessage.invoke(connection, payload("discord_media", null, VIDEO));
+        harness.receive(payload("discord_media", null, VIDEO));
         assertNull(received.get());
 
         SeqClient.configManager.removeIgnoredBridgeUser("BridgeTester");
-        handleMessage.invoke(connection, payload("discord_media", null, VIDEO));
+        harness.receive(payload("discord_media", null, VIDEO));
         assertNotNull(received.get());
         assertEquals(VIDEO, received.get().message());
         assertEquals("BridgeTester", received.get().username());

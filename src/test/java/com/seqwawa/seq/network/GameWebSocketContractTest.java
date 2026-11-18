@@ -14,9 +14,11 @@ import com.google.gson.reflect.TypeToken;
 import com.seqwawa.seq.model.ChatItemPreview;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /** Runs the vendored backend wire fixtures through the production client boundaries. */
 class GameWebSocketContractTest {
@@ -62,24 +64,22 @@ class GameWebSocketContractTest {
     }
 
     @Test
-    void discordChatDispatchPreservesLegacyAndAdditiveFields() throws Exception {
+    void discordChatDispatchPreservesLegacyAndAdditiveFields(@TempDir Path config) throws Exception {
         AtomicReference<ConnectionManager.DiscordChatMessage> dispatched = new AtomicReference<>();
-        ConnectionManager.onDiscordChat(dispatched::set);
-        try {
+        try (var harness = new ConnectionHarness(config)) {
+            ConnectionManager.onDiscordChat(dispatched::set);
+            harness.connection();
             for (var element : fixture().getAsJsonObject("discord_chat").getAsJsonArray("cases")) {
                 JsonObject example = element.getAsJsonObject();
                 String id = example.get("id").getAsString();
                 dispatched.set(null);
-                ConnectionManager.getInstance().onMessage(example.getAsJsonObject("payload").toString());
+                harness.receive(example.getAsJsonObject("payload").toString());
                 assertNotNull(dispatched.get(), id);
                 JsonObject expected = example.getAsJsonObject("expected");
                 assertEquals(string(expected, "username"), dispatched.get().username(), id);
                 assertEquals(string(expected, "message"), dispatched.get().message(), id);
                 assertEquals(string(expected, "discord_id"), dispatched.get().discordId(), id);
             }
-        } finally {
-            ConnectionManager.onDiscordChat(null);
-            ConnectionManager.resetForTest();
         }
     }
 
@@ -88,24 +88,22 @@ class GameWebSocketContractTest {
     }
 
     @Test
-    void invalidOrUnknownEnvelopesDoNotDispatchChatAndLeaveValidMessagesUsable() throws Exception {
+    void invalidOrUnknownEnvelopesDoNotDispatchChatAndLeaveValidMessagesUsable(@TempDir Path config) throws Exception {
         AtomicReference<ConnectionManager.DiscordChatMessage> dispatched = new AtomicReference<>();
-        ConnectionManager.onDiscordChat(dispatched::set);
-        try {
+        try (var harness = new ConnectionHarness(config)) {
+            ConnectionManager.onDiscordChat(dispatched::set);
+            harness.connection();
             JsonObject fixture = fixture();
             for (var element : fixture.getAsJsonObject("rejected_envelopes").getAsJsonArray("cases")) {
                 JsonObject example = element.getAsJsonObject();
-                ConnectionManager.getInstance().onMessage(example.getAsJsonObject("payload").toString());
+                harness.receive(example.getAsJsonObject("payload").toString());
                 assertNull(dispatched.get(), example.get("id").getAsString());
             }
             JsonObject valid = fixture.getAsJsonObject("discord_chat").getAsJsonArray("cases")
                     .get(0).getAsJsonObject().getAsJsonObject("payload");
-            ConnectionManager.getInstance().onMessage(valid.toString());
+            harness.receive(valid.toString());
             assertNotNull(dispatched.get());
             assertEquals("hello", dispatched.get().message());
-        } finally {
-            ConnectionManager.onDiscordChat(null);
-            ConnectionManager.resetForTest();
         }
     }
 }

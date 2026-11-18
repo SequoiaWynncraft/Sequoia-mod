@@ -21,11 +21,11 @@ class PendingReconnectTest {
     private final ScheduledExecutorService idle = Executors.newSingleThreadScheduledExecutor();
     private final List<Runnable> scheduled = new ArrayList<>();
     private final List<ScheduledFuture<?>> futures = new ArrayList<>();
-    private final Function<Runnable, ScheduledFuture<?>> scheduler = attempt -> {
+    private final Function<Runnable, ConnectionEnvironment.Cancellable> scheduler = attempt -> {
         scheduled.add(attempt);
         ScheduledFuture<?> future = idle.schedule(() -> {}, 1, TimeUnit.HOURS);
         futures.add(future);
-        return future;
+        return () -> future.cancel(false);
     };
 
     @AfterEach

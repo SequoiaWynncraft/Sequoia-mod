@@ -15,6 +15,7 @@ final class TreasurySessionAuthenticator {
     private final MinecraftSessionProof.SessionJoiner sessionJoiner;
     private final String endpoint;
     private final Executor executor;
+    private final Executor completions;
     private final Consumer<TreasuryAuthResponse> responseSender;
     private final Consumer<Throwable> failureHandler;
 
@@ -23,15 +24,33 @@ final class TreasurySessionAuthenticator {
     private String clientNonce;
     private long generation;
 
+    /** Finishes a join on the thread that ran it. */
     TreasurySessionAuthenticator(
             MinecraftSessionProof.SessionJoiner sessionJoiner,
             Executor executor,
             Consumer<TreasuryAuthResponse> responseSender,
             Consumer<Throwable> failureHandler,
             String endpoint) {
+        this(sessionJoiner, executor, Runnable::run, responseSender, failureHandler, endpoint);
+    }
+
+    /**
+     * @param executor    runs the session join, a slow web request
+     * @param completions where a finished join is checked against {@link #reset()} and handed to
+     *                    {@code responseSender} or {@code failureHandler}, in one step: on the
+     *                    thread that resets, no reset can come between the check and the handler
+     */
+    TreasurySessionAuthenticator(
+            MinecraftSessionProof.SessionJoiner sessionJoiner,
+            Executor executor,
+            Executor completions,
+            Consumer<TreasuryAuthResponse> responseSender,
+            Consumer<Throwable> failureHandler,
+            String endpoint) {
         this.sessionJoiner = Objects.requireNonNull(sessionJoiner);
         this.endpoint = Objects.requireNonNull(endpoint);
         this.executor = Objects.requireNonNull(executor);
+        this.completions = Objects.requireNonNull(completions);
         this.responseSender = Objects.requireNonNull(responseSender);
         this.failureHandler = Objects.requireNonNull(failureHandler);
     }
@@ -72,7 +91,7 @@ final class TreasurySessionAuthenticator {
                         throw new CompletionException(exception);
                     }
                 }, executor)
-                .whenComplete((proof, error) -> completeJoin(startedFor, challengeNonce, proof, error));
+                .whenCompleteAsync((proof, error) -> completeJoin(startedFor, challengeNonce, proof, error), completions);
         return true;
     }
 

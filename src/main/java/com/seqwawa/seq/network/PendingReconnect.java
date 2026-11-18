@@ -1,6 +1,5 @@
 package com.seqwawa.seq.network;
 
-import java.util.concurrent.ScheduledFuture;
 import java.util.function.Function;
 
 /**
@@ -10,15 +9,15 @@ import java.util.function.Function;
  */
 final class PendingReconnect {
 
-    private ScheduledFuture<?> task;
+    private ConnectionEnvironment.Cancellable task;
 
     /**
      * Cancels any waiting reconnect and schedules {@code schedule}'s instead. The task is
-     * handed its own future, to name itself to {@link #started}.
+     * handed its own handle, to name itself to {@link #started}.
      */
-    synchronized void replace(Function<Runnable, ScheduledFuture<?>> schedule, Runnable attempt) {
+    synchronized void replace(Function<Runnable, ConnectionEnvironment.Cancellable> schedule, Runnable attempt) {
         cancel();
-        ScheduledFuture<?>[] self = new ScheduledFuture<?>[1];
+        ConnectionEnvironment.Cancellable[] self = new ConnectionEnvironment.Cancellable[1];
         self[0] = schedule.apply(() -> {
             // A wrapper replaced while it waited for the lock is not the pending reconnect any more.
             if (started(self)) {
@@ -30,7 +29,7 @@ final class PendingReconnect {
 
     synchronized void cancel() {
         if (task != null) {
-            task.cancel(false);
+            task.cancel();
             task = null;
         }
     }
@@ -43,7 +42,7 @@ final class PendingReconnect {
      * Whether {@code self} is still the pending reconnect, which it then stops being. Taking this
      * lock also waits out {@link #replace}, so {@code self} is set by then.
      */
-    private synchronized boolean started(ScheduledFuture<?>[] self) {
+    private synchronized boolean started(ConnectionEnvironment.Cancellable[] self) {
         if (task == self[0]) {
             task = null;
             return true;
