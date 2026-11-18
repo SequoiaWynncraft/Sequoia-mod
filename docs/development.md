@@ -99,6 +99,10 @@ The Build workflow runs on pull requests, on pushes to `main` and from Release:
 | `build` | `native:notices`, `build` and `native:verify-jar` |
 | `java PLATFORM` | `test:platform` on Windows x64 and macOS Arm, plus the other platforms except Linux x64 for tags and manual runs |
 
+The CodeQL workflow scans every language on pull requests, on pushes to `main` and weekly. Its Java
+extraction runs Gradle on the JDK in `mise.toml`, so the repository uses this workflow instead of
+GitHub's default setup, which cannot choose a JDK.
+
 The guest job caches the upstream archives with the guest and hands them to `pack`, which checks
 their pins, notices and FFmpeg signature again before building the source archive from them.
 Each job installs only the tools it uses. Pull requests restore the tool and Gradle caches but
