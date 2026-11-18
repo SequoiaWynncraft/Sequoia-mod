@@ -340,6 +340,12 @@ public class MinecraftAuthService {
         return current.token();
     }
 
+    /** Whether the current sign-in holds {@code token}: whoever signed in with it still speaks for it. */
+    public boolean holdsToken(String token) {
+        StoredAuthSession signedIn = getCurrentSession();
+        return token != null && signedIn != null && token.equals(signedIn.token());
+    }
+
     public boolean isTokenExpired() {
         StoredAuthSession session = getCurrentSession();
         return session == null || session.isExpired(Instant.now());

@@ -87,19 +87,19 @@ class ConnectionLifecycleTest {
         assertEquals(Instant.parse("2026-11-18T12:00:00Z").plusMillis(harness.nowMs.get()),
                 harness.connection().getConnectedSince());
         assertEquals(List.of("get_connected"), socket.sentTypes());
-        assertEquals("sequoian", harness.config.getDiscordUsername());
+        assertEquals("sequoian", harness.config.getDiscordUsername(ConnectionHarness.PROFILE));
         assertTrue(harness.connection().isDiscordLinked());
     }
 
     @Test
     void signingInWithoutADiscordNameForgetsTheOneStored() {
-        harness.config.setDiscordUsername("someone-else");
+        harness.config.setDiscordUsername(ConnectionHarness.PROFILE, "someone-else");
         harness.connectAutomatically();
         harness.open();
 
         harness.receive("{\"type\":\"authenticated\"}");
 
-        assertNull(harness.config.getDiscordUsername());
+        assertNull(harness.config.getDiscordUsername(ConnectionHarness.PROFILE));
         assertFalse(harness.connection().isDiscordLinked());
     }
 

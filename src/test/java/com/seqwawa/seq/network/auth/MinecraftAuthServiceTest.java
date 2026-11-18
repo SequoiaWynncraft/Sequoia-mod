@@ -234,6 +234,18 @@ class MinecraftAuthServiceTest {
         assertFalse(rejected.isSignedOutByUser(), "a rejected token signs in afresh");
     }
 
+    @Test
+    void aTokenSpeaksForTheSignInOnlyUntilItEnds() {
+        var auth = new MinecraftAuthService(SESSION);
+        assertTrue(auth.holdsToken("session-token"));
+        assertFalse(auth.holdsToken("another-token"));
+        assertFalse(auth.holdsToken(null), "a socket with no token holds none");
+
+        auth.clearSession();
+
+        assertFalse(auth.holdsToken("session-token"));
+    }
+
     private static void assertNotSignedIn(CompletableFuture<?> future) {
         assertTrue(future.isCompletedExceptionally(), "fails at once, without starting a sign-in");
         var failure = assertThrows(java.util.concurrent.CompletionException.class, future::join);

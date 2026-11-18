@@ -98,6 +98,12 @@ public class ConnectionManager {
     private long connectionAttemptGeneration;
     private volatile boolean userInitiatedConnectFlow;
     private volatile boolean treasuryOnlyConnection;
+    /**
+     * The token this socket signs in with, and the Minecraft account it signs in for. Set on
+     * the game thread before it connects; a Treasury-only socket has no token.
+     */
+    private volatile String handshakeToken;
+    private volatile UUID handshakeAccount;
     private final TreasurySessionAuthenticator treasurySessionAuthenticator;
     // WebSocket instances are replaced on reconnect; pending events belong to the account session.
     private static final GuildWarOutboundQueue pendingGuildWarEvents = new GuildWarOutboundQueue();
@@ -827,6 +833,8 @@ public class ConnectionManager {
                             finishConnectFlow();
                             return;
                         }
+                        handshakeToken = token;
+                        handshakeAccount = environment.game().profileId();
                         socket.connect(buildHandshakeHeaders(token));
                     } catch (Exception exception) {
                         connectInProgress = false;
@@ -2065,7 +2073,9 @@ public class ConnectionManager {
                     authenticated = true;
                     autoReconnect = true;
                     String discordUser = discordUsernameIn(json);
-                    storeDiscordUsername(discordUser);
+                    discordNameDelivery(discordUser, handshakeAccount,
+                            () -> instance == this && environment.tokens().holdsToken(handshakeToken),
+                            SeqClient.getConfigManager()::setDiscordUsername).run();
                     if (discordUser != null) {
                         notifyConnectionStatus("Connected as " + discordUser);
                     }
@@ -2511,7 +2521,7 @@ public class ConnectionManager {
     }
 
     public String getLinkedDiscordUsername() {
-        return SeqClient.getConfigManager().getDiscordUsername(SeqClient.currentMinecraftProfileId());
+        return SeqClient.getConfigManager().getDiscordUsername(environment.game().profileId());
     }
 
     /** Closes the connection for a session that ended, without counting as the player's own disconnect. */
@@ -2870,9 +2880,21 @@ public class ConnectionManager {
         return false;
     }
 
-    /** Each Minecraft account keeps the Discord name the backend linked to it, or that it linked none. */
-    private void storeDiscordUsername(String discordUsername) {
-        SeqClient.getConfigManager().setDiscordUsername(SeqClient.currentMinecraftProfileId(), discordUsername);
+    /**
+     * Keeps the Discord name a sign-in reply links, or that it links none, for {@code account}: the
+     * one the socket signed in for, not whoever plays when the reply lands. On the game thread, and
+     * only while {@code signInCurrent}, so a reply for the previous account that lands after a
+     * switch changes neither account's name.
+     */
+    static Runnable discordNameDelivery(String discordUsername, UUID account, BooleanSupplier signInCurrent,
+            java.util.function.BiConsumer<UUID, String> store) {
+        return () -> {
+            if (account == null || !signInCurrent.getAsBoolean()) {
+                SeqClient.LOGGER.debug("[WebSocket] Ignoring the Discord name of a sign-in that has ended");
+                return;
+            }
+            store.accept(account, discordUsername);
+        };
     }
 
     /** The Discord name a sign-in reply links to the account, or null when it names none: absent and blank alike. */

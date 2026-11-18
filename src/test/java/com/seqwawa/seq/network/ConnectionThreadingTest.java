@@ -175,10 +175,10 @@ class ConnectionThreadingTest {
         socket.receive("{\"type\":\"authenticated\",\"discord_username\":\"sequoian\"}");
 
         harness.signOut();
-        harness.config.clearDiscordUsername();
+        harness.config.clearDiscordUsername(ConnectionHarness.PROFILE);
         harness.settle();
 
-        assertNull(harness.config.getDiscordUsername());
+        assertNull(harness.config.getDiscordUsername(ConnectionHarness.PROFILE));
         assertFalse(ConnectionManager.isConnected());
     }
 

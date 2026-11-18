@@ -359,6 +359,37 @@ class ConnectionManagerTest {
     }
 
     @Test
+    void aDiscordNameIsKeptForTheAccountTheSocketSignedInForWhoeverPlaysWhenItLands() {
+        UUID previousAccount = UUID.fromString("20000000-0000-0000-0000-000000000001");
+        Map<UUID, String> stored = new java.util.HashMap<>();
+        var signInCurrent = new AtomicBoolean(true);
+        // The reply for the previous account reaches the game thread after the player switched,
+        // before the switch was noticed: the account playing is the new one by now.
+        Runnable delivery = ConnectionManager.discordNameDelivery(
+                "previous-discord", previousAccount, signInCurrent::get, stored::put);
+
+        delivery.run();
+
+        assertEquals(Map.of(previousAccount, "previous-discord"), stored, "the new account's entry is untouched");
+    }
+
+    @Test
+    void aDiscordNameFromASignInThatHasEndedChangesNoAccount() {
+        UUID account = UUID.fromString("20000000-0000-0000-0000-000000000001");
+        Map<UUID, String> stored = new java.util.HashMap<>();
+        var signInCurrent = new AtomicBoolean(true);
+        Runnable named = ConnectionManager.discordNameDelivery("discord", account, signInCurrent::get, stored::put);
+        Runnable none = ConnectionManager.discordNameDelivery(null, account, signInCurrent::get, stored::put);
+
+        // The switch ended the socket's sign-in before the game thread ran either.
+        signInCurrent.set(false);
+        named.run();
+        none.run();
+
+        assertTrue(stored.isEmpty(), "neither stores nor erases a name");
+    }
+
+    @Test
     void aSignInReplyWithABlankDiscordNameNamesNoneLikeOneWithout() {
         assertEquals("SequoiaUser", ConnectionManager.discordUsernameIn(
                 JsonParser.parseString("{\"discord_username\":\"SequoiaUser\"}").getAsJsonObject()));

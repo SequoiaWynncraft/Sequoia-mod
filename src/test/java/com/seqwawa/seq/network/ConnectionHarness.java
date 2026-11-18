@@ -219,6 +219,7 @@ final class ConnectionHarness implements AutoCloseable {
 
     /** Answers the oldest waiting token request. */
     void answerToken(String token) {
+        tokens.held = token;
         tokens.pending.removeFirst().complete(token);
         settle();
     }
@@ -241,6 +242,7 @@ final class ConnectionHarness implements AutoCloseable {
     /** What a sign-out does to the connection: the player is signed out, then the socket closes. */
     void signOut() {
         tokens.signedOutByUser = true;
+        tokens.held = null;
         connection().disconnectForSessionEnd();
     }
 
@@ -266,12 +268,15 @@ final class ConnectionHarness implements AutoCloseable {
         String lastError;
         boolean signedOutByUser;
         String signedInUsername;
+        /** The token the current sign-in holds: the last one handed out, until the sign-in ends. */
+        String held;
         int allowSignIns;
 
         @Override
         public CompletableFuture<String> ensureValidToken(boolean forceRefresh) {
             requests.add(forceRefresh);
             if (token != null) {
+                held = token;
                 return CompletableFuture.completedFuture(token);
             }
             CompletableFuture<String> request = new CompletableFuture<>();
@@ -283,6 +288,7 @@ final class ConnectionHarness implements AutoCloseable {
         public void invalidateSession(AuthErrorCode code, String message) {
             invalidations.add(code);
             lastError = message;
+            held = null;
         }
 
         @Override
@@ -304,6 +310,11 @@ final class ConnectionHarness implements AutoCloseable {
         @Override
         public String signedInUsername() {
             return signedInUsername;
+        }
+
+        @Override
+        public boolean holdsToken(String token) {
+            return token != null && token.equals(held);
         }
     }
 
