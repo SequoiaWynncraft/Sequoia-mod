@@ -26,6 +26,17 @@ class UnlockPopupTest {
     }
 
     @Test
+    void aWarOverSequoiasClaimIsCalledADefence() {
+        UnlockPopup defence = from("leaf_earned",
+                "{\"source\":\"war\",\"leaf\":146,\"xp\":146,\"detail\":\"Detlas\",\"in_claim\":true}");
+        UnlockPopup snipe = from("leaf_earned",
+                "{\"source\":\"war\",\"leaf\":26,\"xp\":26,\"detail\":\"Ragni\",\"in_claim\":false}");
+
+        assertEquals("Defended Detlas", defence.detail());
+        assertEquals("War for Ragni", snipe.detail());
+    }
+
+    @Test
     void aFinishedQuestIsACardInItsSlotsColours() {
         UnlockPopup popup = from("quest_completed",
                 "{\"quest\":{\"slot\":\"weekly\",\"title\":\"Complete 12 TCC raids\",\"objective\":{\"type\":\"raids\","
@@ -69,8 +80,9 @@ class UnlockPopupTest {
 
     @Test
     void aLevelUpIsACeremony() {
-        assertEquals(new UnlockPopup(Kind.CEREMONY, "Sequoia level", "Level 8", "Leaf level up", 0, 0, "level", null),
-                from("level_up", "{\"level\":8}"));
+        assertEquals(new UnlockPopup(Kind.CEREMONY, "Sequoia level", "Level 8", "Leaf level up", 250, 0, "level", null),
+                from("level_up", "{\"level\":8,\"leaf\":250}"));
+        assertEquals(0, from("level_up", "{\"level\":8}").leaf(), "a level reached before levels paid Leaf");
     }
 
     @Test

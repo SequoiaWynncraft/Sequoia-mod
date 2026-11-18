@@ -72,4 +72,67 @@ class SequoiaSidebarNavigationTest {
         assertEquals(22f, normal.buttonHeight());
         assertTrue(SettingsScreen.princessPromptFits(400, normal.bottom()));
     }
+
+    @Test
+    void theButtonsKeepClearOfWhatIsReservedAtTheFoot() {
+        var free = SequoiaSidebarNavigation.sidebarLayout(360, 9, 22, 6, 0);
+        var reserved = SequoiaSidebarNavigation.sidebarLayout(360, 9, 22, 6, 56);
+
+        org.junit.jupiter.api.Assertions.assertTrue(free.bottom() <= 360 - 8);
+        org.junit.jupiter.api.Assertions.assertTrue(reserved.bottom() <= 360 - 56 - 8,
+                "the last button ends " + reserved.bottom());
+    }
+
+    @Test
+    void settingsLeavesThePrincessPromptItsPlaceAboveTheProfileCard() {
+        // A 720-pixel window at the usual UI size, with the card's top at 276.
+        float floor = SidebarProfile.top(360);
+        for (boolean authorized : new boolean[] {false, true}) {
+            int rows = SequoiaSidebarNavigation.destinations(authorized).size();
+            var layout = SettingsScreen.settingsSidebarLayout(360, rows, floor, true);
+            assertTrue(SettingsScreen.princessPromptFits(floor, layout.bottom()),
+                    "the last of " + rows + " buttons ends at " + layout.bottom());
+            assertEquals(SequoiaSidebarNavigation.sidebarLayout(360, rows, 22, 6, 360 - floor),
+                    SettingsScreen.settingsSidebarLayout(360, rows, floor, false),
+                    "without the prompt the buttons only keep clear of the card");
+        }
+    }
+
+    @Test
+    void settingsGivesThePromptsSpaceBackWhereThePromptCannotFit() {
+        int rows = SequoiaSidebarNavigation.destinations(true).size();
+        float floor = 200 - 84;
+        var layout = SettingsScreen.settingsSidebarLayout(200, rows, floor, true);
+
+        assertFalse(SettingsScreen.princessPromptFits(floor, layout.bottom()));
+        assertEquals(SequoiaSidebarNavigation.sidebarLayout(200, rows, 22, 6, 84), layout);
+    }
+
+    @Test
+    void settingsLeavesTheProfileCardOutWhereItWouldHideThePrincessToggle() {
+        int rows = 10;
+        // At 240 the card fits under the buttons, but then the prompt does not, though it would without the card.
+        assertTrue(SidebarProfile.fits(240, rows));
+        assertTrue(SettingsScreen.princessPromptFits(240, SettingsScreen.settingsSidebarLayout(240, rows, 240, true).bottom()));
+        assertFalse(SettingsScreen.profileLeavesPrincessRoom(240, rows, SidebarProfile.top(240), true, false));
+        // At 360 both fit, and with the prompt switched off the card never gives way.
+        assertTrue(SettingsScreen.profileLeavesPrincessRoom(360, rows, SidebarProfile.top(360), true, false));
+        assertTrue(SettingsScreen.profileLeavesPrincessRoom(240, rows, SidebarProfile.top(240), false, false));
+    }
+
+    @Test
+    void settingsLeavesTheProfileCardOutWhereItWouldHideThePrincessLeaderboard() {
+        int rows = 10;
+        float floor = SidebarProfile.top(440);
+        // At 440 the leaderboard fits under the buttons without the card, and not with it.
+        float without = SettingsScreen.settingsSidebarLayout(440, rows, 440, true).bottom();
+        assertTrue(SettingsScreen.princessLeaderboardHeight(440, without, true) >= PrincessLeaderboardPanel.MIN_HEIGHT);
+        float with = SettingsScreen.settingsSidebarLayout(440, rows, floor, true).bottom();
+        assertTrue(SettingsScreen.princessLeaderboardHeight(floor, with, true) < PrincessLeaderboardPanel.MIN_HEIGHT);
+
+        assertFalse(SettingsScreen.profileLeavesPrincessRoom(440, rows, floor, true, true));
+        assertTrue(SettingsScreen.profileLeavesPrincessRoom(440, rows, floor, true, false), "unless the mode is off");
+        assertTrue(SettingsScreen.profileLeavesPrincessRoom(720, rows, SidebarProfile.top(720), true, true),
+                "a tall window has room for all of it");
+    }
 }

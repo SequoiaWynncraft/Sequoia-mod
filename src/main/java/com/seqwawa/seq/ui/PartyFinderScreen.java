@@ -440,6 +440,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     destination.label(),
                     destination == SequoiaSidebarNavigation.Destination.PARTY_FINDER);
         }
+        SidebarProfile.render(canvas, screenHeight, uiMouseX, uiMouseY);
     }
 
     private void drawSidebarButton(
@@ -2077,6 +2078,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         }
 
         // ── Sidebar ──
+        if (SidebarProfile.click(mx, my, screenHeight, this)) return true;
         float btnX = SIDEBAR_PADDING;
         float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
 

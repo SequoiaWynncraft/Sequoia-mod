@@ -10,6 +10,7 @@ import net.minecraft.client.User;
 import net.minecraft.server.Services;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.managers.GuildRaidProgressService;
+import com.seqwawa.seq.managers.LeafQuestService;
 import com.seqwawa.seq.network.ApiClient;
 import com.seqwawa.seq.network.BuildConfig;
 
@@ -68,6 +69,32 @@ public class MinecraftAuthService {
         return beginAuthentication().thenApply(StoredAuthSession::token);
     }
 
+    /** Which session is current. It moves on whenever the session is cleared or invalidated. */
+    public synchronized long sessionGeneration() {
+        return authenticationGeneration;
+    }
+
+    /**
+     * A token for work that belongs to the session {@code generation} names, such
+     * as a Leaf read. It renews that session's token when it has to, but never
+     * starts a session of its own: once the session has been cleared, or when
+     * there is none, it fails with {@link NotSignedInException}, and the player
+     * signs in again by connecting. The check and the start of any renewal happen
+     * under the lock that clearing a session takes, so a clear cannot land
+     * between them, and a renewal started before a clear is never stored.
+     */
+    public CompletableFuture<String> ensureSessionToken(boolean forceRefresh, long generation) {
+        synchronized (this) {
+            StoredAuthSession session = getCurrentSession();
+            if (!isCurrentAuthenticationAttempt(generation, authenticationGeneration)
+                    || session == null
+                    || !session.hasToken()) {
+                return CompletableFuture.failedFuture(new NotSignedInException());
+            }
+            return ensureValidToken(forceRefresh);
+        }
+    }
+
     public CompletableFuture<StoredAuthSession> beginAuthentication() {
         try {
             ensureSecureTransport();
@@ -119,6 +146,8 @@ public class MinecraftAuthService {
                                 "[Auth] Authenticated Minecraft account username='{}' expiresAt={}",
                                 session.minecraftUsername(),
                                 session.expiresAt());
+                        // A board that found no session can read Leaf now, without waiting out its minute.
+                        LeafQuestService.getInstance().markStale();
                     });
             inFlightAuthentication = future;
             return future;
@@ -293,6 +322,8 @@ public class MinecraftAuthService {
             setState(AuthState.IDLE, null);
         }
         GuildRaidProgressService.getInstance().reset();
+        // The balance and quests belong to the session that just ended.
+        LeafQuestService.getInstance().reset();
     }
 
     public void invalidateSession(AuthErrorCode code, String message) {
@@ -303,6 +334,7 @@ public class MinecraftAuthService {
             setState(AuthState.FAILED, new AuthException(code, message, true));
         }
         GuildRaidProgressService.getInstance().reset();
+        LeafQuestService.getInstance().reset();
     }
 
     public void clearSessionIfNotActiveProfile(UUID activeProfileId) {

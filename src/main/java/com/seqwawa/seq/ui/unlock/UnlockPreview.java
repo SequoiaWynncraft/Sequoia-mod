@@ -5,11 +5,15 @@ import com.google.gson.JsonParser;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.managers.LeafQuestService;
 import com.seqwawa.seq.model.LeafAccount;
+import com.seqwawa.seq.model.LeafEvents;
 import com.seqwawa.seq.model.LeafQuests;
 import com.seqwawa.seq.ui.QuestBoardScreen;
+import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
@@ -41,17 +45,42 @@ public final class UnlockPreview {
     private static int ticks;
     private static int stageStart;
     private static int frame;
+    private static volatile boolean running;
+    /** Screenshots asked for since the last frame was drawn. */
+    private static final List<String> pendingShots = new ArrayList<>();
+    /** Ticks the script has waited for a frame to screenshot; past {@link #MAX_HOLD_TICKS} the shot is given up. */
+    private static int heldTicks;
+    private static final int MAX_HOLD_TICKS = 200;
+    /**
+     * The popups' clock while the tour runs: one tick's worth for each tick the
+     * script moves on, so every screenshot shows the animation at a fixed step
+     * however slowly the frames come.
+     */
+    private static volatile long animationMs = 1_000_000;
 
     private UnlockPreview() {}
 
     public static void initializeIfRequested() {
         if (!FabricLoader.getInstance().isDevelopmentEnvironment() || !Boolean.getBoolean("seq.unlockPreview")) return;
         SeqClient.LOGGER.info("[Unlock preview] Running the scripted tour");
+        running = true;
         ClientTickEvents.END_CLIENT_TICK.register(UnlockPreview::tick);
+        ClientLifecycleEvents.CLIENT_STOPPING.register(UnlockPreview::restore);
     }
 
     private static void tick(Minecraft mc) {
         ticks++;
+        if (!pendingShots.isEmpty()) {
+            if (++heldTicks <= MAX_HOLD_TICKS) {
+                // Hold the script, and the popups' clock, until the frame to screenshot is drawn.
+                stageStart++;
+                return;
+            }
+            SeqClient.LOGGER.warn("[Unlock preview] Gave up on {}: no frame was drawn without a loading screen", pendingShots);
+            pendingShots.clear();
+            heldTicks = 0;
+        }
+        animationMs += 50;
         int inStage = ticks - stageStart;
         if (inStage > 4 * 60 * 20) {
             SeqClient.LOGGER.warn("[Unlock preview] Stuck at {}, giving up", stage);
@@ -81,15 +110,30 @@ public final class UnlockPreview {
                 }
             }
             case BOARD -> {
-                if (inStage == 40) grab(mc, "preview-quest-board.png");
-                if (inStage == 46) {
+                if (inStage == 40) grab("preview-quest-board.png");
+                if (inStage == 44 && mc.screen instanceof QuestBoardScreen board) {
+                    // Down to the recent Leaf under the cards.
+                    board.scrollBy(10_000);
+                }
+                if (inStage == 52) grab("preview-quest-board-recent.png");
+                if (inStage == 54) {
+                    // A narrow board: the same window with the mod's UI at its largest size, for the preview only.
+                    MinecraftUiRenderer.previewUiScale = 1.5f;
+                    mc.resizeDisplay();
+                }
+                if (inStage == 62) grab("preview-quest-board-narrow.png");
+                if (inStage == 64) {
+                    MinecraftUiRenderer.previewUiScale = null;
+                    mc.resizeDisplay();
+                }
+                if (inStage == 70) {
                     mc.setScreen(null);
                     for (UnlockPopup popup : samplePopups()) UnlockOverlay.getInstance().enqueue(popup);
                     next(Stage.POPUPS);
                 }
             }
             case POPUPS -> {
-                if (inStage % FRAME_EVERY_TICKS == 0) grab(mc, String.format("preview-unlock-%04d.png", frame++));
+                if (inStage % FRAME_EVERY_TICKS == 0) grab(String.format("preview-unlock-%04d.png", frame++));
                 if (inStage > 40 && UnlockOverlay.getInstance().isIdle()) next(Stage.DONE);
             }
             case DONE -> {
@@ -101,13 +145,50 @@ public final class UnlockPreview {
         }
     }
 
+    /**
+     * Whether the tour is running. While it is, the game does not pause when the
+     * window loses focus, so the popups play on; the setting itself is never
+     * touched, so nothing the preview does can be saved into it.
+     */
+    public static boolean isRunning() {
+        return running;
+    }
+
+    /** Puts back what the preview changed for itself. */
+    private static void restore(Minecraft mc) {
+        MinecraftUiRenderer.previewUiScale = null;
+    }
+
     private static void next(Stage nextStage) {
         stage = nextStage;
         stageStart = ticks;
     }
 
-    private static void grab(Minecraft mc, String name) {
-        Screenshot.grab(mc.gameDirectory, name, mc.getMainRenderTarget(), 1, message -> {});
+    /**
+     * Asks for a screenshot of the next frame. Minecraft can run several ticks
+     * before it draws again, so the shot is taken once that frame is drawn,
+     * and the script waits for it before changing anything else.
+     */
+    private static void grab(String name) {
+        pendingShots.add(name);
+    }
+
+    /** The popups' clock while the tour runs, in milliseconds. */
+    static long animationMs() {
+        return animationMs;
+    }
+
+    /**
+     * Called by the game renderer after each frame: saves the screenshots asked
+     * for since the last one, unless a loading screen covered that frame.
+     */
+    public static void afterFrame(Minecraft mc) {
+        if (pendingShots.isEmpty() || mc.getOverlay() != null) return;
+        heldTicks = 0;
+        for (String name : pendingShots) {
+            Screenshot.grab(mc.gameDirectory, name, mc.getMainRenderTarget(), 1, message -> {});
+        }
+        pendingShots.clear();
     }
 
     private static void createWorld(Minecraft mc) {
@@ -128,7 +209,27 @@ public final class UnlockPreview {
                                 now.plus(Duration.ofHours(70))),
                         quest("repeatable", "Complete 8 raids", "raids", null, 3, 8, 200, 100, null)),
                 List.of());
-        return new LeafQuestService.Snapshot(new LeafAccount(12_480, 13_120, new LeafAccount.Level(7, 640, 2_500)), quests);
+        Instant at = Instant.now();
+        List<LeafEvents.Event> recent = List.of(
+                event(6, "leaf_earned", at.minus(Duration.ofMinutes(12)),
+                        "{\"source\":\"raid\",\"leaf\":330,\"xp\":330,\"detail\":\"The Nameless Anomaly\"}"),
+                event(5, "leaf_earned", at.minus(Duration.ofMinutes(41)),
+                        "{\"source\":\"war\",\"leaf\":146,\"xp\":146,\"detail\":\"Detlas\",\"in_claim\":true}"),
+                event(4, "quest_completed", at.minus(Duration.ofMinutes(75)),
+                        "{\"quest\":{\"slot\":\"daily\",\"title\":\"Complete 3 NOL raids\","
+                                + "\"objective\":{\"type\":\"raids\",\"raid\":\"nol\"},\"reward\":{\"leaf\":300,\"xp\":150}}}"),
+                event(3, "achievement_paid", at.minus(Duration.ofHours(3)),
+                        "{\"ladder\":\"raid:NOTG\",\"milestone\":\"gold\",\"tier\":\"gold\",\"threshold\":100,"
+                                + "\"label\":\"Gold\",\"leaf\":1000,\"xp\":1000}"),
+                event(2, "level_up", at.minus(Duration.ofHours(3)), "{\"level\":7,\"leaf\":225}"),
+                event(1, "leaf_earned", at.minus(Duration.ofHours(5)),
+                        "{\"source\":\"war\",\"leaf\":26,\"xp\":26,\"detail\":\"Ragni\",\"in_claim\":false}"));
+        return new LeafQuestService.Snapshot(new LeafAccount(12_480, 13_120, new LeafAccount.Level(7, 640, 2_500)), quests,
+                recent);
+    }
+
+    private static LeafEvents.Event event(long id, String type, Instant at, String data) {
+        return new LeafEvents.Event(id, type, at, JsonParser.parseString(data).getAsJsonObject());
     }
 
     private static LeafQuests.Quest quest(String slot, String title, String type, String raid, long progress, long target,
@@ -142,7 +243,7 @@ public final class UnlockPreview {
     static List<UnlockPopup> samplePopups() {
         return List.of(
                 popup("leaf_earned", "{\"source\":\"raid\",\"leaf\":330,\"xp\":330,\"detail\":\"The Nameless Anomaly\"}"),
-                popup("leaf_earned", "{\"source\":\"war\",\"leaf\":60,\"xp\":60,\"detail\":\"Detlas\"}"),
+                popup("leaf_earned", "{\"source\":\"war\",\"leaf\":146,\"xp\":146,\"detail\":\"Detlas\",\"in_claim\":true}"),
                 popup("quest_completed", "{\"quest\":{\"slot\":\"daily\",\"title\":\"Complete 3 NOL raids\","
                         + "\"objective\":{\"type\":\"raids\",\"raid\":\"nol\"},"
                         + "\"reward\":{\"leaf\":300,\"xp\":150}}}"),
@@ -150,7 +251,7 @@ public final class UnlockPreview {
                         + "\"threshold\":100,\"label\":\"Gold\",\"leaf\":1000,\"xp\":1000}"),
                 popup("achievement_paid", "{\"ladder\":\"raid:TNA\",\"milestone\":\"diamond\",\"tier\":\"diamond\","
                         + "\"threshold\":1000,\"label\":\"Diamond\",\"leaf\":5000,\"xp\":5000}"),
-                popup("level_up", "{\"level\":8}"));
+                popup("level_up", "{\"level\":8,\"leaf\":250}"));
     }
 
     private static UnlockPopup popup(String type, String data) {
