@@ -5,6 +5,7 @@ import com.seqwawa.seq.model.LeafAccount;
 import com.seqwawa.seq.model.LeafEvents;
 import com.seqwawa.seq.model.LeafQuests;
 import com.seqwawa.seq.network.ApiClient;
+import com.seqwawa.seq.network.auth.MinecraftAuthService;
 import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
@@ -63,10 +64,24 @@ public final class LeafQuestService {
 
     private static LeafQuestService instance;
 
-    /** Reads Leaf; it is told whether the session it started under is still the current one. */
-    private final Function<BooleanSupplier, CompletableFuture<Snapshot>> fetcher;
+    /**
+     * One read of Leaf: the sign-in session it belongs to, and whether the board
+     * still wants it.
+     */
+    record Read(long session, BooleanSupplier wanted) {}
+
+    private final Function<Read, CompletableFuture<Snapshot>> fetcher;
     private final LongSupplier clock;
     private final Duration readDeadline;
+    /** The auth service's current session, as {@link MinecraftAuthService#sessionGeneration()} counts them. */
+    private final LongSupplier authSession;
+    /**
+     * The session what this shows belongs to: the one current when it started or
+     * was last reset. Clearing a session moves the auth service on first and resets
+     * this after, so a read started in between still belongs to the old session,
+     * and the auth service will not sign it in.
+     */
+    private volatile long session;
 
     private volatile Snapshot snapshot = Snapshot.EMPTY;
     private volatile State state = State.LOADING;
@@ -76,26 +91,28 @@ public final class LeafQuestService {
     private volatile int generation;
     private volatile boolean preview;
 
-    LeafQuestService(Function<BooleanSupplier, CompletableFuture<Snapshot>> fetcher, LongSupplier clock,
-            Duration readDeadline) {
+    LeafQuestService(Function<Read, CompletableFuture<Snapshot>> fetcher, LongSupplier clock, Duration readDeadline,
+            LongSupplier authSession) {
         this.fetcher = fetcher;
         this.clock = clock;
         this.readDeadline = readDeadline;
+        this.authSession = authSession;
+        this.session = authSession.getAsLong();
     }
 
     public static synchronized LeafQuestService getInstance() {
         if (instance == null) {
-            instance = new LeafQuestService(LeafQuestService::fetch, System::currentTimeMillis, READ_DEADLINE);
+            instance = new LeafQuestService(LeafQuestService::fetch, System::currentTimeMillis, READ_DEADLINE,
+                    () -> SeqClient.getAuthService() == null ? 0 : SeqClient.getAuthService().sessionGeneration());
         }
         return instance;
     }
 
-    private static CompletableFuture<Snapshot> fetch(BooleanSupplier sessionCurrent) {
+    private static CompletableFuture<Snapshot> fetch(Read read) {
         ApiClient api = ApiClient.getInstance();
-        var auth = SeqClient.getAuthService();
-        long session = auth.sessionGeneration();
-        Function<Boolean, CompletableFuture<String>> tokenFor = sessionToken(sessionCurrent,
-                force -> auth.ensureValidToken(force, session));
+        MinecraftAuthService auth = SeqClient.getAuthService();
+        Function<Boolean, CompletableFuture<String>> tokenFor = sessionToken(read.wanted(),
+                force -> auth.ensureValidToken(force, read.session()));
         // Quests first: with sync=1 Leaf pays what was just finished, so the balance read after it includes it.
         // The recent events are a nicety: without them the board still shows the balance and the quests, and
         // says the list could not be read. A blank answer is an empty list, not a failure.
@@ -141,6 +158,7 @@ public final class LeafQuestService {
     /** Forgets everything, for a different account. */
     public synchronized void reset() {
         generation++;
+        session = authSession.getAsLong();
         loading = false;
         refreshFailed = false;
         lastAttemptAtMs = 0;
@@ -180,7 +198,7 @@ public final class LeafQuestService {
         }
         int startedFor = generation;
         try {
-            fetcher.apply(() -> startedFor == generation)
+            fetcher.apply(new Read(session, () -> startedFor == generation))
                     .copy()
                     .orTimeout(readDeadline.toMillis(), TimeUnit.MILLISECONDS)
                     .whenComplete((fetched, failure) -> accept(startedFor, fetched, failure));
