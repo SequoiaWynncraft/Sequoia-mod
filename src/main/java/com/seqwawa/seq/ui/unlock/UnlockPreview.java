@@ -44,13 +44,14 @@ public final class UnlockPreview {
     private static int ticks;
     private static int stageStart;
     private static int frame;
-    private static boolean pauseOnLostFocusBefore = true;
+    private static volatile boolean running;
 
     private UnlockPreview() {}
 
     public static void initializeIfRequested() {
         if (!FabricLoader.getInstance().isDevelopmentEnvironment() || !Boolean.getBoolean("seq.unlockPreview")) return;
         SeqClient.LOGGER.info("[Unlock preview] Running the scripted tour");
+        running = true;
         ClientTickEvents.END_CLIENT_TICK.register(UnlockPreview::tick);
         ClientLifecycleEvents.CLIENT_STOPPING.register(UnlockPreview::restore);
     }
@@ -67,10 +68,6 @@ public final class UnlockPreview {
             case WAIT_FOR_TITLE -> {
                 if (mc.screen instanceof TitleScreen && SeqClient.assetManager != null
                         && SeqClient.assetManager.getAsset("unlock_medal_gold") != null && inStage > 60) {
-                    // The pause menu would hold the popups back whenever the window loses focus. Put back when
-                    // the preview ends, however it ends, so the developer's own setting is what gets saved.
-                    pauseOnLostFocusBefore = mc.options.pauseOnLostFocus;
-                    mc.options.pauseOnLostFocus = false;
                     createWorld(mc);
                     next(Stage.WAIT_FOR_WORLD);
                 }
@@ -125,10 +122,18 @@ public final class UnlockPreview {
         }
     }
 
-    /** Puts back what the preview changed for itself, so none of it is saved. */
+    /**
+     * Whether the tour is running. While it is, the game does not pause when the
+     * window loses focus, so the popups play on; the setting itself is never
+     * touched, so nothing the preview does can be saved into it.
+     */
+    public static boolean isRunning() {
+        return running;
+    }
+
+    /** Puts back what the preview changed for itself. */
     private static void restore(Minecraft mc) {
         MinecraftUiRenderer.previewUiScale = null;
-        if (mc.options != null) mc.options.pauseOnLostFocus = pauseOnLostFocusBefore;
     }
 
     private static void next(Stage nextStage) {

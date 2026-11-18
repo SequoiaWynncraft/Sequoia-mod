@@ -1,6 +1,8 @@
 package com.seqwawa.seq.mixins;
 
+import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import com.seqwawa.seq.render.MinecraftGuiOverlay;
+import com.seqwawa.seq.ui.unlock.UnlockPreview;
 import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
@@ -63,5 +65,13 @@ public class GameRendererMixin {
         } finally {
             guiRenderState.reset();
         }
+    }
+
+    /** The development preview keeps playing while its window is in the background. */
+    @ModifyExpressionValue(
+            method = "render",
+            at = @At(value = "FIELD", target = "Lnet/minecraft/client/Options;pauseOnLostFocus:Z"))
+    private boolean seq$keepPreviewRunning(boolean pauseOnLostFocus) {
+        return pauseOnLostFocus && !UnlockPreview.isRunning();
     }
 }

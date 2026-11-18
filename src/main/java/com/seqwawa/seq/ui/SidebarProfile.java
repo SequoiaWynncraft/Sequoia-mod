@@ -41,6 +41,8 @@ public final class SidebarProfile {
     /** UI pixels from the sidebar's bottom and left edges, the same as its buttons'. */
     static final float MARGIN = 8;
     static final float INSET = 10;
+    /** Marks a balance Leaf could not refresh. */
+    static final String STALE_MARK = "!";
 
     private static final MapPlayerHeadRenderer HEADS = new MapPlayerHeadRenderer();
 
@@ -58,14 +60,17 @@ public final class SidebarProfile {
      * come first: the card is left out rather than drawn over one.
      */
     static boolean fits(float screenHeight, int rows) {
-        float reserve = HEIGHT * P + MARGIN;
-        var layout = SequoiaSidebarNavigation.sidebarLayout(screenHeight, rows, 22, 6, reserve);
-        return layout.bottom() + MARGIN / 2 <= top(screenHeight);
+        float top = top(screenHeight);
+        var layout = SequoiaSidebarNavigation.sidebarLayout(screenHeight, rows, 22, 6, screenHeight - top);
+        return layout.bottom() + MARGIN / 2 <= top;
     }
 
-    /** How much of the sidebar's bottom the card takes, its margin included, or nothing while it is left out. */
+    /**
+     * How much of the sidebar's bottom the card takes, from its top on the
+     * art-pixel grid down to the screen's edge, or nothing while it is left out.
+     */
     public static float reserved(float screenHeight) {
-        return shown(screenHeight) ? HEIGHT * P + MARGIN : 0;
+        return shown(screenHeight) ? screenHeight - top(screenHeight) : 0;
     }
 
     /** The card's top, for a sidebar on a screen {@code screenHeight} tall, on the art-pixel grid. */
@@ -86,6 +91,11 @@ public final class SidebarProfile {
         if (!contains(mouseX, mouseY, screenHeight)) return false;
         if (!(SeqClient.mc.screen instanceof QuestBoardScreen)) SeqClient.mc.setScreen(new QuestBoardScreen(parent));
         return true;
+    }
+
+    /** How wide the rank may run: its whole row, less the stale mark at the row's end and an art pixel before it. */
+    static float rankRoom(float row, float markWidth, float p) {
+        return markWidth > 0 ? row - markWidth - p : row;
     }
 
     /** "12,480" while it fits, then "12.5k". */
@@ -145,10 +155,17 @@ public final class SidebarProfile {
         }
         float nameRoom = right - textX - (hasInsignia ? badge + p : 0);
         PixelArt.fitted(canvas, username, textX, headY + 5 * p, nameRoom, 10, color(TEXT_PRIMARY), 1f);
+        // While the balance may be out of date, a "!" ends the rank's row, the way the quest board marks it.
+        boolean stale = service.state() == LeafQuestService.State.READY && service.refreshFailed();
+        if (stale) {
+            PixelArt.outlinedText(canvas, STALE_MARK, right, headY + 12 * p, 10, color(CONTROL_WARNING), 1f,
+                    HorizontalAlign.RIGHT);
+        }
+        float rankRoom = rankRoom(right - textX, stale ? PixelArt.outlinedInkWidth(STALE_MARK, 10) : 0, p);
         if (rank != null) {
-            gradientText(canvas, PixelArt.fit(rank.label(), right - textX, 10), textX, headY + 12 * p, rank.colors());
+            gradientText(canvas, PixelArt.fit(rank.label(), rankRoom, 10), textX, headY + 12 * p, rank.colors());
         } else {
-            PixelArt.fitted(canvas, "Guest", textX, headY + 12 * p, right - textX, 10, color(TEXT_MUTED), 1f);
+            PixelArt.fitted(canvas, "Guest", textX, headY + 12 * p, rankRoom, 10, color(TEXT_MUTED), 1f);
         }
 
         // Leaf: the level and balance on one row, the XP bar under them.
@@ -162,10 +179,6 @@ public final class SidebarProfile {
         }
         LeafAccount account = service.snapshot().account();
         LeafAccount.Level level = account.levelOrFirst();
-        if (service.refreshFailed()) {
-            // The last balance Leaf gave, which may be out of date: marked the way the quest board marks it.
-            PixelArt.outlinedText(canvas, "!", right, headY + 12 * p, 10, color(CONTROL_WARNING), 1f, HorizontalAlign.RIGHT);
-        }
         String lv = "Lv " + level.number();
         PixelArt.levelText(canvas, lv, left, rowY, 10, 1f, HorizontalAlign.LEFT);
         float room = right - left - PixelArt.outlinedInkWidth(lv, 10) - 3 * p;

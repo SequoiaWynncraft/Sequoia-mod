@@ -259,12 +259,13 @@ public class SettingsScreen extends Screen {
                         destination == SequoiaSidebarNavigation.Destination.SETTINGS);
             }
 
-            boolean princessPromptFits = princessPromptFits(screenHeight, sidebarLayout.bottom());
+            float floor = sidebarFloor(screenHeight);
+            boolean princessPromptFits = princessPromptFits(floor, sidebarLayout.bottom());
             if (princessLeaderboardVisible()) {
                 float leaderboardY = sidebarLayout.bottom() + SIDEBAR_BUTTON_SPACING;
                 float availableBottom = princessPromptFits
-                        ? princessPromptY(screenHeight, 1f)
-                        : screenHeight - SidebarProfile.reserved(screenHeight) - SIDEBAR_PADDING;
+                        ? princessPromptY(floor, 1f)
+                        : floor - SIDEBAR_PADDING;
                 float availableHeight = availableBottom
                         - SIDEBAR_BUTTON_SPACING
                         - leaderboardY;
@@ -533,13 +534,14 @@ public class SettingsScreen extends Screen {
             return;
         }
 
+        float floor = sidebarFloor(screenHeight);
         float x = SIDEBAR_PADDING;
         float width = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
-        float y = princessPromptY(screenHeight, progress);
-        boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, width, PRINCESS_PROMPT_HEIGHT);
+        float y = princessPromptY(floor, progress);
+        boolean hovered = overPrincessPrompt(nvgMouseX, nvgMouseY, floor, progress);
         // It slides up from behind the profile card, so nothing of it shows below the card's top.
         canvas.save();
-        canvas.scissor(0, 0, SIDEBAR_WIDTH, screenHeight - SidebarProfile.reserved(screenHeight));
+        canvas.scissor(0, 0, SIDEBAR_WIDTH, floor);
         canvas.fillRect(
                 x,
                 y,
@@ -579,25 +581,47 @@ public class SettingsScreen extends Screen {
         canvas.restore();
     }
 
+    /** Where the sidebar's free space ends: the profile card's top while the card shows, else the screen's bottom. */
+    private static float sidebarFloor(float screenHeight) {
+        return screenHeight - SidebarProfile.reserved(screenHeight);
+    }
+
+    private static SequoiaSidebarNavigation.SidebarLayout settingsSidebarLayout(float screenHeight, int rows) {
+        return settingsSidebarLayout(screenHeight, rows, sidebarFloor(screenHeight), princessPromptAllowed());
+    }
+
     /**
      * The sidebar's buttons, packed to leave the Princess mode prompt its place
-     * above the profile card when the prompt may show, so neither covers the other.
+     * above {@code floor} when the prompt may show, so neither covers the other.
+     * Where even the packed buttons leave no room for it, the prompt stays hidden
+     * and the buttons take the space back.
      */
-    private static SequoiaSidebarNavigation.SidebarLayout settingsSidebarLayout(float screenHeight, int rows) {
-        float below = SidebarProfile.reserved(screenHeight)
-                + (princessPromptAllowed() ? PRINCESS_PROMPT_HEIGHT + SIDEBAR_BUTTON_SPACING : 0);
-        return SequoiaSidebarNavigation.sidebarLayout(screenHeight, rows, SIDEBAR_BUTTON_HEIGHT, SIDEBAR_BUTTON_SPACING, below);
+    static SequoiaSidebarNavigation.SidebarLayout settingsSidebarLayout(
+            float screenHeight, int rows, float floor, boolean promptAllowed) {
+        float below = screenHeight - floor;
+        var buttonsOnly = SequoiaSidebarNavigation.sidebarLayout(
+                screenHeight, rows, SIDEBAR_BUTTON_HEIGHT, SIDEBAR_BUTTON_SPACING, below);
+        if (!promptAllowed) return buttonsOnly;
+        // The layout keeps its own bottom margin under the last button, which is the gap above the prompt.
+        var withPrompt = SequoiaSidebarNavigation.sidebarLayout(
+                screenHeight, rows, SIDEBAR_BUTTON_HEIGHT, SIDEBAR_BUTTON_SPACING,
+                below + SIDEBAR_PADDING + PRINCESS_PROMPT_HEIGHT);
+        return princessPromptFits(floor, withPrompt.bottom()) ? withPrompt : buttonsOnly;
     }
 
-    /** The prompt sits at the sidebar's foot, above the profile card while that shows. */
-    private static float princessPromptY(float screenHeight, float progress) {
-        float bottom = screenHeight - SidebarProfile.reserved(screenHeight);
-        float visibleY = bottom - SIDEBAR_PADDING - PRINCESS_PROMPT_HEIGHT;
-        return bottom + (visibleY - bottom) * progress;
+    /** The prompt's top as it slides up out of {@code floor}, the sidebar's foot or the profile card's top. */
+    private static float princessPromptY(float floor, float progress) {
+        return floor - (SIDEBAR_PADDING + PRINCESS_PROMPT_HEIGHT) * progress;
     }
 
-    static boolean princessPromptFits(float screenHeight, float navigationBottom) {
-        return princessPromptY(screenHeight, 1f) >= navigationBottom + SIDEBAR_BUTTON_SPACING;
+    static boolean princessPromptFits(float floor, float navigationBottom) {
+        return princessPromptY(floor, 1f) >= navigationBottom + SIDEBAR_BUTTON_SPACING;
+    }
+
+    /** Whether the point is over the part of the prompt that shows: above the profile card, while it slides in. */
+    private boolean overPrincessPrompt(float mx, float my, float floor, float progress) {
+        return progress > 0f && my < floor && isHovered(mx, my, SIDEBAR_PADDING, princessPromptY(floor, progress),
+                SIDEBAR_WIDTH - SIDEBAR_PADDING * 2, PRINCESS_PROMPT_HEIGHT);
     }
 
     private static boolean princessPromptAllowed() {
@@ -661,13 +685,10 @@ public class SettingsScreen extends Screen {
                 return true;
             }
 
-            if (princessPromptAllowed() && princessPromptFits(screenHeight, sidebarLayout.bottom())) {
-                long nowMs = System.currentTimeMillis();
-                float progress = princessPrompt.slideProgress(nowMs);
-                float promptY = princessPromptY(screenHeight, progress);
-                // Only the part above the profile card shows while it slides in, so only that part takes clicks.
-                boolean visible = my < screenHeight - SidebarProfile.reserved(screenHeight);
-                if (progress > 0f && visible && isHovered(mx, my, btnX, promptY, btnW, PRINCESS_PROMPT_HEIGHT)) {
+            float floor = sidebarFloor(screenHeight);
+            if (princessPromptAllowed() && princessPromptFits(floor, sidebarLayout.bottom())) {
+                float progress = princessPrompt.slideProgress(System.currentTimeMillis());
+                if (overPrincessPrompt(mx, my, floor, progress)) {
                     boolean enabled = PrincessMode.toggle();
                     if (enabled && SeqClient.getPrincessRaidStatsManager() != null) {
                         SeqClient.getPrincessRaidStatsManager().refresh();

@@ -82,4 +82,29 @@ class SequoiaSidebarNavigationTest {
         org.junit.jupiter.api.Assertions.assertTrue(reserved.bottom() <= 360 - 56 - 8,
                 "the last button ends " + reserved.bottom());
     }
+
+    @Test
+    void settingsLeavesThePrincessPromptItsPlaceAboveTheProfileCard() {
+        // A 720-pixel window at the usual UI size, with the card's top at 276.
+        float floor = SidebarProfile.top(360);
+        for (boolean authorized : new boolean[] {false, true}) {
+            int rows = SequoiaSidebarNavigation.destinations(authorized).size();
+            var layout = SettingsScreen.settingsSidebarLayout(360, rows, floor, true);
+            assertTrue(SettingsScreen.princessPromptFits(floor, layout.bottom()),
+                    "the last of " + rows + " buttons ends at " + layout.bottom());
+            assertEquals(SequoiaSidebarNavigation.sidebarLayout(360, rows, 22, 6, 360 - floor),
+                    SettingsScreen.settingsSidebarLayout(360, rows, floor, false),
+                    "without the prompt the buttons only keep clear of the card");
+        }
+    }
+
+    @Test
+    void settingsGivesThePromptsSpaceBackWhereThePromptCannotFit() {
+        int rows = SequoiaSidebarNavigation.destinations(true).size();
+        float floor = 200 - 84;
+        var layout = SettingsScreen.settingsSidebarLayout(200, rows, floor, true);
+
+        assertFalse(SettingsScreen.princessPromptFits(floor, layout.bottom()));
+        assertEquals(SequoiaSidebarNavigation.sidebarLayout(200, rows, 22, 6, 84), layout);
+    }
 }
