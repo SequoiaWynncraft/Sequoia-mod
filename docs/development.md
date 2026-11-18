@@ -18,11 +18,11 @@ developer machine and in GitHub Actions.
 
    In PowerShell, set `$env:MISE_ENABLE_TOOLS` to the same list first. A plain `mise install` also
    installs the tools of your global mise configuration. `mise install java` installs both JDKs
-   below, including the one for Windows on Arm, so name the tools in `MISE_ENABLE_TOOLS` instead.
+   below, ignoring which systems each is for, so name the tools in `MISE_ENABLE_TOOLS` instead.
 
    | Tool | Version | Used for |
    | --- | --- | --- |
-   | Java | Temurin 21.0.13+9 (Zulu 21.0.13 on Windows on Arm) | Gradle and the mod |
+   | Java | Zulu 21.54.201 (JDK 21.0.13.1); Corretto 21.0.13.1.2 on macOS | Gradle and the mod |
    | Python | 3.15.2 | Native build and release scripts |
    | Rust | 1.98.1, minimal profile with rustfmt | The image decoder helper |
    | gh | 2.103.3 | Release tasks |

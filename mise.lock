@@ -85,38 +85,38 @@ url_api = "https://api.github.com/repos/cli/cli/releases/assets/679195750"
 provenance = "github-attestations"
 
 [[tools.java]]
-version = "temurin-21.0.13+9.0.LTS"
+version = "zulu-21.54.201.0"
 backend = "core:java"
-specifiers = ["temurin-21.0.13+9.0.LTS"]
+specifiers = ["zulu-21.54.201.0"]
 
 [tools.java."platforms.linux-arm64"]
-checksum = "sha256:e3522e707fc7dbe2a72c30746b1e7068301a0213ecd213d4491f35a14eb55578"
-url = "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.13%2B9/OpenJDK21U-jdk_aarch64_linux_hotspot_21.0.13_9.tar.gz"
+checksum = "sha256:7a4683412f5eeee90261ac7eda8d7a96076d794656cb5078d8f0fb38bf2db554"
+url = "https://cdn.azul.com/zulu/bin/zulu21.54.201-ca-jdk21.0.13.1-linux_aarch64.tar.gz"
 
 [tools.java."platforms.linux-x64"]
-checksum = "sha256:d7f5d5cf865a2902b70ff549b97586a7d3f234e016f041ab447ea740c7d66d1c"
-url = "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.13%2B9/OpenJDK21U-jdk_x64_linux_hotspot_21.0.13_9.tar.gz"
-
-[tools.java."platforms.macos-arm64"]
-checksum = "sha256:bf036b35b071bfb2f54f2c0af8ee8d88afa95ee6eb3dce02c0f94cfc2524d04a"
-url = "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.13%2B9/OpenJDK21U-jdk_aarch64_mac_hotspot_21.0.13_9.tar.gz"
-
-[tools.java."platforms.macos-x64"]
-checksum = "sha256:9aa1d1c17ae5467a022679e7e0af5c00797d94ac462ed1a46f4db07a8a34a6dd"
-url = "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.13%2B9/OpenJDK21U-jdk_x64_mac_hotspot_21.0.13_9.tar.gz"
-
-[tools.java."platforms.windows-x64"]
-checksum = "sha256:a4dbaa05fca4bd89d84584e58c459bd732efebb1722af80ab13c6516832004f9"
-url = "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.13%2B9/OpenJDK21U-jdk_x64_windows_hotspot_21.0.13_9.zip"
-
-[[tools.java]]
-version = "zulu-21.54.109.0"
-backend = "core:java"
-specifiers = ["zulu-21.54.109.0"]
+checksum = "sha256:510696f7da795e08b48432268173b060a49a6a3b05430690e776b5f3ddecac5e"
+url = "https://cdn.azul.com/zulu/bin/zulu21.54.201-ca-jdk21.0.13.1-linux_x64.tar.gz"
 
 [tools.java."platforms.windows-arm64"]
-checksum = "sha256:eaee2608a7f21022a463a7e6090838cb4e85ee030354631d02b345bc7d1ef8ba"
-url = "https://cdn.azul.com/zulu/bin/zulu21.54.109-ca-jdk21.0.13.0.3-win_aarch64.zip"
+checksum = "sha256:904e945c83627646b44e00a7a7152e5fe50d33dd00775f60e6167e9916f8da40"
+url = "https://cdn.azul.com/zulu/bin/zulu21.54.201-ca-jdk21.0.13.1-win_aarch64.zip"
+
+[tools.java."platforms.windows-x64"]
+checksum = "sha256:14e7a0395df4f09b508d50aa65a858650d59eb8d2221df57b4742d0830f3a3a0"
+url = "https://cdn.azul.com/zulu/bin/zulu21.54.201-ca-jdk21.0.13.1-win_x64.zip"
+
+[[tools.java]]
+version = "corretto-21.0.13.1.2"
+backend = "core:java"
+specifiers = ["corretto-21.0.13.1.2"]
+
+[tools.java."platforms.macos-arm64"]
+checksum = "sha256:3e566c5b2760dc4f2199ac68b09a1b7c5381f228a336f3514a1aad4c113d474a"
+url = "https://corretto.aws/downloads/resources/21.0.13.1.2/amazon-corretto-21.0.13.1.2-macosx-aarch64.tar.gz"
+
+[tools.java."platforms.macos-x64"]
+checksum = "sha256:83095d9de2fe412151eede49e0373eeb5290bc0b82cc60cedb35e1da2d0a5ecc"
+url = "https://corretto.aws/downloads/resources/21.0.13.1.2/amazon-corretto-21.0.13.1.2-macosx-x64.tar.gz"
 
 [[tools.python]]
 version = "3.15.2"
