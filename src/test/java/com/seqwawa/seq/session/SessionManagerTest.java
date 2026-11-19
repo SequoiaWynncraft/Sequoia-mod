@@ -16,52 +16,81 @@ import com.seqwawa.seq.network.auth.AuthState;
 import com.seqwawa.seq.network.auth.MinecraftAuthService;
 import com.seqwawa.seq.network.auth.NotSignedInException;
 import com.seqwawa.seq.network.auth.StoredAuthSession;
+import com.seqwawa.seq.ui.unlock.UnlockPopup;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.function.BiConsumer;
 import org.junit.jupiter.api.Test;
 
 /**
- * Pins what each way of ending a session does, step by step and in order. Each list
- * is the one its path ran before {@link SessionManager} existed: the account switch in
- * SeqClient's tick, /seq logout and Clear session in ConnectionManager (and the command's
- * war planner reset), and a rejected token in the auth service. A rejected token now
- * ends the whole session, as agreed with the owner, keeping only the Leaf stream's place.
+ * Pins what each way of ending a session does, step by step and in order. Each list is the one
+ * its path ran before {@link SessionManager} existed, except that a rejected token ends the whole
+ * session, as agreed with the owner, keeping only the Leaf stream's place.
  */
 class SessionManagerTest {
 
     private static final UUID OPERATOR = UUID.fromString("123e4567-e89b-12d3-a456-426614174000");
     private static final UUID SHARED_ACCOUNT = UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
-
-    /** Signed in as the operator; the backend names the account a token speaks for. */
     private static final StoredAuthSession OPERATOR_SIGNED_IN = new StoredAuthSession(
             "operator-token", Instant.now().plusSeconds(86_400), OPERATOR.toString(), "Operator");
 
-    /** The auth service, signed in; a token is handed out without asking the backend. */
+    /** Every step by name, in the order it ran, the auth service's included. */
+    private final List<String> calls = new ArrayList<>();
+    /** Signed in as the operator; hands out its token without asking the backend, and notes each way a sign-in ends. */
     private final MinecraftAuthService auth = new MinecraftAuthService(OPERATOR_SIGNED_IN) {
         @Override
         public CompletableFuture<String> ensureValidToken(boolean forceRefresh) {
             return CompletableFuture.completedFuture(getCurrentSession().token());
         }
+
+        @Override
+        public void clearSession() {
+            calls.add("clearSession");
+            super.clearSession();
+        }
+
+        @Override
+        public void signOut() {
+            calls.add("signOut");
+            super.signOut();
+        }
+
+        @Override
+        public void carrySignInOver() {
+            calls.add("carrySignInOver");
+            super.carrySignInOver();
+        }
+
+        @Override
+        public boolean invalidateSession(String token, AuthErrorCode code, String message) {
+            calls.add("invalidateSession: " + code + " " + message);
+            return super.invalidateSession(token, code, message);
+        }
     };
-    private final RecordingSteps steps = new RecordingSteps(auth);
-    /** The game thread: what an end from another thread hands over waits here until a test runs it. */
+    /** Writes each step down instead of touching the game; a session's own objects are really stopped. */
+    private final BiConsumer<String, Runnable> steps = (name, step) -> {
+        calls.add(name);
+        if (name.endsWith(" stopped")) {
+            step.run();
+        }
+    };
     private final TickQueue ticks = new TickQueue(() -> 0L);
-    private final RecordingServices services = new RecordingServices(steps.calls, ticks);
-    private final SessionManager sessions = new SessionManager(steps, auth, services, ticks);
+    private final SessionManager sessions = new SessionManager(auth, ticks, steps, null);
 
     @Test
     void anAccountSwitchResetsWhatThePreviousAccountHadInOrder() {
-        services.recordEndOf(sessions.current());
-        sessions.end(new EndReason.AccountSwitch(OPERATOR, SHARED_ACCOUNT, false));
+        recordEndOf(sessions.current());
+        sessions.end(new EndReason.AccountSwitch(false));
 
         assertEquals(List.of(
+                // First: its reset hands reward bursts to the socket, which closes next.
                 "resetGuildStorage",
                 "resetConnectionForAccountChange",
-                "clearSignIn",
+                "clearSession",
                 "end session",
                 "forgetPartyClassBroadcast",
                 "resetPartyFinder",
@@ -70,41 +99,31 @@ class SessionManagerTest {
                 "resetGuildPresence",
                 "resetGuildMembership",
                 "resetNicknames",
-                "resetWarTracking"), steps.calls);
+                "resetWarTracking"), calls);
     }
 
     @Test
-    void guildStorageHandsOverItsRewardsBeforeTheConnectionCloses() {
-        sessions.end(new EndReason.AccountSwitch(OPERATOR, SHARED_ACCOUNT, false));
+    void switchingToTheAccountTheSignInSpeaksForKeepsTheConnectionAndHandsTheTokenOn() {
+        recordEndOf(sessions.current());
+        sessions.end(new EndReason.AccountSwitch(true));
 
-        assertTrue(steps.calls.indexOf("resetGuildStorage") < steps.calls.indexOf("resetConnectionForAccountChange"));
-    }
-
-    @Test
-    void switchingToTheAccountTheSignInSpeaksForKeepsTheConnectionAndSignIn() {
-        services.recordEndOf(sessions.current());
-        sessions.end(new EndReason.AccountSwitch(SHARED_ACCOUNT, OPERATOR, true));
-
-        assertFalse(steps.calls.contains("resetConnectionForAccountChange"));
-        assertFalse(steps.calls.contains("clearSignIn"));
-        assertTrue(steps.calls.contains("end session"), "the account's own state still goes");
+        assertFalse(calls.contains("resetConnectionForAccountChange"));
+        assertFalse(calls.contains("clearSession"));
+        assertTrue(calls.contains("carrySignInOver"));
+        assertTrue(calls.contains("end session"), "the account's own state still goes");
     }
 
     @Test
     void signingOutEndsTheSignInBeforeClosingTheConnection() {
-        services.recordEndOf(sessions.current());
+        recordEndOf(sessions.current());
         sessions.end(EndReason.SIGN_OUT);
 
-        assertEquals(List.of(
-                "signOut",
-                "end session",
-                "disconnect",
-                "resetPartyFinder"), steps.calls);
+        assertEquals(List.of("signOut", "end session", "disconnect", "resetPartyFinder"), calls);
     }
 
     @Test
     void clearingTheSessionSignsOutAndForgetsTheDiscordNameAndQueuedWarEvents() {
-        services.recordEndOf(sessions.current());
+        recordEndOf(sessions.current());
         sessions.end(EndReason.CLEAR_SESSION);
 
         assertEquals(List.of(
@@ -114,65 +133,53 @@ class SessionManagerTest {
                 "disconnect",
                 "resetPartyFinder",
                 "forgetDiscordName",
-                "tellPlayer: Backend session cleared. Run /seq connect to sign in again."), steps.calls);
+                "tellPlayer: Backend session cleared. Run /seq connect to sign in again."), calls);
     }
 
     @Test
-    void aRejectedTokenStopsTheSignInAtOnce() {
-        sessions.end(new EndReason.TokenRejected("operator-token", AuthErrorCode.TOKEN_INVALID, "Backend rejected the stored token."));
+    void aRejectedTokenEndsTheSessionAndLeavesTheConnectionToReconnectByItself() {
+        recordEndOf(sessions.current());
+        sessions.end(new EndReason.TokenRejected("operator-token", AuthErrorCode.TOKEN_INVALID, "Rejected."));
 
-        assertEquals(List.of("invalidateSignIn: TOKEN_INVALID Backend rejected the stored token."), steps.calls);
+        assertEquals(List.of("invalidateSession: TOKEN_INVALID Rejected.", "end session", "resetPartyFinder"), calls,
+                "neither a sign-out nor a disconnect");
     }
 
     @Test
-    void aRejectedTokenEndsTheWholeSessionOnTheGameThreadButKeepsTheLeafCursor() {
-        services.recordEndOf(sessions.current());
-        sessions.end(new EndReason.TokenRejected("operator-token", AuthErrorCode.TOKEN_EXPIRED, "Backend token expired."));
-        steps.calls.clear();
+    void anOldSocketsRejectionAfterAnAccountSwitchLeavesTheNewAccountsSignInAlone() {
+        sessions.end(new EndReason.AccountSwitch(false));
+        Session shared = sessions.current();
+        long sharedSignIn = auth.sessionGeneration();
+        calls.clear();
 
-        ticks.runDue();
+        // The operator's socket reports its refusal after the switch has replaced its sign-in.
+        sessions.end(new EndReason.TokenRejected("operator-token", AuthErrorCode.TOKEN_INVALID, "Rejected."));
 
-        assertEquals(List.of(
-                "end session",
-                "resetPartyFinder"), steps.calls);
-    }
-
-    @Test
-    void aRejectedTokenLeavesTheConnectionToReconnectByItself() {
-        sessions.end(new EndReason.TokenRejected("operator-token", AuthErrorCode.WEBSOCKET_AUTH_REJECTED, "Rejected."));
-        ticks.runDue();
-
-        assertFalse(steps.calls.contains("disconnect"));
-        assertFalse(steps.calls.contains("signOut"), "a rejected token is not the player signing out");
+        assertEquals(sharedSignIn, auth.sessionGeneration(), "the shared account's sign-in is not ended");
+        assertSame(shared, sessions.current());
+        assertFalse(shared.isEnded());
+        assertFalse(calls.contains("resetPartyFinder"));
     }
 
     @Test
     void theFirstAccountSeenStartsNothing() {
         assertFalse(sessions.checkAccount(OPERATOR, "Operator"));
         assertFalse(sessions.checkAccount(OPERATOR, "Operator"));
+        assertFalse(sessions.checkAccount(null, null), "nor does no account yet");
 
-        assertEquals(List.of(), steps.calls);
-    }
-
-    @Test
-    void noAccountYetIsNotASwitch() {
-        sessions.checkAccount(OPERATOR, "Operator");
-
-        assertFalse(sessions.checkAccount(null, null));
-
-        assertEquals(List.of(), steps.calls);
+        assertEquals(List.of(), calls);
     }
 
     @Test
     void aDifferentAccountEndsTheSessionOnce() {
-        services.recordEndOf(sessions.current());
+        recordEndOf(sessions.current());
         sessions.checkAccount(OPERATOR, "Operator");
 
         assertTrue(sessions.checkAccount(SHARED_ACCOUNT, "Shared"));
         assertFalse(sessions.checkAccount(SHARED_ACCOUNT, "Shared"), "the next tick is the same account");
 
-        assertEquals(1, steps.calls.stream().filter("end session"::equals).count());
-        assertTrue(steps.calls.contains("clearSignIn"));
+        assertEquals(1, calls.stream().filter("end session"::equals).count());
+        assertTrue(calls.contains("clearSession"));
     }
 
     @Test
@@ -181,7 +188,15 @@ class SessionManagerTest {
 
         assertTrue(sessions.checkAccount(OPERATOR, "Operator"));
 
-        assertFalse(steps.calls.contains("clearSignIn"));
+        assertFalse(calls.contains("clearSession"));
+    }
+
+    @Test
+    void switchingToTheSharedAccountDropsTheOperatorsSignIn() {
+        assertFalse(SessionManager.signInSpeaksFor(SHARED_ACCOUNT, OPERATOR.toString()));
+        assertFalse(SessionManager.signInSpeaksFor(SHARED_ACCOUNT, null));
+        assertFalse(SessionManager.signInSpeaksFor(SHARED_ACCOUNT, "not-a-uuid"));
+        assertTrue(SessionManager.signInSpeaksFor(OPERATOR, OPERATOR.toString()));
     }
 
     @Test
@@ -189,18 +204,18 @@ class SessionManagerTest {
         // The rejection first, while the sign-in still holds the token it refuses.
         for (EndReason reason : List.of(
                 new EndReason.TokenRejected("operator-token", AuthErrorCode.TOKEN_INVALID, "Rejected."),
-                new EndReason.AccountSwitch(OPERATOR, SHARED_ACCOUNT, false),
+                new EndReason.AccountSwitch(false),
                 EndReason.SIGN_OUT,
                 EndReason.CLEAR_SESSION)) {
             Session before = sessions.current();
 
             sessions.end(reason);
-            ticks.runDue();
 
             assertTrue(before.isEnded(), reason + " ends the session");
             assertNotSame(before, sessions.current(), reason + " starts another");
             assertFalse(sessions.current().isEnded());
             assertNull(sessions.current().signedIn(), reason + " leaves the next session signed out");
+            assertFalse(sessions.current().hasToken());
             assertEquals(auth.sessionGeneration(), sessions.current().id(), "the auth service's count is the id");
         }
     }
@@ -215,13 +230,14 @@ class SessionManagerTest {
         assertNotSignedIn(signedIn.token(false));
         assertNotSignedIn(signedIn.token(true));
         assertNull(signedIn.signedIn());
+        assertFalse(signedIn.hasToken());
     }
 
     @Test
     void aSignInKeptAcrossASwitchServesOnlyTheNewSession() {
         Session shared = sessions.current();
 
-        sessions.end(new EndReason.AccountSwitch(SHARED_ACCOUNT, OPERATOR, true));
+        sessions.end(new EndReason.AccountSwitch(true));
 
         assertNotEquals(shared.id(), sessions.current().id(), "the token carries on, in a sign-in of its own");
         assertEquals(auth.sessionGeneration(), sessions.current().id());
@@ -233,134 +249,42 @@ class SessionManagerTest {
     void aRenewalTheEndedSessionAskedForIsNotStoredForTheOneThatKeptItsToken() {
         long shared = sessions.current().id();
 
-        sessions.end(new EndReason.AccountSwitch(SHARED_ACCOUNT, OPERATOR, true));
+        sessions.end(new EndReason.AccountSwitch(true));
 
-        assertNotEquals(shared, auth.sessionGeneration(),
-                "a sign-in it had running finishes for a session that has ended, so it is never stored");
         assertNotSignedIn(auth.ensureSessionToken(true, shared));
         assertEquals(AuthState.AUTHENTICATED, auth.getState(), "the kept token still counts as signed in");
     }
 
     @Test
-    void aRejectedTokenRefusesAtOnceAndTheNextSessionStartsOnTheGameThread() {
-        Session refused = sessions.current();
-
-        sessions.end(new EndReason.TokenRejected("operator-token", AuthErrorCode.TOKEN_INVALID, "Rejected."));
-
-        assertSame(refused, sessions.current(), "the game thread has not caught up yet");
-        assertNotSignedIn(refused.token(false));
-
-        ticks.runDue();
-
-        assertTrue(refused.isEnded());
-        assertNotSame(refused, sessions.current());
-    }
-
-    @Test
-    void aRejectionThatLandsAfterAnotherEndLeavesTheNewSessionAlone() {
-        sessions.end(new EndReason.TokenRejected("operator-token", AuthErrorCode.TOKEN_INVALID, "Rejected."));
-        sessions.end(EndReason.SIGN_OUT);
-        Session afterSignOut = sessions.current();
-        steps.calls.clear();
-
-        ticks.runDue();
-
-        assertSame(afterSignOut, sessions.current());
-        assertFalse(afterSignOut.isEnded());
-        assertEquals(List.of(), steps.calls, "nor does it reset the party finder the new session has");
-    }
-
-    @Test
-    void anOldSocketsRejectionAfterAnAccountSwitchLeavesTheNewAccountsSignInAlone() {
-        sessions.end(new EndReason.AccountSwitch(OPERATOR, SHARED_ACCOUNT, false));
-        Session shared = sessions.current();
-        long sharedSignIn = auth.sessionGeneration();
-        steps.calls.clear();
-
-        // The operator's socket reports its refusal after the switch has replaced its sign-in.
-        sessions.end(new EndReason.TokenRejected("operator-token", AuthErrorCode.TOKEN_INVALID, "Rejected."));
-        ticks.runDue();
-
-        assertEquals(sharedSignIn, auth.sessionGeneration(), "the shared account's sign-in is not ended");
-        assertSame(shared, sessions.current());
-        assertFalse(shared.isEnded());
-        assertFalse(steps.calls.contains("resetPartyFinder"));
-    }
-
-    @Test
-    void switchingToTheSharedAccountDropsTheOperatorsSignIn() {
-        assertFalse(SessionManager.signInSpeaksFor(SHARED_ACCOUNT, OPERATOR.toString()));
-        assertFalse(SessionManager.signInSpeaksFor(SHARED_ACCOUNT, null));
-        assertFalse(SessionManager.signInSpeaksFor(SHARED_ACCOUNT, "not-a-uuid"));
-        assertTrue(SessionManager.signInSpeaksFor(OPERATOR, OPERATOR.toString()));
-    }
-
-    @Test
-    void eachSessionHasItsOwnLeafQuestsRaidProgressPrincessStatsAndRaidProfileSignIn() {
+    void eachSessionHasItsOwnObjectsAndEndingOneStopsWhatItMadeAndNothingElse() {
         Session first = sessions.current();
         var quests = first.leafQuests();
-        var progress = first.raidProgress();
-        var princess = first.princessStats();
         var raidProfiles = first.raidProfiles();
         assertSame(quests, first.leafQuests(), "made once, the first time it is asked for");
 
         sessions.end(EndReason.SIGN_OUT);
+
+        assertEquals(List.of("signOut", "leafQuests stopped", "raidProfiles stopped", "disconnect", "resetPartyFinder"),
+                calls);
+        assertNotSignedIn(raidProfiles.ensureToken(false));
         Session next = sessions.current();
-
         assertNotSame(quests, next.leafQuests());
-        assertNotSame(progress, next.raidProgress());
-        assertNotSame(princess, next.princessStats());
         assertNotSame(raidProfiles, next.raidProfiles());
-    }
+        var princess = next.princessStats();
+        var progress = next.raidProgress();
+        var planner = next.warPlanner();
+        var queue = next.warQueue();
+        calls.clear();
 
-    @Test
-    void endingASessionStopsWhatItsObjectsHadRunningAndNothingElse() {
-        Session first = sessions.current();
-        first.leafQuests();
-        first.raidProfiles();
-
-        sessions.end(EndReason.SIGN_OUT);
-
-        assertEquals(List.of("leafQuests stopped", "raidProfiles stopped"), services.stopped,
-                "only what the session made, once each");
-        sessions.current().princessStats();
         sessions.end(EndReason.CLEAR_SESSION);
-        assertEquals(List.of("leafQuests stopped", "raidProfiles stopped", "princessStats stopped"), services.stopped);
-    }
 
-    @Test
-    void aRejectedTokenStopsTheSessionsObjectsOnTheGameThread() {
-        sessions.current().raidProgress();
-
-        sessions.end(new EndReason.TokenRejected("operator-token", AuthErrorCode.TOKEN_INVALID, "Rejected."));
-        assertEquals(List.of(), services.stopped, "not on the socket's thread");
-
-        ticks.runDue();
-        assertEquals(List.of("raidProgress stopped"), services.stopped);
-    }
-
-    @Test
-    void aPopupThePreviousAccountsStreamHandsOverAfterASwitchNeverShows() {
-        Session previous = sessions.current();
-        var handOver = LiveSessionServices.intoQueueOf(previous, ticks);
-
-        sessions.end(new EndReason.AccountSwitch(OPERATOR, SHARED_ACCOUNT, false));
-        // The previous stream had read an event just before it stopped.
-        handOver.accept(popup("+330"));
-        ticks.runDue();
-
-        assertTrue(sessions.current().popups().isIdle(), "the new account's queue never sees it");
-        assertNotSame(previous.popups(), sessions.current().popups());
-    }
-
-    @Test
-    void aPopupFromTheCurrentSessionsStreamShows() {
-        LiveSessionServices.intoQueueOf(sessions.current(), ticks).accept(popup("+330"));
-        assertTrue(sessions.current().popups().isIdle(), "not before the game thread runs it");
-
-        ticks.runDue();
-
-        assertFalse(sessions.current().popups().isIdle());
+        assertEquals(List.of("leafQuests stopped", "raidProfiles stopped", "princessStats stopped", "raidProgress stopped",
+                        "warPlanner stopped", "warQueue stopped"),
+                calls.stream().filter(call -> call.endsWith(" stopped")).toList());
+        assertNotSame(princess, sessions.current().princessStats());
+        assertNotSame(progress, sessions.current().raidProgress());
+        assertNotSame(planner, sessions.current().warPlanner());
+        assertNotSame(queue, sessions.current().warQueue());
     }
 
     @Test
@@ -371,200 +295,83 @@ class SessionManagerTest {
 
         sessions.end(EndReason.SIGN_OUT);
 
-        assertEquals(List.of("leafEvents stopped", "popups stopped"), services.stopped);
+        assertTrue(calls.containsAll(List.of("leafEvents stopped", "popups stopped")));
+        assertTrue(first.popups().isIdle());
         assertTrue(sessions.current().popups().isIdle());
     }
 
     @Test
+    void aPopupThePreviousAccountsStreamHandsOverAfterASwitchNeverShows() {
+        Session previous = sessions.current();
+
+        sessions.end(new EndReason.AccountSwitch(false));
+        // The previous stream had read an event just before it stopped.
+        previous.show(popup("+330"));
+        ticks.runDue();
+
+        assertTrue(sessions.current().popups().isIdle(), "the new account's queue never sees it");
+        assertNotSame(previous.popups(), sessions.current().popups());
+    }
+
+    @Test
+    void aPopupFromTheCurrentSessionsStreamShowsOnTheGameThread() {
+        sessions.current().show(popup("+330"));
+        assertTrue(sessions.current().popups().isIdle(), "not before the game thread runs it");
+
+        ticks.runDue();
+
+        assertFalse(sessions.current().popups().isIdle());
+    }
+
+    @Test
     void theSamePlayersNextSessionResumesTheLeafStreamWhereTheLastOneWas() {
+        SessionManager resuming = new SessionManager(auth, ticks, steps, "event-41");
+        resuming.current().leafEvents();
+
         for (EndReason samePlayer : List.of(
                 new EndReason.TokenRejected("operator-token", AuthErrorCode.TOKEN_INVALID, "Rejected."),
                 EndReason.SIGN_OUT,
                 EndReason.CLEAR_SESSION)) {
-            seenLeafEvent("event-41");
+            resuming.end(samePlayer);
 
-            sessions.end(samePlayer);
-            ticks.runDue();
-
-            assertEquals("event-41", sessions.current().leafEvents().cursor(), samePlayer + " keeps the place");
+            assertEquals("event-41", resuming.current().leafEvents().cursor(), samePlayer + " keeps the place");
         }
     }
 
     @Test
-    void anotherAccountsStreamStartsFromNow() {
-        seenLeafEvent("event-41");
-
-        sessions.end(new EndReason.AccountSwitch(OPERATOR, SHARED_ACCOUNT, false));
-
-        assertNull(sessions.current().leafEvents().cursor());
-    }
-
-    @Test
-    void anOperatorSwitchingBackKeepsTheSignInButNotTheSharedAccountsStreamPlace() {
-        seenLeafEvent("event-41");
-
-        sessions.end(new EndReason.AccountSwitch(SHARED_ACCOUNT, OPERATOR, true));
-
-        assertNull(sessions.current().leafEvents().cursor());
-    }
-
-    @Test
     void aCursorCarriesAcrossSessionsThatNeverOpenedAStream() {
-        seenLeafEvent("event-41");
-        sessions.end(new EndReason.TokenRejected("operator-token", AuthErrorCode.TOKEN_INVALID, "Rejected."));
-        ticks.runDue();
+        SessionManager resuming = new SessionManager(auth, ticks, steps, "event-41");
+        resuming.current().leafEvents();
+        resuming.end(new EndReason.TokenRejected("operator-token", AuthErrorCode.TOKEN_INVALID, "Rejected."));
 
         // This session ends before its stream is ever asked for.
-        sessions.end(EndReason.SIGN_OUT);
+        resuming.end(EndReason.SIGN_OUT);
 
-        assertEquals("event-41", sessions.current().leafEvents().cursor());
+        assertEquals("event-41", resuming.current().leafEvents().cursor());
     }
 
     @Test
-    void eachSessionHasItsOwnWarPlannerAndQueue() {
-        Session first = sessions.current();
-        var planner = first.warPlanner();
-        var queue = first.warQueue();
+    void anotherAccountsStreamStartsFromNowEvenWhenTheOperatorKeepsTheirSignIn() {
+        for (boolean keepSignIn : List.of(false, true)) {
+            SessionManager resuming = new SessionManager(auth, ticks, steps, "event-41");
+            resuming.current().leafEvents();
 
-        sessions.end(EndReason.CLEAR_SESSION);
+            resuming.end(new EndReason.AccountSwitch(keepSignIn));
 
-        assertNotSame(planner, sessions.current().warPlanner());
-        assertNotSame(queue, sessions.current().warQueue());
-        assertEquals(List.of("warPlanner stopped", "warQueue stopped"), services.stopped,
-                "Clear session drops the planner and queue too, as /seq logout did the planner");
+            assertNull(resuming.current().leafEvents().cursor());
+        }
     }
 
-    @Test
-    void aSessionReadsThePlannerOnlyWhileItHasAToken() {
-        Session signedIn = sessions.current();
-        assertTrue(signedIn.hasToken());
-
-        sessions.end(new EndReason.TokenRejected("operator-token", AuthErrorCode.TOKEN_INVALID, "Rejected."));
-
-        assertFalse(signedIn.hasToken(), "the refused token is gone at once, before the game thread catches up");
-        ticks.runDue();
-        assertFalse(sessions.current().hasToken());
+    private void recordEndOf(Session session) {
+        session.onEnd(() -> calls.add("end session"));
     }
 
-    /** Has the current session's stream seen {@code eventId}, as if it had read it from Leaf. */
-    private void seenLeafEvent(String eventId) {
-        services.nextStreamHasSeen = eventId;
-        sessions.current().leafEvents();
-    }
-
-    private static com.seqwawa.seq.ui.unlock.UnlockPopup popup(String title) {
-        return new com.seqwawa.seq.ui.unlock.UnlockPopup(
-                com.seqwawa.seq.ui.unlock.UnlockPopup.Kind.TOAST, null, title, "The Nameless Anomaly", 330, 330, null, null);
+    private static UnlockPopup popup(String title) {
+        return new UnlockPopup(UnlockPopup.Kind.TOAST, null, title, "The Nameless Anomaly", 330, 330, null, null);
     }
 
     private static void assertNotSignedIn(CompletableFuture<String> token) {
         CompletionException failure = assertThrows(CompletionException.class, token::join);
         assertInstanceOf(NotSignedInException.class, failure.getCause());
-    }
-
-    /**
-     * The game's own objects for each session, recording when a session ends and which of
-     * them it stopped. Nothing here reads the network until asked to.
-     */
-    static final class RecordingServices implements Session.Services {
-        private final Session.Services live;
-        private final List<String> calls;
-        final List<String> stopped = new ArrayList<>();
-        /** The next stream made starts as if it had already read this event, once. */
-        String nextStreamHasSeen;
-        private final java.util.Set<Session> watched = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
-
-        RecordingServices(List<String> calls, java.util.concurrent.Executor gameThread) {
-            this.calls = calls;
-            this.live = new LiveSessionServices(gameThread);
-        }
-
-        /** Notes in the step list the moment {@code session} ends. */
-        void recordEndOf(Session session) {
-            if (watched.add(session)) {
-                session.onEnd(() -> calls.add("end session"));
-            }
-        }
-
-        private void watch(Session session, String name) {
-            session.onEnd(() -> stopped.add(name + " stopped"));
-        }
-
-        @Override public com.seqwawa.seq.managers.LeafQuestService leafQuests(Session session) {
-            watch(session, "leafQuests");
-            return live.leafQuests(session);
-        }
-        @Override public com.seqwawa.seq.managers.GuildRaidProgressService raidProgress(Session session) {
-            watch(session, "raidProgress");
-            return live.raidProgress(session);
-        }
-        @Override public com.seqwawa.seq.managers.PrincessRaidStatsManager princessStats(Session session) {
-            watch(session, "princessStats");
-            return live.princessStats(session);
-        }
-        @Override public com.seqwawa.seq.network.auth.RaidProfilesSession raidProfiles(Session session) {
-            watch(session, "raidProfiles");
-            return live.raidProfiles(session);
-        }
-        @Override public com.seqwawa.seq.network.LeafEventStream leafEvents(Session session, String resumeAfter) {
-            watch(session, "leafEvents");
-            String seen = nextStreamHasSeen;
-            nextStreamHasSeen = null;
-            return live.leafEvents(session, seen != null ? seen : resumeAfter);
-        }
-        @Override public com.seqwawa.seq.ui.unlock.UnlockOverlay popups(Session session) {
-            watch(session, "popups");
-            return live.popups(session);
-        }
-        @Override public com.seqwawa.seq.managers.WarPlannerManager warPlanner(Session session) {
-            watch(session, "warPlanner");
-            return live.warPlanner(session);
-        }
-        @Override public com.seqwawa.seq.managers.WarTerritoryQueueManager warQueue(Session session) {
-            watch(session, "warQueue");
-            return live.warQueue(session);
-        }
-    }
-
-    /** Records each step by name, in the order it ran; the sign-in steps also end the auth service's sign-in. */
-    static final class RecordingSteps implements SessionManager.Steps {
-        final List<String> calls = new ArrayList<>();
-        private final MinecraftAuthService auth;
-
-        RecordingSteps(MinecraftAuthService auth) {
-            this.auth = auth;
-        }
-
-        @Override public void resetGuildStorage() { calls.add("resetGuildStorage"); }
-        @Override public void resetConnectionForAccountChange() { calls.add("resetConnectionForAccountChange"); }
-        @Override public void clearSignIn() {
-            calls.add("clearSignIn");
-            auth.clearSession();
-        }
-        @Override public void carrySignInOver() {
-            calls.add("carrySignInOver");
-            auth.carrySignInOver();
-        }
-        @Override public void signOut() {
-            calls.add("signOut");
-            auth.signOut();
-        }
-        @Override public com.seqwawa.seq.network.auth.SignIn invalidateSignIn(
-                String token, AuthErrorCode code, String message) {
-            calls.add("invalidateSignIn: " + code + " " + message);
-            return auth.invalidateSession(token, code, message);
-        }
-        @Override public void disconnect() { calls.add("disconnect"); }
-        @Override public void dropPendingWarEvents() { calls.add("dropPendingWarEvents"); }
-        @Override public void forgetDiscordName() { calls.add("forgetDiscordName"); }
-        @Override public void tellPlayer(String message) { calls.add("tellPlayer: " + message); }
-        @Override public void forgetPartyClassBroadcast() { calls.add("forgetPartyClassBroadcast"); }
-        @Override public void resetPartyFinder() { calls.add("resetPartyFinder"); }
-        @Override public void resetWynnPartySync() { calls.add("resetWynnPartySync"); }
-        @Override public void resetRaidPartySnapshot() { calls.add("resetRaidPartySnapshot"); }
-        @Override public void resetGuildPresence() { calls.add("resetGuildPresence"); }
-        @Override public void resetGuildMembership() { calls.add("resetGuildMembership"); }
-        @Override public void resetNicknames() { calls.add("resetNicknames"); }
-        @Override public void resetWarTracking() { calls.add("resetWarTracking"); }
     }
 }

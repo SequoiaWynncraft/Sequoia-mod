@@ -84,7 +84,6 @@ public final class RaidProfileStore {
     private final Path localPath;
     private final Path cachePath;
     private final Supplier<CompletableFuture<RaidProfilesResponse>> fetch;
-    /** Saves the player's own profile, answering with what the backend stored. */
     private final Function<RaidTeamProfile, CompletableFuture<RaidProfilesResponse.Profile>> save;
     /** Whether raid profiles come from another backend than the socket's. */
     private final BooleanSupplier separateBackend;
@@ -131,7 +130,9 @@ public final class RaidProfileStore {
                 () -> ApiClient.getInstance().getRaidProfiles(),
                 ApiClient::raidProfilesOnSeparateBackend,
                 ClientThread.executor(),
-                Background.disk());
+                Background.disk(),
+                RaidProfileStore::localUuid,
+                profile -> ApiClient.getInstance().putMyRaidProfile(profile));
     }
 
     /**
@@ -149,33 +150,10 @@ public final class RaidProfileStore {
             Supplier<CompletableFuture<RaidProfilesResponse>> fetch,
             BooleanSupplier separateBackend) {
         // A test completes its fetches on its own thread, which stands in for the game's.
-        this(localPath, cachePath, fetch, separateBackend, Runnable::run, Runnable::run);
-    }
-
-    RaidProfileStore(
-            Path localPath,
-            Path cachePath,
-            Supplier<CompletableFuture<RaidProfilesResponse>> fetch,
-            BooleanSupplier separateBackend,
-            Executor gameThread,
-            Executor disk) {
-        this(localPath, cachePath, fetch, separateBackend, gameThread, disk, RaidProfileStore::localUuid);
-    }
-
-    /** Test seam: {@code account} stands in for the Minecraft account playing. */
-    RaidProfileStore(
-            Path localPath,
-            Path cachePath,
-            Supplier<CompletableFuture<RaidProfilesResponse>> fetch,
-            BooleanSupplier separateBackend,
-            Executor gameThread,
-            Executor disk,
-            Supplier<String> account) {
-        this(localPath, cachePath, fetch, separateBackend, gameThread, disk, account,
+        this(localPath, cachePath, fetch, separateBackend, Runnable::run, Runnable::run, RaidProfileStore::localUuid,
                 profile -> ApiClient.getInstance().putMyRaidProfile(profile));
     }
 
-    /** Test seam: {@code save} stands in for the backend that stores your profile. */
     RaidProfileStore(
             Path localPath,
             Path cachePath,

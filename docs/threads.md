@@ -71,13 +71,10 @@ one way: `end(reason)`, for an account switch, /seq logout, Clear session or a r
 - **Ask your own session.** Work that belongs to a session takes its token from `Session.token`,
   not the auth service, and hands results to its own session's objects. `getInstance()` answers
   with whichever session is current by the time it is called.
-- **Off the game thread.** A rejected token arrives on the socket's thread: the sign-in that
-  still holds it ends there and then, and the next session starts on the game thread. A refusal
-  that lands after its sign-in already ended ends nothing.
+- **A rejected token** ends only the sign-in that still holds it. A refusal that lands after
+  its sign-in already ended, such as an old socket's after an account switch, ends nothing.
 
-What lasts the whole game, whoever is signed in, lives in `AppServices` (`SeqClient.app()`).
-Which server the game is on, and joins, disconnects and world changes, come from
-`ServerScopeTracker`; listen there rather than to Fabric's events.
+`end(reason)` runs on the game thread, the connection's rejections included.
 
 ## Clocks
 

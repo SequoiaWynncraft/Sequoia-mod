@@ -108,10 +108,7 @@ public final class LeafQuestService {
         return SessionManager.getInstance().current().leafQuests();
     }
 
-    /**
-     * Reads Leaf for one session, with {@code tokens}, the session's own: once it has ended
-     * they refuse, and no read of its can sign the player in again.
-     */
+    /** Reads Leaf with one session's {@code tokens}, which refuse once it has ended. */
     public static LeafQuestService forSession(Function<Boolean, CompletableFuture<String>> tokens) {
         return new LeafQuestService(read -> fetch(read, tokens), Clocks::monotonicMillis, READ_DEADLINE,
                 ClientThread.queue());

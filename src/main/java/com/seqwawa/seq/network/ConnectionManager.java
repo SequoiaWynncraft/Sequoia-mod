@@ -98,10 +98,7 @@ public class ConnectionManager {
     private long connectionAttemptGeneration;
     private volatile boolean userInitiatedConnectFlow;
     private volatile boolean treasuryOnlyConnection;
-    /**
-     * The token this socket signs in with, and the Minecraft account it signs in for. Set on
-     * the game thread before it connects; a Treasury-only socket has no token.
-     */
+    /** The token this socket signed in with, and the account it signed in for; a Treasury-only socket has neither. */
     private volatile String handshakeToken;
     private volatile UUID handshakeAccount;
     private final TreasurySessionAuthenticator treasurySessionAuthenticator;
@@ -2880,10 +2877,8 @@ public class ConnectionManager {
     }
 
     /**
-     * Keeps the Discord name a sign-in reply links, or that it links none, for {@code account}: the
-     * one the socket signed in for, not whoever plays when the reply lands. On the game thread, and
-     * only while {@code signInCurrent}, so a reply for the previous account that lands after a
-     * switch changes neither account's name.
+     * Keeps the Discord name a sign-in reply links, or that it links none, for {@code account}, the one
+     * the socket signed in for, and only while {@code signInCurrent}: a reply that lands after a switch changes no name.
      */
     static Runnable discordNameDelivery(String discordUsername, UUID account, BooleanSupplier signInCurrent,
             java.util.function.BiConsumer<UUID, String> store) {

@@ -53,7 +53,7 @@ public final class QuestBoardScreen extends SequoiaPanelScreen {
     private static final float SCROLL_SPEED = 30;
 
     private final ScrollPane scroll = new ScrollPane();
-    /** The current session's, asked each time: a session that ends while the board is open leaves it. */
+    /** Asked each time: a session that ends while the board is open leaves it. */
     private static LeafQuestService service() {
         return LeafQuestService.getInstance();
     }

@@ -32,10 +32,6 @@ public final class RaidProfilesSession {
      */
     private static final Duration FAILURE_COOLDOWN = Duration.ofSeconds(20);
 
-    /** Where {@link #getInstance()} finds the current session's; until a session manager says, one of its own. */
-    private static volatile java.util.function.Supplier<RaidProfilesSession> current = RaidProfilesSession::standalone;
-    private static RaidProfilesSession standalone;
-
     private final String apiBaseUrl;
 
     private volatile StoredAuthSession session;
@@ -43,39 +39,16 @@ public final class RaidProfilesSession {
     private volatile AuthException lastFailure;
     private volatile Instant lastFailureAt = Instant.EPOCH;
     private volatile boolean linkHintShown;
-    /**
-     * Set by {@link #clear()}: the session this sign-in belonged to has ended. From then on it
-     * refuses, and a sign-in it had running is dropped, since its token speaks for that account.
-     */
+    /** Its session has ended: it refuses from now on, and drops a sign-in it had running. */
     private volatile boolean ended;
 
     RaidProfilesSession(String apiBaseUrl) {
         this.apiBaseUrl = apiBaseUrl;
     }
 
-    /** The current session's. */
-    public static RaidProfilesSession getInstance() {
-        return current.get();
-    }
-
-    /**
-     * Makes {@link #getInstance()} answer with the current session's sign-in. The session
-     * manager calls it once; this package cannot ask it itself without depending on it.
-     */
-    public static void findCurrentWith(java.util.function.Supplier<RaidProfilesSession> currentSession) {
-        current = java.util.Objects.requireNonNull(currentSession, "currentSession");
-    }
-
     /** A sign-in to the backend that serves raid profiles, for one session. */
     public static RaidProfilesSession create() {
         return new RaidProfilesSession(BuildConfig.RAID_PROFILES_API_URL);
-    }
-
-    private static synchronized RaidProfilesSession standalone() {
-        if (standalone == null) {
-            standalone = create();
-        }
-        return standalone;
     }
 
     /**

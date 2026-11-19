@@ -2,7 +2,6 @@ package com.seqwawa.seq.managers;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberMoveDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.SupportDraft;
@@ -110,8 +109,9 @@ public final class WarPlannerManager {
     private int consecutiveFailures;
     private long generation;
 
-    public WarPlannerManager() {
-        this(new ApiGateway(ApiClient.getInstance()), Clock.systemUTC());
+    /** The planner for one session, which reads while {@code signedIn} says that session has a token. */
+    public WarPlannerManager(BooleanSupplier signedIn) {
+        this(new ApiGateway(ApiClient.getInstance()), Clock.systemUTC(), signedIn);
     }
 
     public WarPlannerManager(Gateway gateway, Clock clock) {
@@ -122,11 +122,6 @@ public final class WarPlannerManager {
         this.gateway = Objects.requireNonNull(gateway, "gateway");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.signedIn = Objects.requireNonNull(signedIn, "signedIn");
-    }
-
-    /** The planner for one session, which reads while {@code signedIn} says that session has a token. */
-    public static WarPlannerManager forSession(BooleanSupplier signedIn) {
-        return new WarPlannerManager(new ApiGateway(ApiClient.getInstance()), Clock.systemUTC(), signedIn);
     }
 
     public State state() {

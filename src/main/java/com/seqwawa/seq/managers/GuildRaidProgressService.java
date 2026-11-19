@@ -74,7 +74,6 @@ public final class GuildRaidProgressService {
         return SessionManager.getInstance().current().raidProgress();
     }
 
-    /** Reads through the backend connection, and announces what the backend says to. */
     public static GuildRaidProgressService create() {
         return new GuildRaidProgressService(
                 () -> ApiClient.getInstance().getGuildRaidProgress(),

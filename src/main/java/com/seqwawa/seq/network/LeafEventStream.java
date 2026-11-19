@@ -26,9 +26,7 @@ import java.util.stream.Stream;
  * it saw, so nothing in between is missed and nothing is shown twice. A first
  * connection without an id starts from now, so old events are never replayed.
  * <p>
- * Each session has its own, reading with that session's token and handing popups to
- * that session's queue. When the session ends its stream stops, and a popup it had
- * already received lands in a queue nobody draws, so the next account never sees it.
+ * Each session has its own, reading with that session's token; it stops when the session ends.
  */
 public final class LeafEventStream {
 
@@ -48,10 +46,8 @@ public final class LeafEventStream {
     private volatile String lastEventId;
 
     /**
-     * Reads with {@code tokens}, the session's own, so a stream whose session has ended
-     * cannot sign in again. Resumes after {@code resumeAfter}, or from now when it is null.
-     * Each popup goes to {@code show}, and {@code leafChanged} hears that the balance moved;
-     * both are called on the stream's own thread.
+     * Resumes after {@code resumeAfter}, or from now when it is null. {@code show} takes each popup
+     * and {@code leafChanged} hears the balance moved, both on the stream's own thread.
      */
     public LeafEventStream(Function<Boolean, CompletableFuture<String>> tokens, String resumeAfter,
             Consumer<UnlockPopup> show, Runnable leafChanged) {

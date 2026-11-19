@@ -41,7 +41,7 @@ public final class AchievementsScreen extends SequoiaPanelScreen {
     private static final float SCROLL_SPEED = 30;
 
     private final ScrollPane scroll = new ScrollPane();
-    /** The current session's, asked each time: a session that ends while the screen is open leaves it. */
+    /** Asked each time: a session that ends while the screen is open leaves it. */
     private static GuildRaidProgressService service() {
         return GuildRaidProgressService.getInstance();
     }

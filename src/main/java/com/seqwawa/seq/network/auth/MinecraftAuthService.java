@@ -58,12 +58,11 @@ public class MinecraftAuthService {
      */
     private CompletableFuture<?> lastJoin = CompletableFuture.completedFuture(null);
 
-    /** Signed out, as the game starts. */
     public MinecraftAuthService() {
         this(null);
     }
 
-    /** Already signed in with {@code token}, as a test starts. The game starts signed out. */
+    /** Already signed in with {@code token}, as a test starts; the game starts signed out. */
     public MinecraftAuthService(StoredAuthSession token) {
         this.current = new SignIn(0, token);
     }
@@ -88,14 +87,13 @@ public class MinecraftAuthService {
         return current.id();
     }
 
-    /** The current session's sign-in. */
     public SignIn currentSignIn() {
         return current;
     }
 
     /** Tells {@code listener} the session's id each time a sign-in completes, on the auth thread. */
     public void whenSignedIn(LongConsumer listener) {
-        whenSignedIn = listener == null ? session -> {} : listener;
+        whenSignedIn = listener;
     }
 
     /**
@@ -120,10 +118,8 @@ public class MinecraftAuthService {
     }
 
     /**
-     * A token for work the session {@code sessionId} names started, such as a raid-profile save:
-     * as {@link #ensureValidToken(boolean)}, signing in when it has to, but only while that
-     * session's sign-in is current. Once it has ended it fails with {@link NotSignedInException},
-     * so a retry after an account switch never takes the next account's token.
+     * As {@link #ensureValidToken(boolean)}, but only while session {@code sessionId} is current, so a
+     * retry after an account switch, such as a raid-profile save's, never takes the next account's token.
      */
     public CompletableFuture<String> ensureValidToken(boolean forceRefresh, long sessionId) {
         synchronized (this) {
@@ -355,7 +351,7 @@ public class MinecraftAuthService {
         return current.token();
     }
 
-    /** Whether the current sign-in holds {@code token}: whoever signed in with it still speaks for it. */
+    /** Whether the current sign-in holds {@code token}. */
     public boolean holdsToken(String token) {
         StoredAuthSession signedIn = getCurrentSession();
         return token != null && signedIn != null && token.equals(signedIn.token());
@@ -367,29 +363,24 @@ public class MinecraftAuthService {
     }
 
     /**
-     * Ends the session's sign-in without signing out, as an account change does: the next
-     * account signs in the usual way, even if the previous one had signed out. Only
-     * {@code SessionManager.end} calls it, which also ends what the session owned.
+     * Ends the sign-in without signing out, as an account change does: the next account signs
+     * in the usual way. Only {@code SessionManager.end} calls this and the two below.
      */
     public void clearSession() {
         endSession(false);
     }
 
     /**
-     * Signs the player out (/seq logout, Clear session). Until {@link #allowSignIn()}, which
-     * only their own connect calls, a token request fails with {@link NotSignedInException}
-     * instead of starting a sign-in, whichever feature asks. Only {@code SessionManager.end}
-     * calls it.
+     * Signs the player out. Until {@link #allowSignIn()}, which only their own connect calls, a
+     * token request fails with {@link NotSignedInException} instead of starting a sign-in.
      */
     public void signOut() {
         endSession(true);
     }
 
     /**
-     * Hands the sign-in on to the next session, as switching back to the account it speaks for
-     * does: its token moves to a fresh sign-in with the next id, and the ended one keeps none, so
-     * a renewal it started is never stored for its replacement. The connection stays. Only
-     * {@code SessionManager.end} calls it.
+     * Moves the token to a fresh sign-in, as switching back to the account it speaks for does. The
+     * ended one keeps none, so a renewal it started is never stored for its replacement.
      */
     public synchronized void carrySignInOver() {
         StoredAuthSession token = current.token();
@@ -413,28 +404,19 @@ public class MinecraftAuthService {
     }
 
     /**
-     * Ends the sign-in whose token the backend refused, {@code token}, if the current one still
-     * holds it; the next one starts afresh. A refusal that arrives after that sign-in ended, such
-     * as an old socket's after an account switch, leaves its replacement alone. Only
-     * {@code SessionManager.end} calls it.
-     *
-     * @return the sign-in it ended, or null when the current one holds another token or none
+     * Ends the sign-in if it still holds {@code token}, which the backend refused, and says
+     * whether it did: an old socket's refusal after an account switch leaves its replacement alone.
      */
-    public synchronized SignIn invalidateSession(String token, AuthErrorCode code, String message) {
+    public synchronized boolean invalidateSession(String token, AuthErrorCode code, String message) {
         if (!holdsToken(token)) {
-            return null;
+            return false;
         }
-        SignIn refused = current;
         startNextSession(null);
         setState(AuthState.FAILED, new AuthException(code, message, true));
-        return refused;
+        return true;
     }
 
-    /**
-     * Ends the current session's sign-in, dropping its token, and starts the next one with
-     * {@code token}, or signed out. A sign-in still running finishes for the ended one, so it
-     * is dropped too.
-     */
+    /** Starts the next sign-in with {@code token}, or signed out; one still running finishes for the ended one, and is dropped. */
     private void startNextSession(StoredAuthSession token) {
         SignIn ended = current;
         current = new SignIn(ended.id() + 1, token);

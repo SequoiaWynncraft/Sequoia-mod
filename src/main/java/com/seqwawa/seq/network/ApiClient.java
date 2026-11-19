@@ -56,6 +56,7 @@ import com.seqwawa.seq.network.auth.MinecraftAuthChallengeResponse;
 import com.seqwawa.seq.network.auth.MinecraftAuthCompleteRequest;
 import com.seqwawa.seq.network.auth.MinecraftAuthCompleteResponse;
 import com.seqwawa.seq.network.auth.MinecraftAuthService;
+import com.seqwawa.seq.session.SessionManager;
 import com.seqwawa.seq.utils.WynnClassCache;
 
 /**
@@ -324,14 +325,12 @@ public class ApiClient {
         return callWithTokenRetry(raidProfilesTokens(
                 raidProfilesOnSeparateBackend(),
                 SeqClient.getAuthService(),
-                com.seqwawa.seq.network.auth.RaidProfilesSession::getInstance), call);
+                () -> SessionManager.getInstance().current().raidProfiles()), call);
     }
 
     /**
-     * Where both attempts of a raid-profile call get their token: the session current as the
-     * call starts. A 401 that arrives after an account switch asks that session again, which
-     * refuses, rather than whoever is signed in by then, so a save never lands on the next
-     * account's profile.
+     * Both attempts of a raid-profile call take their token from the session current as it starts:
+     * a 401 after an account switch asks that session, which refuses, so a save never lands on the next account.
      */
     static Function<Boolean, CompletableFuture<String>> raidProfilesTokens(boolean separateBackend,
             MinecraftAuthService auth, Supplier<com.seqwawa.seq.network.auth.RaidProfilesSession> raidProfiles) {

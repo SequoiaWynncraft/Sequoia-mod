@@ -6,79 +6,48 @@ import com.seqwawa.seq.managers.PrincessRaidStatsManager;
 import com.seqwawa.seq.managers.WarPlannerManager;
 import com.seqwawa.seq.managers.WarTerritoryQueueManager;
 import com.seqwawa.seq.network.LeafEventStream;
+import com.seqwawa.seq.network.auth.MinecraftAuthService;
 import com.seqwawa.seq.network.auth.NotSignedInException;
 import com.seqwawa.seq.network.auth.RaidProfilesSession;
 import com.seqwawa.seq.network.auth.SignIn;
 import com.seqwawa.seq.network.auth.StoredAuthSession;
 import com.seqwawa.seq.ui.unlock.UnlockOverlay;
+import com.seqwawa.seq.ui.unlock.UnlockPopup;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
-import java.util.Objects;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 /**
- * One sign-in of one account, from the moment the previous session ended until this one
- * does. {@link SessionManager} always has a current one; while signed out it is a session
- * with no token yet.
- * <p>
- * It holds its own sign-in, so once it has ended its token refuses: work it started that is
- * still running gets no token, and cannot sign the player in again. It also owns what the
- * account read with that sign-in. Each is made the first time it is asked for, and stopped
- * when the session ends, so an answer that arrives later lands in an object nobody reads.
+ * One sign-in of one account, from the moment the previous session ended until this one does;
+ * while signed out, one with no token yet. Once it has ended its token refuses, so work it started
+ * cannot sign the player in again, and what it owned is stopped, so a late answer lands in an
+ * object nobody reads.
  */
 public final class Session {
 
-    /** Where a session's token comes from: the auth service, which renews it but never signs in for it. */
-    @FunctionalInterface
-    public interface Tokens {
-        CompletableFuture<String> forSession(boolean forceRefresh, long sessionId);
-    }
-
-    /**
-     * Makes a session's own objects. Each registers, with {@link #onEnd(Runnable)}, how to
-     * stop what it has running when the session ends.
-     */
-    interface Services {
-        LeafQuestService leafQuests(Session session);
-
-        GuildRaidProgressService raidProgress(Session session);
-
-        PrincessRaidStatsManager princessStats(Session session);
-
-        RaidProfilesSession raidProfiles(Session session);
-
-        /** Resumes after {@code resumeAfter}, the last event the previous session's stream saw, or from now. */
-        LeafEventStream leafEvents(Session session, String resumeAfter);
-
-        UnlockOverlay popups(Session session);
-
-        WarPlannerManager warPlanner(Session session);
-
-        /** Reads the account's availability and queues from the session's own {@link #warPlanner()}. */
-        WarTerritoryQueueManager warQueue(Session session);
-    }
-
     private final SignIn signIn;
-    private final Tokens tokens;
-    private final Services services;
-    /** Where this session's Leaf stream starts: after the previous one's last event when the account is the same. */
+    private final MinecraftAuthService auth;
+    private final Executor gameThread;
+    private final BiConsumer<String, Runnable> steps;
+    /** After the previous session's last Leaf event when the player is the same, or null to start from now. */
     private final String resumeLeafAfter;
     private volatile boolean ended;
-    /** Guarded by this. */
+    /** What the session made, by name. Guarded by this, as is {@link #endActions}. */
+    private final Map<String, Object> owned = new HashMap<>();
     private final List<Runnable> endActions = new ArrayList<>();
-    private LeafQuestService leafQuests;
-    private GuildRaidProgressService raidProgress;
-    private PrincessRaidStatsManager princessStats;
-    private RaidProfilesSession raidProfiles;
-    private LeafEventStream leafEvents;
-    private UnlockOverlay popups;
-    private WarPlannerManager warPlanner;
-    private WarTerritoryQueueManager warQueue;
 
-    Session(SignIn signIn, Tokens tokens, Services services, String resumeLeafAfter) {
-        this.signIn = Objects.requireNonNull(signIn, "signIn");
-        this.tokens = Objects.requireNonNull(tokens, "tokens");
-        this.services = Objects.requireNonNull(services, "services");
+    Session(SignIn signIn, MinecraftAuthService auth, Executor gameThread, BiConsumer<String, Runnable> steps,
+            String resumeLeafAfter) {
+        this.signIn = signIn;
+        this.auth = auth;
+        this.gameThread = gameThread;
+        this.steps = steps;
         this.resumeLeafAfter = resumeLeafAfter;
     }
 
@@ -87,114 +56,84 @@ public final class Session {
         return signIn.id();
     }
 
-    /** The session's token, expired or not, or null while it has not signed in or once it has ended. */
+    /** The token, expired or not, or null before the session signs in and once it has ended. */
     public StoredAuthSession signedIn() {
         return ended ? null : signIn.token();
     }
 
-    /** Whether the session has a token to read with. */
     public boolean hasToken() {
         StoredAuthSession token = signedIn();
         return token != null && token.hasToken();
     }
 
-    /**
-     * A token for work that belongs to this session, renewed when it has to be. It never
-     * starts a sign-in: with no token, or once the session has ended, it fails with
-     * {@link NotSignedInException}.
-     */
+    /** A token for this session's work, renewed when due. It never signs in: without one it fails with {@link NotSignedInException}. */
     public CompletableFuture<String> token(boolean forceRefresh) {
-        if (ended) {
-            return CompletableFuture.failedFuture(new NotSignedInException());
-        }
-        return tokens.forSession(forceRefresh, id());
+        return ended
+                ? CompletableFuture.failedFuture(new NotSignedInException())
+                : auth.ensureSessionToken(forceRefresh, id());
     }
 
-    /** Whether a later session has replaced this one. */
     public boolean isEnded() {
         return ended;
     }
 
-    /** The member's Leaf and quests, read with this session's token. */
-    public synchronized LeafQuestService leafQuests() {
-        if (leafQuests == null) {
-            leafQuests = services.leafQuests(this);
-        }
-        return leafQuests;
+    public LeafQuestService leafQuests() {
+        return own("leafQuests", () -> LeafQuestService.forSession(this::token), LeafQuestService::reset);
     }
 
-    /** The guild's raid progress, as this session's connection reads it. */
-    public synchronized GuildRaidProgressService raidProgress() {
-        if (raidProgress == null) {
-            raidProgress = services.raidProgress(this);
-        }
-        return raidProgress;
+    public GuildRaidProgressService raidProgress() {
+        return own("raidProgress", GuildRaidProgressService::create, GuildRaidProgressService::reset);
     }
 
-    /** The account's Princess raid count and the leaderboard. */
-    public synchronized PrincessRaidStatsManager princessStats() {
-        if (princessStats == null) {
-            princessStats = services.princessStats(this);
-        }
-        return princessStats;
+    public PrincessRaidStatsManager princessStats() {
+        return own("princessStats", PrincessRaidStatsManager::new, PrincessRaidStatsManager::reset);
     }
 
-    /** The account's sign-in to the raid-profiles backend, when that is a different one. */
-    public synchronized RaidProfilesSession raidProfiles() {
-        if (raidProfiles == null) {
-            raidProfiles = services.raidProfiles(this);
-        }
-        return raidProfiles;
+    /** Its token speaks for this account, so a save after the session ended would land on their profile. */
+    public RaidProfilesSession raidProfiles() {
+        return own("raidProfiles", RaidProfilesSession::create, RaidProfilesSession::clear);
     }
 
-    /** Leaf's event stream, read with this session's token, which hands its popups to {@link #popups()}. */
-    public synchronized LeafEventStream leafEvents() {
-        if (leafEvents == null) {
-            leafEvents = services.leafEvents(this, resumeLeafAfter);
-        }
-        return leafEvents;
+    public LeafEventStream leafEvents() {
+        return own("leafEvents", () -> new LeafEventStream(this::token, resumeLeafAfter, this::show, () -> {
+            if (!ended) {
+                leafQuests().markStale();
+            }
+        }), LeafEventStream::stop);
     }
 
     /** The popups this session's rewards brought. Once it has ended, nothing draws them. */
-    public synchronized UnlockOverlay popups() {
-        if (popups == null) {
-            popups = services.popups(this);
-        }
-        return popups;
+    public UnlockOverlay popups() {
+        return own("popups", UnlockOverlay::create, UnlockOverlay::clear);
     }
 
-    /** The guild's war plan, as this account sees and may change it. */
-    public synchronized WarPlannerManager warPlanner() {
-        if (warPlanner == null) {
-            warPlanner = services.warPlanner(this);
-        }
-        return warPlanner;
+    public WarPlannerManager warPlanner() {
+        return own("warPlanner", () -> new WarPlannerManager(this::hasToken), WarPlannerManager::reset);
     }
 
-    /** The territory queues, with the account's own availability and joins. */
-    public synchronized WarTerritoryQueueManager warQueue() {
-        if (warQueue == null) {
-            warQueue = services.warQueue(this);
-        }
-        return warQueue;
+    public WarTerritoryQueueManager warQueue() {
+        return own("warQueue", () -> new WarTerritoryQueueManager(this::warPlanner, this::hasToken),
+                WarTerritoryQueueManager::reset);
     }
 
-    /** The last Leaf event this session saw, for a next session of the same player to resume after. */
+    /** Queues {@code popup} in this session's own popups, on the game thread, so a late one never reaches the next account. */
+    void show(UnlockPopup popup) {
+        gameThread.execute(() -> popups().enqueue(popup));
+    }
+
+    /** The last Leaf event this session saw, for the same player's next session to resume after. */
     synchronized String leafCursor() {
-        return leafEvents == null ? resumeLeafAfter : leafEvents.cursor();
+        return owned.get("leafEvents") instanceof LeafEventStream stream ? stream.cursor() : resumeLeafAfter;
     }
 
-    /**
-     * Runs {@code action} when the session ends, on the game thread: it stops what one of the
-     * session's objects has running, so nothing it finishes later is shown or sent.
-     */
+    /** Runs {@code action} when the session ends. */
     synchronized void onEnd(Runnable action) {
         if (!ended) {
-            endActions.add(Objects.requireNonNull(action, "action"));
+            endActions.add(action);
         }
     }
 
-    /** Ends the session and stops what its objects had running. Game thread only. */
+    /** Ends the session and stops what it owned. Game thread only. */
     void end() {
         List<Runnable> actions;
         synchronized (this) {
@@ -206,5 +145,18 @@ public final class Session {
             endActions.clear();
         }
         actions.forEach(Runnable::run);
+    }
+
+    /** {@code name}'s object, made the first time it is asked for and stopped when the session ends. */
+    @SuppressWarnings("unchecked")
+    private synchronized <T> T own(String name, Supplier<T> make, Consumer<T> stop) {
+        T made = (T) owned.get(name);
+        if (made == null) {
+            T fresh = make.get();
+            owned.put(name, fresh);
+            onEnd(() -> steps.accept(name + " stopped", () -> stop.accept(fresh)));
+            made = fresh;
+        }
+        return made;
     }
 }

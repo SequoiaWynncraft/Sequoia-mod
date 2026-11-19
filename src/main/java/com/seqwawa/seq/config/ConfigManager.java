@@ -52,10 +52,7 @@ public class ConfigManager {
     private final Set<String> trackedWorldEventIds = new LinkedHashSet<>();
     private final Set<Long> hiddenWarPlannerZoneIds = new LinkedHashSet<>();
     private final Set<Long> hiddenWarPlannerZoneCategoryIds = new LinkedHashSet<>();
-    /**
-     * The Discord name linked to each Minecraft account, by its UUID, or an empty one when the
-     * backend said the account has none. Guarded by this.
-     */
+    /** Each Minecraft account's linked Discord name by UUID, empty when the backend said none. Guarded by this. */
     @Getter(AccessLevel.NONE)
     private final Map<String, String> discordUsernames = new LinkedHashMap<>();
     /** A name an older version saved for no account in particular; the first account to ask takes it. */
@@ -92,10 +89,7 @@ public class ConfigManager {
         legacySettingKeys.put(setting, List.of(legacyKeys));
     }
 
-    /**
-     * The Discord name linked to {@code account}, or null. An older version kept one name for
-     * everyone; the first account to ask after the update takes it as its own.
-     */
+    /** The Discord name linked to {@code account}, or null; the first account to ask claims an older version's. */
     public String getDiscordUsername(UUID account) {
         if (account == null) {
             return null;
@@ -122,30 +116,27 @@ public class ConfigManager {
     }
 
     /**
-     * What the backend said when {@code account} signed in: the Discord name linked to it, or
-     * none when its reply has no name or a blank one. It speaks for that account alone, so an
-     * older version's name stays for the account that claims it.
+     * The Discord name the backend linked to {@code account} when it signed in, or none. Kept even
+     * when empty, so the account no longer claims an older version's name, which stays for another.
      */
     public void setDiscordUsername(UUID account, String discordUsername) {
         if (account == null) {
             return;
         }
         synchronized (this) {
-            // Kept even when empty, so the account no longer claims an older version's name.
             discordUsernames.put(
                     account.toString(), discordUsername == null || discordUsername.isBlank() ? "" : discordUsername);
         }
         save();
     }
 
-    /** Clear session: forgets the Discord name linked to {@code account}; other accounts keep theirs. */
+    /** Clear session: forgets {@code account}'s Discord name, and an older version's it would claim next. */
     public void clearDiscordUsername(UUID account) {
         if (account == null) {
             return;
         }
         synchronized (this) {
             discordUsernames.remove(account.toString());
-            // Whoever asks next would take an older version's name; clearing it is that account's call too.
             unclaimedDiscordUsername = null;
         }
         save();

@@ -444,7 +444,8 @@ class RaidProfileStoreTest {
                 () -> false,
                 Runnable::run,
                 Runnable::run,
-                playing::get);
+                playing::get,
+                profile -> new CompletableFuture<>());
     }
 
     @Test
