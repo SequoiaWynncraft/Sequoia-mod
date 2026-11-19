@@ -3,6 +3,8 @@ package com.seqwawa.seq.map;
 import static org.junit.jupiter.api.Assertions.*;
 import static com.seqwawa.seq.map.GatheringNodeSource.*;
 
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.seqwawa.seq.client.TickQueue;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -13,12 +15,14 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
 class GatheringNodeServiceTest {
@@ -222,6 +226,64 @@ class GatheringNodeServiceTest {
             assertFalse(fixture.service.requestRefresh(source), "Static data is loaded once per client session.");
             assertSame(bundled, fixture.service.nodes(source));
             assertThrows(UnsupportedOperationException.class, bundled::clear);
+        }
+    }
+
+    @Test
+    void everyBundledNodeParsesAndHasAKnownProfession() throws Exception {
+        String text;
+        try (var input = GatheringNodeServiceTest.class.getResourceAsStream("/assets/seq/map/gathering-nodes.json")) {
+            assertNotNull(input);
+            text = new String(input.readAllBytes(), StandardCharsets.UTF_8);
+        }
+        List<GatheringNode> nodes = GatheringNodeService.parseNodes(text);
+        JsonObject meta = JsonParser.parseString(text).getAsJsonObject().getAsJsonObject("meta");
+        assertEquals(meta.get("count").getAsInt(), nodes.size(), "No record is skipped as malformed.");
+        assertEquals(List.of(), nodes.stream().filter(node -> node.profession() == GatheringProfession.UNKNOWN).toList());
+        assertEquals(Set.of("DERNIC_ORE", "DERNIC_TREE", "DERNIC_CROPS", "DERNIC_FISH"), nodes.stream()
+                .map(GatheringNode::resource).filter(resource -> resource.startsWith("DERNIC")).collect(Collectors.toSet()),
+                "Every Dernic node is named by kind.");
+        assertTrue(nodes.stream().anyMatch(node -> node.resource().equals("MOLTEN_EEL")));
+    }
+
+    @Test
+    void theApisPlainDernicAndMoltenNodesTakeTheBundledFilesNames() throws Exception {
+        try (var fixture = new Fixture()) {
+            // Records as the endpoint sent them on 2026-11-19 (API v3.7.2).
+            fixture.body.set("""
+                    [{"x":1208,"y":147,"z":-5237,"angle":0,"type":"NODE","resource":"MOLTEN","level":90},
+                     {"x":1024,"y":73,"z":-5201,"angle":0,"type":"NODE","resource":"MOLTEN","level":90},
+                     {"x":771,"y":145,"z":-992,"angle":0,"type":"NODE","resource":"DERNIC","level":105},
+                     {"x":802,"y":78,"z":-337,"angle":0,"type":"NODE","resource":"DERNIC","level":105},
+                     {"x":1083,"y":133,"z":-1140,"angle":0,"type":"NODE","resource":"DERNIC","level":105},
+                     {"x":472,"y":96,"z":-531,"angle":0,"type":"NODE","resource":"DERNIC","level":105},
+                     {"x":466,"y":100,"z":-535,"angle":270,"type":"WALL","resource":"DERNIC","level":105}]
+                    """);
+            assertTrue(fixture.service.requestRefresh(WYNN_API));
+            fixture.finish(WYNN_API);
+            List<GatheringNode> nodes = fixture.service.nodes(WYNN_API);
+            assertEquals(List.of("MOLTEN_EEL", "MOLTEN", "DERNIC_FISH", "DERNIC_TREE", "DERNIC_CROPS", "DERNIC_ORE",
+                    "DERNIC_ORE"), nodes.stream().map(GatheringNode::resource).toList());
+            assertEquals(List.of(GatheringProfession.FISHING, GatheringProfession.MINING, GatheringProfession.FISHING,
+                    GatheringProfession.WOODCUTTING, GatheringProfession.FARMING, GatheringProfession.MINING,
+                    GatheringProfession.MINING), nodes.stream().map(GatheringNode::profession).toList());
+            assertEquals("Not loaded", fixture.service.status(STATIC), "Reading the file doesn't load the static source.");
+        }
+    }
+
+    @Test
+    void withoutTheBundledFileTheApisPlainNamesStayAndReadAsOre() throws Exception {
+        try (var fixture = new Fixture()) {
+            fixture.body.set("""
+                    [{"x":771,"y":145,"z":-992,"angle":0,"type":"NODE","resource":"DERNIC","level":105}]
+                    """);
+            var service = new GatheringNodeService(HttpClient.newHttpClient(), fixture.endpoint(), fixture.now::get,
+                    fixture.work::add, fixture.ticks, () -> null);
+            assertTrue(service.requestRefresh(WYNN_API));
+            fixture.finish(service, WYNN_API);
+            GatheringNode node = service.nodes(WYNN_API).getFirst();
+            assertEquals("DERNIC", node.resource());
+            assertEquals(GatheringProfession.MINING, node.profession());
         }
     }
 

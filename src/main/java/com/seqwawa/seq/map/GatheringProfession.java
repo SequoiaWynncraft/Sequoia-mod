@@ -12,13 +12,16 @@ public enum GatheringProfession {
     FISHING(new Color(82, 190, 211, 235)),
     UNKNOWN(new Color(210, 210, 210, 210));
 
+    // The Wynncraft API calls every Dernic kind plain DERNIC and Molten Eel spots MOLTEN, like the ore.
+    // GatheringNodeNames renames them by position. A plain name left over is read as ore: ore is the
+    // largest kind of both (70 of 251 Dernic and 220 of 339 Molten nodes on 2026-11-19).
     private static final Map<GatheringProfession, Set<String>> RESOURCES = Map.of(
             WOODCUTTING, Set.of(
                     "OAK", "BIRCH", "WILLOW", "ACACIA", "SPRUCE", "JUNGLE", "DARK", "LIGHT",
                     "PINE", "AVO", "SKY", "MAPLE", "REDWOOD", "DERNIC_TREE", "DERNIC_WOOD"),
             MINING, Set.of(
                     "COPPER", "GRANITE", "GOLD", "SANDSTONE", "IRON", "SILVER", "COBALT", "KANDERSTONE",
-                    "DIAMOND", "VOIDSTONE", "MOLTEN", "TITANIUM", "CINNABAR", "DERNIC_ORE"),
+                    "DIAMOND", "VOIDSTONE", "MOLTEN", "TITANIUM", "CINNABAR", "DERNIC", "DERNIC_ORE"),
             FARMING, Set.of(
                     "WHEAT", "BARLEY", "OAT", "MALT", "HOPS", "RYE", "MILLET", "DECAY", "DECAY_ROOT",
                     "RICE", "SORGHUM", "HEMP", "JUTE", "HEATHER", "DERNIC_CROPS", "DERNIC_GRAIN"),

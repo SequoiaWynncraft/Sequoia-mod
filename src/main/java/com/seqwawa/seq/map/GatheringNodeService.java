@@ -29,6 +29,8 @@ import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 
 public final class GatheringNodeService {
+    // The API's nodes with the Dernic and Molten kinds named. scripts/gathering_nodes.py regenerates it,
+    // and its meta says from which API version and when.
     private static final String STATIC_NODES_RESOURCE = "assets/seq/map/gathering-nodes.json";
     static final URI DEFAULT_ENDPOINT = URI.create("https://api.wynncraft.com/v3/map/gathering-nodes");
     // Wynncraft caches this route for one hour.
@@ -41,6 +43,8 @@ public final class GatheringNodeService {
     private final URI endpoint;
     private final Executor disk;
     private final Supplier<InputStream> bundledNodes;
+    /** The bundled nodes once read: the static source shows them, and they name the API's nodes. */
+    private List<GatheringNode> bundled;
     /**
      * One per source, each keeping its last good nodes. An equal answer keeps the old
      * list, so the map doesn't cluster the same nodes again.
@@ -113,16 +117,35 @@ public final class GatheringNodeService {
 
     /** Reads and parses the bundled nodes on the disk thread. */
     private CompletableFuture<List<GatheringNode>> readBundled() {
-        return CompletableFuture.supplyAsync(() -> {
+        return CompletableFuture.supplyAsync(this::bundled, disk);
+    }
+
+    /** The bundled nodes, read once on the first call that succeeds. */
+    private synchronized List<GatheringNode> bundled() {
+        if (bundled == null) {
             try (InputStream input = bundledNodes.get()) {
                 if (input == null) {
                     throw new IllegalStateException("Missing bundled node resource " + STATIC_NODES_RESOURCE);
                 }
-                return parseNodes(new String(input.readAllBytes(), StandardCharsets.UTF_8));
+                bundled = parseNodes(new String(input.readAllBytes(), StandardCharsets.UTF_8));
             } catch (IOException exception) {
                 throw new UncheckedIOException(exception);
             }
-        }, disk);
+        }
+        return bundled;
+    }
+
+    /** Gives the API's plain Dernic and Molten nodes the bundled file's names for them, on the disk thread. */
+    private List<GatheringNode> nameByBundled(List<GatheringNode> nodes) {
+        List<GatheringNode> reference;
+        try {
+            reference = bundled();
+        } catch (RuntimeException exception) {
+            SeqClient.LOGGER.warn("[GatheringMap] Couldn't read the bundled nodes to name the API's Dernic and Molten "
+                    + "nodes; they keep the API's names.", exception);
+            reference = List.of();
+        }
+        return GatheringNodeNames.resolve(nodes, reference);
     }
 
     private CompletableFuture<List<GatheringNode>> fetchFromApi() {
@@ -137,7 +160,7 @@ public final class GatheringNodeService {
                 throw new IllegalStateException("API returned HTTP " + response.statusCode());
             }
             return parseNodes(response.body());
-        });
+        }).thenApplyAsync(this::nameByBundled, disk);
     }
 
     static List<GatheringNode> parseNodes(String body) {

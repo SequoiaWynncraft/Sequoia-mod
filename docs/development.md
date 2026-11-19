@@ -71,7 +71,7 @@ account that `.devauth/config.toml` selects.
 | `build` | Compiles, runs the unit tests and builds the JAR within its size budget |
 | `test` | Runs the unit tests |
 | `test:platform` | Runs the updater and image preview tests, which depend on the operating system |
-| `test:scripts` | Runs the Python tests for the native build inputs and the release scripts |
+| `test:scripts` | Runs the Python tests for the native build inputs, the release scripts and the gathering-node script |
 | `dev` | Starts Minecraft with the mod |
 | `fmt` | Formats the decoder's Rust code. `mise run fmt --check` only reports changes |
 | `lint` | Lints the workflows with actionlint and zizmor, and `native/build-wasm.sh` with ShellCheck |
@@ -83,6 +83,7 @@ account that `.devauth/config.toml` selects.
 | `native:pack` | Packs the verified helpers and writes their provenance and the corresponding source |
 | `native:verify-jar` | Checks that the JAR in `build/libs` carries exactly the packs in `native/out/sandbox` |
 | `native:notices` | Checks the bundled third-party notices. `mise run native:notices write` regenerates them |
+| `map:nodes` | Regenerates the bundled gathering nodes from the Wynncraft API, keeping the Dernic and Molten kinds the API leaves unnamed |
 | `release:check` | Validates the release tag, its notes and `mod_version` |
 | `release:stage TAG` | Stages the built files as the draft GitHub release for `TAG` |
 | `release:promote TAG SHA256` | Publishes an accepted draft to GitHub and Modrinth |
