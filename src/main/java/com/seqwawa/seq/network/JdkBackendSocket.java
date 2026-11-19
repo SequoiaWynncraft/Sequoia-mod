@@ -218,9 +218,12 @@ final class JdkBackendSocket implements BackendSocket {
         unanswered.values().removeIf(sentAt -> now - sentAt > replyDeadline.toMillis());
         unanswered.put(++pinged, now);
         webSocket.sendPing(ByteBuffer.allocate(Long.BYTES).putLong(0, pinged)).exceptionally(failure -> {
-            // A close that began since shuts the output: the ping failing is not the socket failing.
-            if (!isClosing()) {
-                fail(failure);
+            // A close that began since shuts the output: the ping failing is not the socket failing. The lock
+            // keeps a close from starting between this check and the abort.
+            synchronized (JdkBackendSocket.this) {
+                if (!closing) {
+                    fail(failure);
+                }
             }
             return null;
         });

@@ -48,7 +48,8 @@ import org.junit.jupiter.params.provider.CsvSource;
 class JdkBackendSocketTest {
 
     private static final Duration QUICK = Duration.ofMillis(200);
-    private static final Duration LONG = Duration.ofSeconds(30);
+    /** Longer than any test runs, so a heartbeat or deadline set to it never fires during one. */
+    private static final Duration LONG = Duration.ofHours(1);
 
     private final Events events = new Events();
     private TinyServer server;
