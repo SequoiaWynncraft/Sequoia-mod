@@ -19,9 +19,9 @@ import java.util.function.LongSupplier;
 /**
  * The backend socket the game uses, on the JDK's own WebSocket client. It reports to its listener
  * under its lock, so no two calls overlap, and ends with one {@code onClose} however the socket ends:
- * the backend closes or answers our close, refuses the handshake, can't be reached, stops answering
- * pings, or never answers our close, or this side closes it while it connects. That close says whether
- * this side's close came first, decided under the same lock.
+ * the backend closes or answers our close, refuses or never finishes the handshake, can't be reached,
+ * stops answering pings, or never answers our close, or this side closes it while it connects. That
+ * close says whether this side's close came first, decided under the same lock.
  */
 final class JdkBackendSocket implements BackendSocket {
 
@@ -36,6 +36,8 @@ final class JdkBackendSocket implements BackendSocket {
     private final Duration replyDeadline;
     /** How long a close waits for the backend's answer. */
     private final Duration closeWait;
+    /** How long the handshake may take, the body of a refusal included. */
+    private final Duration handshakeWait;
     private final LongSupplier clockMs;
     private WebSocket webSocket;
     /** The handshake, which a close while connecting cancels. */
@@ -56,16 +58,18 @@ final class JdkBackendSocket implements BackendSocket {
 
     /** Pings as Java-WebSocket did: once a minute, giving up once 90 seconds pass without an answer. */
     JdkBackendSocket(URI uri, Listener listener) {
-        this(uri, listener, Duration.ofSeconds(60), Duration.ofSeconds(90), Duration.ofSeconds(5), Clocks::monotonicMillis);
+        this(uri, listener, Duration.ofSeconds(60), Duration.ofSeconds(90), Duration.ofSeconds(5), Duration.ofSeconds(15),
+                Clocks::monotonicMillis);
     }
 
     JdkBackendSocket(URI uri, Listener listener, Duration pingEvery, Duration replyDeadline, Duration closeWait,
-            LongSupplier clockMs) {
+            Duration handshakeWait, LongSupplier clockMs) {
         this.uri = uri;
         this.listener = listener;
         this.pingEvery = pingEvery;
         this.replyDeadline = replyDeadline;
         this.closeWait = closeWait;
+        this.handshakeWait = handshakeWait;
         this.clockMs = clockMs;
     }
 
@@ -77,6 +81,15 @@ final class JdkBackendSocket implements BackendSocket {
         handshake.whenComplete((socket, failure) -> {
             if (failure != null) {
                 fail(failure);
+            }
+        });
+        // The connect timeout stops at the reply's headers: a refusal whose body never ends would keep it connecting.
+        later(handshakeWait, () -> {
+            synchronized (this) {
+                if (webSocket == null && !handshake.isDone()) {
+                    end(ABNORMAL_CLOSE, "The handshake took too long", false, null);
+                    handshake.cancel(true);
+                }
             }
         });
     }
@@ -178,29 +191,40 @@ final class JdkBackendSocket implements BackendSocket {
         end(ABNORMAL_CLOSE, message, false, cause instanceof Exception exception ? exception : new IOException(cause));
     }
 
-    /**
-     * Pings every {@link #pingEvery}. A socket whose ping never went out, or that no pong answered
-     * within {@link #replyDeadline}, is given up.
-     */
-    private void pingLater(WebSocket socket) {
+    /** Beats the heartbeat every {@link #pingEvery}, until the socket closes. */
+    private void pingLater() {
         later(pingEvery, () -> {
-            if (isClosing()) {
-                return;
+            if (heartbeat()) {
+                pingLater();
             }
-            long now = clockMs.getAsLong();
-            if (now - answeredAt > replyDeadline.toMillis()) {
-                socket.abort();
-                end(ABNORMAL_CLOSE, "The backend stopped answering", false, null);
-                return;
-            }
-            unanswered.values().removeIf(sentAt -> now - sentAt > replyDeadline.toMillis());
-            unanswered.put(++pinged, now);
-            socket.sendPing(ByteBuffer.allocate(Long.BYTES).putLong(0, pinged)).exceptionally(failure -> {
-                fail(failure);
-                return null;
-            });
-            pingLater(socket);
         });
+    }
+
+    /**
+     * Pings, unless no pong answered within {@link #replyDeadline}, or the ping can't go out: then the
+     * socket is given up. Once a close is under way, its answer decides how the socket ends, and the
+     * heartbeat stops. Says whether it goes on. A test calls it itself, to ping when it means to.
+     */
+    synchronized boolean heartbeat() {
+        if (closing) {
+            return false;
+        }
+        long now = clockMs.getAsLong();
+        if (now - answeredAt > replyDeadline.toMillis()) {
+            webSocket.abort();
+            end(ABNORMAL_CLOSE, "The backend stopped answering", false, null);
+            return false;
+        }
+        unanswered.values().removeIf(sentAt -> now - sentAt > replyDeadline.toMillis());
+        unanswered.put(++pinged, now);
+        webSocket.sendPing(ByteBuffer.allocate(Long.BYTES).putLong(0, pinged)).exceptionally(failure -> {
+            // A close that began since shuts the output: the ping failing is not the socket failing.
+            if (!isClosing()) {
+                fail(failure);
+            }
+            return null;
+        });
+        return true;
     }
 
     private static void later(Duration delay, Runnable task) {
@@ -222,11 +246,11 @@ final class JdkBackendSocket implements BackendSocket {
                     return;
                 }
                 open = true;
+                answeredAt = clockMs.getAsLong();
                 listener.onOpen();
             }
-            answeredAt = clockMs.getAsLong();
             socket.request(1);
-            pingLater(socket);
+            pingLater();
         }
 
         @Override

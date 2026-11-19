@@ -12,6 +12,7 @@ import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.UncheckedIOException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -30,7 +31,9 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.LongSupplier;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -75,7 +78,23 @@ class JdkBackendSocketTest {
     }
 
     private JdkBackendSocket socket(URI uri, Duration pingEvery, Duration replyDeadline, Duration closeWait) {
-        return new JdkBackendSocket(uri, events, pingEvery, replyDeadline, closeWait, Clocks::monotonicMillis);
+        return new JdkBackendSocket(uri, events, pingEvery, replyDeadline, closeWait, LONG, Clocks::monotonicMillis);
+    }
+
+    /** Opens a socket on {@code clock} whose heartbeat beats only when the test calls it. */
+    private void openPingedByHand(LongSupplier clock, Duration replyDeadline) throws Exception {
+        server = new TinyServer();
+        socket = new JdkBackendSocket(server.uri(), events, LONG, replyDeadline, Duration.ofSeconds(5), LONG, clock);
+        socket.connect(Map.of());
+        server.accept(101);
+        assertEquals("open", events.next());
+    }
+
+    /** Pings now, and returns what the ping carried. */
+    private byte[] ping() throws IOException {
+        assertTrue(socket.heartbeat());
+        assertEquals("ping", server.read());
+        return server.lastPing;
     }
 
     @Test
@@ -200,6 +219,22 @@ class JdkBackendSocketTest {
     }
 
     @Test
+    void aHandshakeWhoseReplyNeverEndsIsGivenUpWhenItsTimeRunsOut() throws Exception {
+        server = new TinyServer();
+        socket = new JdkBackendSocket(server.uri(), events, LONG, LONG, Duration.ofSeconds(5), QUICK, Clocks::monotonicMillis);
+        socket.connect(Map.of());
+        server.takeRequest();
+
+        // A gateway's refusal: its headers come, then its body stalls.
+        server.out.write("HTTP/1.1 502 Bad Gateway\r\nContent-Length: 100\r\n\r\n".getBytes(StandardCharsets.US_ASCII));
+        server.out.flush();
+
+        assertEquals("close:1006:The handshake took too long:false:false", events.next());
+        assertEquals(-1, server.in.read(), "the handshake's connection is dropped");
+        events.assertQuiet();
+    }
+
+    @Test
     void anUnreachableBackendIsAnErrorThenAClose() throws Exception {
         int port;
         try (ServerSocket nobody = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
@@ -316,27 +351,21 @@ class JdkBackendSocketTest {
 
     @Test
     void aPongForAPingPastTheReplyDeadlineAnswersNothing() throws Exception {
-        // This clock moves only when the test moves it, each time between two pings, 400 ms apart.
+        // The test moves this clock, and pings, itself; replies may take 1,000 ms.
         AtomicLong now = new AtomicLong();
-        server = new TinyServer();
-        socket = new JdkBackendSocket(server.uri(), events, Duration.ofMillis(400), Duration.ofMillis(1_000),
-                Duration.ofSeconds(5), now::get);
-        socket.connect(Map.of());
-        server.accept(101);
-        assertEquals("open", events.next());
+        openPingedByHand(now::get, Duration.ofMillis(1_000));
 
-        assertEquals("ping", server.read());
-        byte[] first = server.lastPing;
+        byte[] first = ping();
         now.set(900);
-        assertEquals("ping", server.read());
-        server.sendPong(server.lastPing);
+        server.sendPong(ping());
         awaitFramesHandled();
         // The first ping's deadline passes before the next ping, so its pong, coming after, answers nothing.
         now.set(1_500);
-        assertEquals("ping", server.read());
+        ping();
         server.sendPong(first);
         awaitFramesHandled();
         now.set(2_000);
+        assertFalse(socket.heartbeat());
 
         assertEquals("close:1006:The backend stopped answering:false:false", events.next(),
                 "the last answer came at 900, more than the deadline ago");
@@ -344,29 +373,48 @@ class JdkBackendSocketTest {
 
     @Test
     void aPongPastItsPingsReplyDeadlineAnswersNothingEvenBeforeTheNextPingDropsIt() throws Exception {
-        // This clock moves only when the test moves it, between pings 400 ms apart; replies may take 1,000.
+        // The test moves this clock, and pings, itself; replies may take 1,000 ms.
         AtomicLong now = new AtomicLong();
-        server = new TinyServer();
-        socket = new JdkBackendSocket(server.uri(), events, Duration.ofMillis(400), Duration.ofMillis(1_000),
-                Duration.ofSeconds(5), now::get);
-        socket.connect(Map.of());
-        server.accept(101);
-        assertEquals("open", events.next());
+        openPingedByHand(now::get, Duration.ofMillis(1_000));
 
-        assertEquals("ping", server.read());
-        byte[] first = server.lastPing;
+        byte[] first = ping();
         now.set(500);
-        assertEquals("ping", server.read());
-        server.sendPong(server.lastPing);
+        server.sendPong(ping());
         awaitFramesHandled();
         // The first ping went out at 0, so at 1,400 its pong is past the deadline, though no ping has dropped it yet.
         now.set(1_400);
         server.sendPong(first);
         awaitFramesHandled();
         now.set(1_600);
+        assertFalse(socket.heartbeat());
 
         assertEquals("close:1006:The backend stopped answering:false:false", events.next(),
                 "the last answer in time came at 500, more than the deadline ago");
+    }
+
+    @Test
+    void aPingThatRacesThisSidesCloseLeavesItToTheBackendsAnswer() throws Exception {
+        // This side's close lands as the heartbeat reads the clock, once it has seen no close under way.
+        AtomicBoolean closeOnNextRead = new AtomicBoolean();
+        openPingedByHand(() -> {
+            if (closeOnNextRead.getAndSet(false)) {
+                socket.close(4001, "Re-authenticating");
+                try {
+                    assertEquals("close:4001:Re-authenticating", server.read(), "the close is out, so the ping can't go");
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+            }
+            return 0;
+        }, LONG);
+
+        closeOnNextRead.set(true);
+        socket.heartbeat();
+        events.assertQuiet();
+        server.sendClose(4001, "Re-authenticating");
+
+        assertEquals("close:4001:Re-authenticating:true:true", events.next(), "the backend's answer ends it");
+        events.assertQuiet();
     }
 
     /** Returns once the JDK has handled every frame the server sent so far: it answers a ping after them. */
@@ -443,7 +491,10 @@ class JdkBackendSocketTest {
         /** The data the client's last ping carried. */
         volatile byte[] lastPing;
 
-        TinyServer() throws IOException {}
+        TinyServer() throws IOException {
+            // A client that never connects fails the test rather than hang it.
+            listening.setSoTimeout(5_000);
+        }
 
         URI uri() {
             return URI.create("ws://127.0.0.1:" + listening.getLocalPort() + "/ws");
