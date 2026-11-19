@@ -373,6 +373,19 @@ class ConnectionCloseTest {
     }
 
     @Test
+    void aCloseToSignInAgainReconnectsWhateverCodeTheBackendAnswersItWith() {
+        FakeBackendSocket socket = harness.connectAsMember();
+        harness.receive(TOKEN_INVALID);
+        assertEquals(4001, socket.closeCode());
+
+        // The backend answers with a clean close rather than echo the client's.
+        socket.finishClosingFromBackend(1000, "");
+        harness.settle();
+
+        assertTrue(ConnectionManager.hasReconnectTask(), "the client closed to sign in again");
+    }
+
+    @Test
     void aCloseFromAReplacedSocketChangesNothing() {
         FakeBackendSocket first = harness.connectAsMember();
         harness.connection().disconnect();

@@ -566,8 +566,8 @@ public final class ConnectionManager {
         state = State.IDLE;
         BackendCloseClassifier.Kind kind = BackendCloseClassifier.classify(code, reason, byClient || closing.retired);
         handleBackendClose(closing, kind);
-        // A close this client started comes back marked remote once the backend echoes it.
-        if (closing.reconnect && shouldReconnectAfterClose(code, remote && kind != BackendCloseClassifier.Kind.CLIENT_INITIATED)) {
+        // A close this client started reconnects as it meant to, whatever code the backend answers it with.
+        if (closing.reconnect && (byClient || shouldReconnectAfterClose(code, remote))) {
             SeqClient.LOGGER.info("[WebSocket] Scheduling reconnect after close code={} remote={}", code, remote);
             scheduleReconnect();
         } else {
