@@ -27,6 +27,10 @@ class ConnectionCloseTest {
     private static final String REFUSED_403 = "Invalid status code received: 403 Status line: HTTP/1.1 403 Forbidden";
     private static final String REFUSED_502 = "Invalid status code received: 502 Status line: HTTP/1.1 502 Bad Gateway";
     private static final String TOKEN_INVALID = "{\"type\":\"error\",\"code\":\"token_invalid\",\"message\":\"Token invalid\"}";
+    /** The backend's older refusal: it refuses the sign-in, but says nothing of the token. */
+    private static final String INVALID_AUTH_REQUEST = "{\"type\":\"error\",\"status\":400,\"message\":\"Invalid auth request\"}";
+    private static final String BANNED_NOTICE = "Sequoia closed the connection: this account is banned from the party finder. "
+            + "Run /seq connect to try again.";
 
     @TempDir
     Path config;
@@ -153,6 +157,39 @@ class ConnectionCloseTest {
     }
 
     @Test
+    void aRefusalThatKeptTheTokenThenARevocationStillDropsIt() {
+        FakeBackendSocket socket = harness.connectAsMember();
+
+        // Both reach the game thread on the same tick.
+        socket.receive(INVALID_AUTH_REQUEST);
+        socket.closeFromBackend(BackendCloseClassifier.POLICY_VIOLATION, "account_revoked");
+        harness.settle();
+
+        assertEquals(List.of(AuthErrorCode.WEBSOCKET_AUTH_REJECTED), harness.tokens.invalidations,
+                "the reconnect must not sign in with the revoked token");
+        // Still one refusal's sign-in backoff.
+        harness.advance(1_999);
+        assertEquals(1, harness.sockets.size());
+        harness.advance(1);
+        assertEquals(2, harness.sockets.size());
+    }
+
+    @Test
+    void aBanThatBeginsAsTheClientClosesIsStillTheBackendsVerdict() {
+        FakeBackendSocket socket = harness.connectAsMember();
+        socket.startClosingBeforeNextClose = true;
+
+        // The client closes to sign in again, just as the backend's ban starts closing the socket.
+        harness.receive(INVALID_AUTH_REQUEST);
+        socket.finishClosingFromBackend(BackendCloseClassifier.POLICY_VIOLATION, "party_finder_banned");
+        harness.settle();
+
+        assertFalse(ConnectionManager.hasReconnectTask());
+        assertFalse(ConnectionManager.canAutoConnectNow());
+        assertEquals(BANNED_NOTICE, harness.told.getLast());
+    }
+
+    @Test
     void aBanThatClosesBehindARefusedTokenStillStopsReconnecting() {
         FakeBackendSocket socket = harness.connectAsMember();
 
@@ -162,8 +199,7 @@ class ConnectionCloseTest {
 
         assertFalse(ConnectionManager.hasReconnectTask());
         assertFalse(ConnectionManager.canAutoConnectNow());
-        assertEquals("Sequoia closed the connection: this account is banned from the party finder. "
-                + "Run /seq connect to try again.", harness.told.getLast());
+        assertEquals(BANNED_NOTICE, harness.told.getLast());
     }
 
     @Test
@@ -256,6 +292,22 @@ class ConnectionCloseTest {
         ConnectionManager.resetForAccountChange();
 
         assertTrue(ConnectionManager.canAutoConnectNow());
+    }
+
+    @Test
+    void aRefusalStillQueuedWhenThePlayerSwitchesAccountDoesNotHoldTheNextAccountBack() {
+        harness.connectAutomatically();
+
+        // The backend refuses the handshake, and the player switches account before the game thread hears it.
+        harness.socket().closeLocally(BackendCloseClassifier.HANDSHAKE_FAILED, REFUSED_403);
+        harness.switchAccount();
+        harness.settle();
+
+        assertTrue(ConnectionManager.canAutoConnectNow(), "the refusal was the previous account's");
+        assertEquals(List.of(), harness.told);
+        harness.connectAutomatically();
+        assertEquals(2, harness.sockets.size());
+        assertTrue(harness.socket().connected());
     }
 
     @Test

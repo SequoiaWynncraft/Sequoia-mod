@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.seqwawa.seq.client.Clocks;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.IOException;
@@ -15,6 +16,7 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.URI;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
@@ -23,7 +25,9 @@ import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -39,6 +43,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 class JdkBackendSocketTest {
 
     private static final Duration QUICK = Duration.ofMillis(200);
+    private static final Duration LONG = Duration.ofSeconds(30);
 
     private final Events events = new Events();
     private TinyServer server;
@@ -55,12 +60,20 @@ class JdkBackendSocketTest {
     }
 
     private void openSocket(Duration pingEvery, Duration closeWait) throws Exception {
+        openSocket(pingEvery, pingEvery.multipliedBy(2), closeWait);
+    }
+
+    private void openSocket(Duration pingEvery, Duration replyDeadline, Duration closeWait) throws Exception {
         server = new TinyServer();
-        socket = new JdkBackendSocket(server.uri(), events, pingEvery, closeWait);
+        socket = socket(server.uri(), pingEvery, replyDeadline, closeWait);
         socket.connect(Map.of("Authorization", "Bearer session-token", ClientVersion.MOD_VERSION_HEADER, "1.13.0"));
         server.accept(101);
         assertEquals("open", events.next());
         assertTrue(socket.isOpen());
+    }
+
+    private JdkBackendSocket socket(URI uri, Duration pingEvery, Duration replyDeadline, Duration closeWait) {
+        return new JdkBackendSocket(uri, events, pingEvery, replyDeadline, closeWait, Clocks::monotonicMillis);
     }
 
     @Test
@@ -84,7 +97,9 @@ class JdkBackendSocketTest {
 
         server.sendClose(1008, "party_finder_banned");
 
-        assertEquals("close:1008:party_finder_banned:true", events.next());
+        assertEquals("close:1008:party_finder_banned:true:false", events.next(), "the backend's own close");
+        // This side closing after the backend did changes nothing.
+        socket.close(1000, "");
         assertEquals("close:1008:", server.read(), "the JDK answers the backend's close");
         assertFalse(socket.isOpen());
         assertTrue(socket.isClosing());
@@ -104,7 +119,7 @@ class JdkBackendSocketTest {
         assertEquals("text:{\"type\":\"guild_chat\"}", server.read(), "frames sent before the close go first");
         assertEquals("close:4001:Re-authenticating", server.read());
         server.sendClose(4001, "Re-authenticating");
-        assertEquals("close:4001:Re-authenticating:true", events.next());
+        assertEquals("close:4001:Re-authenticating:true:true", events.next(), "the answer to this side's close");
         events.assertQuiet();
     }
 
@@ -115,7 +130,7 @@ class JdkBackendSocketTest {
         socket.close(1000, "");
 
         assertEquals("close:1000:", server.read());
-        assertEquals("close:1000::false", events.next());
+        assertEquals("close:1000::false:true", events.next());
         events.assertQuiet();
     }
 
@@ -124,13 +139,13 @@ class JdkBackendSocketTest {
     void aRefusedHandshakeClosesWithItsStatusAsTheClassifierReadsIt(int status, BackendCloseClassifier.Kind kind)
             throws Exception {
         server = new TinyServer();
-        socket = new JdkBackendSocket(server.uri(), events, Duration.ofSeconds(30), Duration.ofSeconds(5));
+        socket = socket(server.uri(), LONG, LONG, Duration.ofSeconds(5));
         socket.connect(Map.of());
 
         server.accept(status);
 
         String reason = "Invalid status code received: " + status;
-        assertEquals("close:1002:" + reason + ":false", events.next());
+        assertEquals("close:1002:" + reason + ":false:false", events.next());
         assertEquals(kind, BackendCloseClassifier.classify(BackendCloseClassifier.HANDSHAKE_FAILED, reason, false));
         assertFalse(socket.isOpen());
         events.assertQuiet();
@@ -139,14 +154,14 @@ class JdkBackendSocketTest {
     @Test
     void aCloseWhileConnectingEndsAtOnceAndDropsTheHandshake() throws Exception {
         server = new TinyServer();
-        socket = new JdkBackendSocket(server.uri(), events, Duration.ofSeconds(30), Duration.ofSeconds(5));
+        socket = socket(server.uri(), LONG, LONG, Duration.ofSeconds(5));
         socket.connect(Map.of());
         server.takeRequest();
 
         // The backend has yet to answer the handshake.
         socket.close(1000, "");
 
-        assertEquals("close:1000::false", events.next());
+        assertEquals("close:1000::false:true", events.next());
         assertTrue(socket.isClosing());
         assertEquals(-1, server.in.read(), "the handshake's connection is dropped");
         events.assertQuiet();
@@ -158,13 +173,12 @@ class JdkBackendSocketTest {
         try (ServerSocket nobody = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
             port = nobody.getLocalPort();
         }
-        socket = new JdkBackendSocket(URI.create("ws://127.0.0.1:" + port + "/ws"), events,
-                Duration.ofSeconds(30), Duration.ofSeconds(5));
+        socket = socket(URI.create("ws://127.0.0.1:" + port + "/ws"), LONG, LONG, Duration.ofSeconds(5));
 
         socket.connect(Map.of());
 
         assertTrue(events.next().startsWith("error:"));
-        assertTrue(events.next().matches("close:1006:.*:false"));
+        assertTrue(events.next().matches("close:1006:.*:false:false"));
         assertTrue(socket.isClosing());
         events.assertQuiet();
     }
@@ -185,7 +199,7 @@ class JdkBackendSocketTest {
 
         assertEquals("ping", server.read(), "a quiet socket pings");
         // The server never answers.
-        assertEquals("close:1006:The backend stopped answering:false", events.next());
+        assertEquals("close:1006:The backend stopped answering:false:false", events.next());
         assertFalse(socket.isOpen());
         events.assertQuiet();
     }
@@ -206,7 +220,7 @@ class JdkBackendSocketTest {
         chatter.setDaemon(true);
         chatter.start();
 
-        assertEquals("close:1006:The backend stopped answering:false", events.next());
+        assertEquals("close:1006:The backend stopped answering:false:false", events.next());
         assertFalse(socket.isOpen());
         chatter.interrupt();
     }
@@ -217,11 +231,55 @@ class JdkBackendSocketTest {
 
         for (int ping = 0; ping < 3; ping++) {
             assertEquals("ping", server.read());
-            server.sendPong();
+            server.sendPong(server.lastPing);
         }
 
         assertTrue(socket.isOpen());
         events.assertQuiet();
+    }
+
+    @Test
+    void aPongThatDoesNotCarryOurPingsDataIsNoAnswer() throws Exception {
+        openSocket(QUICK, Duration.ofMillis(700), Duration.ofSeconds(5));
+        // Every ping gets a pong straight away, but never one that answers it: unasked, or for a ping never sent.
+        Thread wrongPongs = new Thread(() -> {
+            try {
+                for (int ping = 0; ; ping++) {
+                    server.read();
+                    server.sendPong(ping % 2 == 0 ? new byte[0] : ByteBuffer.allocate(Long.BYTES).putLong(1_000_000).array());
+                }
+            } catch (IOException ended) {
+                // The socket was given up.
+            }
+        });
+        wrongPongs.setDaemon(true);
+        wrongPongs.start();
+
+        assertEquals("close:1006:The backend stopped answering:false:false", events.next());
+        assertFalse(socket.isOpen());
+    }
+
+    @Test
+    void aPongThatComesAfterTheNextPingIsDueStillAnswersWithinTheDeadline() throws Exception {
+        // Each pong comes after the next ping is due, as a pong 40 s late did with the 30 s pings this socket
+        // sent before, but well inside the reply deadline.
+        openSocket(Duration.ofMillis(200), Duration.ofMillis(800), Duration.ofSeconds(5));
+        ScheduledExecutorService late = Executors.newSingleThreadScheduledExecutor();
+        try {
+            for (int ping = 0; ping < 6; ping++) {
+                assertEquals("ping", server.read());
+                byte[] answering = server.lastPing;
+                late.schedule(() -> {
+                    server.sendPong(answering);
+                    return null;
+                }, 300, TimeUnit.MILLISECONDS);
+            }
+
+            assertTrue(socket.isOpen());
+            events.assertQuiet();
+        } finally {
+            late.shutdownNow();
+        }
     }
 
     /** What the socket reports, in order. */
@@ -239,8 +297,8 @@ class JdkBackendSocketTest {
         }
 
         @Override
-        public void onClose(int code, String reason, boolean remote) {
-            reported.add("close:" + code + ":" + reason + ":" + remote);
+        public void onClose(int code, String reason, boolean remote, boolean byClient) {
+            reported.add("close:" + code + ":" + reason + ":" + remote + ":" + byClient);
         }
 
         @Override
@@ -266,6 +324,8 @@ class JdkBackendSocketTest {
         private DataInputStream in;
         private OutputStream out;
         final Map<String, String> requestHeaders = new HashMap<>();
+        /** The data the client's last ping carried. */
+        volatile byte[] lastPing;
 
         TinyServer() throws IOException {}
 
@@ -325,8 +385,8 @@ class JdkBackendSocketTest {
             frame(0x9, new byte[0]);
         }
 
-        void sendPong() throws IOException {
-            frame(0xA, new byte[0]);
+        void sendPong(byte[] payload) throws IOException {
+            frame(0xA, payload);
         }
 
         private synchronized void frame(int opcode, byte[] payload) throws IOException {
@@ -359,7 +419,10 @@ class JdkBackendSocketTest {
                 case 0x1 -> "text:" + new String(payload, StandardCharsets.UTF_8);
                 case 0x8 -> "close:" + (((payload[0] & 0xFF) << 8) | (payload[1] & 0xFF)) + ":"
                         + new String(payload, 2, payload.length - 2, StandardCharsets.UTF_8);
-                case 0x9 -> "ping";
+                case 0x9 -> {
+                    lastPing = payload;
+                    yield "ping";
+                }
                 case 0xA -> "pong";
                 default -> "opcode:" + opcode;
             };

@@ -27,7 +27,8 @@ interface BackendSocket {
 
     /**
      * Closes with {@code code}. The listener hears the close once the backend answers it, or the wait
-     * for that runs out; a socket still connecting stops, and hears it at once.
+     * for that runs out; a socket still connecting stops, and hears it at once. A socket already closing
+     * ignores it.
      */
     void close(int code, String reason);
 
@@ -47,11 +48,12 @@ interface BackendSocket {
         void onMessage(String message);
 
         /**
-         * {@code remote} is true when the backend sent the close, its answer to ours included. A
+         * {@code remote} is true when the backend sent the close, its answer to ours included;
+         * {@code byClient} when this side's close came first, so the close is not the backend's own. A
          * handshake the backend refused closes with {@link BackendCloseClassifier#HANDSHAKE_FAILED}
          * and a reason naming the HTTP status.
          */
-        void onClose(int code, String reason, boolean remote);
+        void onClose(int code, String reason, boolean remote, boolean byClient);
 
         /** Something failed; {@link #onClose} follows once the socket can't go on. */
         void onError(Exception error);

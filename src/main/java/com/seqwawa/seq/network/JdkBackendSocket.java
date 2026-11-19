@@ -1,5 +1,6 @@
 package com.seqwawa.seq.network;
 
+import com.seqwawa.seq.client.Clocks;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -12,12 +13,14 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.TimeUnit;
+import java.util.function.LongSupplier;
 
 /**
  * The backend socket the game uses, on the JDK's own WebSocket client. It reports to its listener
  * under its lock, so no two calls overlap, and ends with one {@code onClose} however the socket ends:
  * the backend closes or answers our close, refuses the handshake, can't be reached, stops answering
- * pings, or never answers our close, or this side closes it while it connects.
+ * pings, or never answers our close, or this side closes it while it connects. That close says whether
+ * this side's close came first, decided under the same lock.
  */
 final class JdkBackendSocket implements BackendSocket {
 
@@ -26,10 +29,13 @@ final class JdkBackendSocket implements BackendSocket {
 
     private final URI uri;
     private final Listener listener;
-    /** How often the socket pings; one whose ping has no pong by the next is given up. */
+    /** How often the socket pings. */
     private final Duration pingEvery;
+    /** How long the backend may go without answering a ping, checked as each ping is due. */
+    private final Duration replyDeadline;
     /** How long a close waits for the backend's answer. */
     private final Duration closeWait;
+    private final LongSupplier clockMs;
     private WebSocket webSocket;
     /** The handshake, which a close while connecting cancels. */
     private volatile CompletableFuture<WebSocket> handshake = CompletableFuture.completedFuture(null);
@@ -40,18 +46,24 @@ final class JdkBackendSocket implements BackendSocket {
     private String closeReason;
     /** Each text frame waits for the one before it: the JDK takes one at a time. */
     private CompletableFuture<?> sending = CompletableFuture.completedFuture(null);
-    /** Whether the backend answered the last ping with a pong. */
-    private volatile boolean answered = true;
+    /** The last ping's number. Each ping carries its own, and only a pong carrying one of them answers. */
+    private volatile long pinged;
+    /** When the backend last answered a ping, or the socket opened. */
+    private volatile long answeredAt;
 
+    /** Pings as Java-WebSocket did: once a minute, giving up once 90 seconds pass without an answer. */
     JdkBackendSocket(URI uri, Listener listener) {
-        this(uri, listener, Duration.ofSeconds(30), Duration.ofSeconds(5));
+        this(uri, listener, Duration.ofSeconds(60), Duration.ofSeconds(90), Duration.ofSeconds(5), Clocks::monotonicMillis);
     }
 
-    JdkBackendSocket(URI uri, Listener listener, Duration pingEvery, Duration closeWait) {
+    JdkBackendSocket(URI uri, Listener listener, Duration pingEvery, Duration replyDeadline, Duration closeWait,
+            LongSupplier clockMs) {
         this.uri = uri;
         this.listener = listener;
         this.pingEvery = pingEvery;
+        this.replyDeadline = replyDeadline;
         this.closeWait = closeWait;
+        this.clockMs = clockMs;
     }
 
     @Override
@@ -132,13 +144,15 @@ final class JdkBackendSocket implements BackendSocket {
         if (ended) {
             return;
         }
+        // Only close() starts closing before the end: the close reported answers this side's, or is the backend's own.
+        boolean byClient = closing;
         ended = true;
         open = false;
         closing = true;
         if (failure != null) {
             listener.onError(failure);
         }
-        listener.onClose(code, reason, remote);
+        listener.onClose(code, reason, remote, byClient);
     }
 
     private void fail(Throwable failure) {
@@ -159,19 +173,21 @@ final class JdkBackendSocket implements BackendSocket {
         end(ABNORMAL_CLOSE, message, false, cause instanceof Exception exception ? exception : new IOException(cause));
     }
 
-    /** Pings every {@link #pingEvery}; a socket whose last ping never went out, or was never answered, is given up. */
+    /**
+     * Pings every {@link #pingEvery}. A socket whose ping never went out, or that no pong answered
+     * within {@link #replyDeadline}, is given up.
+     */
     private void pingLater(WebSocket socket) {
         later(pingEvery, () -> {
             if (isClosing()) {
                 return;
             }
-            if (!answered) {
+            if (clockMs.getAsLong() - answeredAt > replyDeadline.toMillis()) {
                 socket.abort();
                 end(ABNORMAL_CLOSE, "The backend stopped answering", false, null);
                 return;
             }
-            answered = false;
-            socket.sendPing(ByteBuffer.allocate(0)).exceptionally(failure -> {
+            socket.sendPing(ByteBuffer.allocate(Long.BYTES).putLong(0, ++pinged)).exceptionally(failure -> {
                 fail(failure);
                 return null;
             });
@@ -200,6 +216,7 @@ final class JdkBackendSocket implements BackendSocket {
                 open = true;
                 listener.onOpen();
             }
+            answeredAt = clockMs.getAsLong();
             socket.request(1);
             pingLater(socket);
         }
@@ -225,7 +242,13 @@ final class JdkBackendSocket implements BackendSocket {
 
         @Override
         public CompletionStage<?> onPong(WebSocket socket, ByteBuffer message) {
-            answered = true;
+            // Only a pong carrying one of our pings' data answers it (RFC 6455 section 5.5.3); one may come unasked.
+            if (message.remaining() == Long.BYTES) {
+                long ping = message.getLong(message.position());
+                if (ping > 0 && ping <= pinged) {
+                    answeredAt = clockMs.getAsLong();
+                }
+            }
             socket.request(1);
             return null;
         }

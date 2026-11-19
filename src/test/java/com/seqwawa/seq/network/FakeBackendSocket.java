@@ -9,8 +9,8 @@ import java.util.Map;
 
 /**
  * A backend socket a test drives by hand. The client side behaves as {@link JdkBackendSocket}
- * does: it connects once, sends nothing unless open, and stops being open as soon as it starts
- * to close. The backend side ({@link #open()}, {@link #receive}, the closes) fires the
+ * does: it connects once, sends nothing unless open, stops being open as soon as it starts
+ * to close, ignores a close once closing, and says whether its close came first. The backend side ({@link #open()}, {@link #receive}, the closes) fires the
  * listener on the test's thread, as the real socket fires it on its own.
  */
 final class FakeBackendSocket implements BackendSocket {
@@ -21,6 +21,8 @@ final class FakeBackendSocket implements BackendSocket {
     private int connects;
     private boolean open;
     private boolean closing;
+    /** The client's close came before the backend's. */
+    private boolean byClient;
     private final List<String> frames = new ArrayList<>();
     private int closes;
     private int closeCode;
@@ -64,6 +66,8 @@ final class FakeBackendSocket implements BackendSocket {
 
     /** The next {@link #isClosing} answers "no", and the backend starts closing just after. */
     boolean startClosingAfterNextClosingCheck;
+    /** The backend starts closing just before the client's next close reaches the socket. */
+    boolean startClosingBeforeNextClose;
 
     @Override
     public boolean send(String text) {
@@ -76,15 +80,23 @@ final class FakeBackendSocket implements BackendSocket {
 
     @Override
     public void close(int code, String reason) {
-        boolean connecting = !open && !closing;
+        if (startClosingBeforeNextClose) {
+            startClosingBeforeNextClose = false;
+            startClosingFromBackend();
+        }
+        if (closing) {
+            return;
+        }
+        boolean connecting = !open;
         open = false;
         closing = true;
+        byClient = true;
         closes++;
         closeCode = code;
         closeReason = reason;
         if (connecting) {
             // As the real socket does: a handshake cut short ends at once, as this side's close.
-            listener.onClose(code, reason, false);
+            listener.onClose(code, reason, false, true);
         }
     }
 
@@ -119,7 +131,7 @@ final class FakeBackendSocket implements BackendSocket {
 
     /** The library reports the close the backend started. */
     void finishClosingFromBackend(int code, String reason) {
-        listener.onClose(code, reason, true);
+        listener.onClose(code, reason, true, byClient);
     }
 
     /** The backend answers the client's own close, which the socket reports as remote. */
@@ -127,14 +139,14 @@ final class FakeBackendSocket implements BackendSocket {
         if (closes == 0) {
             throw new IllegalStateException("The client never closed this socket");
         }
-        listener.onClose(closeCode, closeReason, true);
+        listener.onClose(closeCode, closeReason, true, true);
     }
 
     /** The socket closes on this side without a backend answer, as a dropped network does. */
     void closeLocally(int code, String reason) {
         open = false;
         closing = true;
-        listener.onClose(code, reason, false);
+        listener.onClose(code, reason, false, byClient);
     }
 
     /** Connecting fails, as an unreachable backend does: the socket is done, then reports an error and a close. */
@@ -142,7 +154,7 @@ final class FakeBackendSocket implements BackendSocket {
         open = false;
         closing = true;
         listener.onError(new java.net.ConnectException(message));
-        listener.onClose(-1, message, false);
+        listener.onClose(-1, message, false, byClient);
     }
 
     void error(Exception error) {

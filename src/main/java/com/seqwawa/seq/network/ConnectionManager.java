@@ -268,7 +268,7 @@ public final class ConnectionManager {
 
         record Failed(Attempt attempt, Exception error) implements Event {}
 
-        record Closed(Attempt attempt, int code, String reason, boolean remote) implements Event {}
+        record Closed(Attempt attempt, int code, String reason, boolean remote, boolean byClient) implements Event {}
 
         record SessionEnded(long session) implements Event {}
 
@@ -289,7 +289,7 @@ public final class ConnectionManager {
             case Event.Frame frame -> settleTreasuryReply(frame.text());
             case Event.Failed failed when isLive(failed.attempt()) -> failed(failed.attempt(), failed.error());
             case Event.Closed closed when isLive(closed.attempt()) ->
-                    closed(closed.attempt(), closed.code(), closed.reason(), closed.remote());
+                    closed(closed.attempt(), closed.code(), closed.reason(), closed.remote(), closed.byClient());
             case Event.SessionEnded ended -> {
                 // A Connect its player asked for that is still held goes with the session.
                 if (heldConnectFor == ended.session()) {
@@ -445,8 +445,13 @@ public final class ConnectionManager {
         }
     }
 
-    /** Ends {@code ended} on purpose: what it still reports changes nothing, and its close starts nothing. */
+    /**
+     * Ends {@code ended} on purpose: what it still reports changes nothing, and its close starts nothing,
+     * not even a verdict the backend gave it first, such as a refused handshake, which was for an account
+     * or session that is gone.
+     */
     private void end(Attempt ended) {
+        ended.retired = true;
         ended.reconnect = false;
         ended.reporting = false;
         heldConnectFor = NO_SESSION;
@@ -460,13 +465,13 @@ public final class ConnectionManager {
         }
     }
 
-    /** Closes {@code closing}'s socket, unless the backend already is. Its frames drop from now on; its close decides what follows. */
+    /**
+     * Closes {@code closing}'s socket, unless the backend already is. Its frames drop from now on; its close
+     * decides what follows, and the socket says whether that close answers this one or is the backend's own.
+     */
     private void closeFromClient(Attempt closing, int code, String reason) {
         state = State.CLOSING;
-        if (!closing.socket.isClosing()) {
-            closing.closedByClient = true;
-            closing.socket.close(code, reason);
-        }
+        closing.socket.close(code, reason);
     }
 
     private void tokenReady(Attempt signingIn, String token, Throwable failure) {
@@ -548,17 +553,18 @@ public final class ConnectionManager {
     }
 
     /** Every close comes here, the client's own included, and decides what comes next. */
-    private void closed(Attempt closing, int code, String reason, boolean remote) {
+    private void closed(Attempt closing, int code, String reason, boolean remote, boolean byClient) {
         SeqClient.LOGGER.info(
-                "[WebSocket] onClose code={} reason='{}' remote={} closedByClient={} reconnect={}",
+                "[WebSocket] onClose code={} reason='{}' remote={} byClient={} retired={} reconnect={}",
                 code,
                 reason,
                 remote,
-                closing.closedByClient,
+                byClient,
+                closing.retired,
                 closing.reconnect);
         closing.drop();
         state = State.IDLE;
-        BackendCloseClassifier.Kind kind = BackendCloseClassifier.classify(code, reason, closing.closedByClient);
+        BackendCloseClassifier.Kind kind = BackendCloseClassifier.classify(code, reason, byClient || closing.retired);
         handleBackendClose(closing, kind);
         // A close this client started comes back marked remote once the backend echoes it.
         if (closing.reconnect && shouldReconnectAfterClose(code, remote && kind != BackendCloseClassifier.Kind.CLIENT_INITIATED)) {
@@ -575,12 +581,14 @@ public final class ConnectionManager {
         switch (kind) {
             case AUTH_REJECTED -> {
                 closing.standing = Standing.REFUSED;
-                // An error that refused the token already counted this refusal, and dropped the token as it should.
+                String message = "Backend rejected websocket authentication. Re-authenticating.";
+                // An error before it may have counted this refusal, and dropped the token only if it said the token was dead.
                 if (!closing.refusalCounted) {
-                    String message = "Backend rejected websocket authentication. Re-authenticating.";
                     closing.report(message);
                     signInBackoff.recordFailure();
                     recordAuthRejection(closing);
+                }
+                if (!closing.tokenDropped) {
                     env.tokens().invalidateSession(closing.token, AuthErrorCode.WEBSOCKET_AUTH_REJECTED, message);
                 }
             }
@@ -729,9 +737,14 @@ public final class ConnectionManager {
         boolean reporting;
         /** Whether its close reconnects, unless the close itself refuses. */
         boolean reconnect = true;
-        boolean closedByClient;
-        /** A refusal of its sign-in is counted, so the backend saying it twice, an error then a close, counts once. */
+        /** Ended on purpose, by a disconnect or its session's end: what the backend says to it applies to no one. */
+        boolean retired;
+        /**
+         * A refusal of its sign-in is counted, and its token dropped, once each: the backend may say it twice,
+         * an error then a close, and only some errors say the token is dead.
+         */
         boolean refusalCounted;
+        boolean tokenDropped;
         boolean versionRejectionShown;
         volatile Standing standing = Standing.NONE;
         volatile boolean rankTracking;
@@ -771,8 +784,8 @@ public final class ConnectionManager {
         }
 
         @Override
-        public void onClose(int code, String reason, boolean remote) {
-            env.scheduler().execute(() -> step(new Event.Closed(this, code, reason, remote)));
+        public void onClose(int code, String reason, boolean remote, boolean byClient) {
+            env.scheduler().execute(() -> step(new Event.Closed(this, code, reason, remote, byClient)));
         }
 
         @Override
@@ -878,6 +891,7 @@ public final class ConnectionManager {
         recordAuthRejection(refused);
         closeFromClient(refused, CLOSE_TO_REAUTHENTICATE, "Re-authenticating");
         if (code != null) {
+            refused.tokenDropped = true;
             env.tokens().invalidateSession(refused.token, code, message);
         }
     }
