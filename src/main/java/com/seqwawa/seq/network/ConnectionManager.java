@@ -2076,7 +2076,7 @@ public class ConnectionManager {
                     discordNameDelivery(discordUser, handshakeAccount,
                             () -> instance == this && environment.tokens().holdsToken(handshakeToken),
                             SeqClient.getConfigManager()::setDiscordUsername).run();
-                    if (hasDiscordUsername(discordUser)) {
+                    if (discordUser != null) {
                         notifyConnectionStatus("Connected as " + discordUser);
                     }
                     sendPrepared("get_connected", null);
@@ -2885,14 +2885,10 @@ public class ConnectionManager {
     /**
      * Keeps the Discord name a sign-in reply links, or that it links none, for {@code account}, the one
      * the socket signed in for, and only while {@code signInCurrent}: a reply that lands after a switch changes no name.
-     * A reply that leaves the name out ({@code null}) keeps the one saved.
      */
     static Runnable discordNameDelivery(String discordUsername, UUID account, BooleanSupplier signInCurrent,
             java.util.function.BiConsumer<UUID, String> store) {
         return () -> {
-            if (discordUsername == null) {
-                return;
-            }
             if (account == null || !signInCurrent.getAsBoolean()) {
                 SeqClient.LOGGER.debug("[WebSocket] Ignoring the Discord name of a sign-in that has ended");
                 return;
@@ -2901,17 +2897,15 @@ public class ConnectionManager {
         };
     }
 
-    /**
-     * The Discord name a sign-in reply links to the account: "" when it links none, as the backend
-     * says with null, or null when the reply leaves the name out, which says nothing about it.
-     */
+    /** The Discord name a sign-in reply links to the account, or null when it names none: absent and blank alike. */
     static String discordUsernameIn(JsonObject reply) {
+        // The backend leaves the field out when the account has no Discord link.
         JsonElement name = reply == null ? null : reply.get("discord_username");
-        if (name == null || !(name.isJsonPrimitive() || name.isJsonNull())) {
+        if (name == null || !name.isJsonPrimitive()) {
             return null;
         }
-        String value = name.isJsonNull() ? null : name.getAsString();
-        return hasDiscordUsername(value) ? value : "";
+        String value = name.getAsString();
+        return hasDiscordUsername(value) ? value : null;
     }
 
     // ── Message records ──
