@@ -6,6 +6,7 @@ import static com.seqwawa.seq.ui.theme.UiColor.*;
 import java.awt.Color;
 import java.util.*;
 import java.util.List;
+import java.util.function.Supplier;
 
 import com.seqwawa.seq.model.Listing;
 import net.minecraft.client.gui.screens.Screen;
@@ -163,6 +164,8 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
     private final List<MemberButton> renderedMemberActionBounds = new ArrayList<>();
     private final List<JoinButton> renderedJoinButtonBounds = new ArrayList<>();
     private List<Card> renderedCards = List.of();
+    /** The header as the last frame drew it: clicks are hit-tested against what the player saw, not a promotion since. */
+    private HeaderControlsLayout drawnHeader;
 
     /** A filter chip as drawn: turned {@code degrees} about its centre while it swings. */
     record TagChip(String tag, UiBounds bounds, float degrees) {
@@ -309,6 +312,7 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
         float panelX = SIDEBAR_WIDTH;
         float panelWidth = screenWidth - SIDEBAR_WIDTH;
         HeaderControlsLayout headerLayout = computeHeaderControlsLayout(panelX, panelWidth, fontName);
+        drawnHeader = headerLayout;
         float headerHeight = headerLayout.height();
 
         canvas.fillRect(panelX, 0, panelWidth, screenHeight, color(BACKGROUND_BODY));
@@ -544,6 +548,16 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
             case CLOSED -> "CLOSED";
             default -> status.name();
         };
+    }
+
+    private HeaderControlsLayout drawnHeader(float panelWidth) {
+        return hitTestedHeader(drawnHeader, () ->
+                computeHeaderControlsLayout(SIDEBAR_WIDTH, panelWidth, SeqClient.getFontManager().getSelectedFont()));
+    }
+
+    /** The header a click is hit-tested against: as the last frame {@code drawn} it; before the first, as {@code now}. */
+    static HeaderControlsLayout hitTestedHeader(HeaderControlsLayout drawn, Supplier<HeaderControlsLayout> now) {
+        return drawn != null ? drawn : now.get();
     }
 
     private HeaderControlsLayout computeHeaderControlsLayout(float panelX, float panelWidth, String fontName) {
@@ -1776,9 +1790,8 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
 
         if (clickSidebar(at)) return true;
 
-        // ── Header ──
-        HeaderControlsLayout headerLayout =
-                computeHeaderControlsLayout(panelX, panelWidth, SeqClient.getFontManager().getSelectedFont());
+        // ── Header, and below it the cards, where they were drawn; then what the player may still do ──
+        HeaderControlsLayout headerLayout = drawnHeader(panelWidth);
         if (headerLayout.searchBar().contains(at)) {
             search.focus();
             return true;
@@ -1850,6 +1863,9 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
         // ── Leader member-management buttons ──
         for (MemberButton button : renderedMemberActionBounds) {
             if (button.bounds().contains(at)) {
+                if (!party().isPartyLeader()) {
+                    return true;
+                }
                 if (button.action() == MemberAction.PROMOTE) {
                     party().actions().promoteMemberById(button.listingId(), button.memberUuid());
                 } else {
@@ -2184,8 +2200,7 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
     public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
         float screenHeight = MinecraftUiRenderer.screenHeight();
         float panelWidth = MinecraftUiRenderer.screenWidth() - SIDEBAR_WIDTH;
-        float headerHeight =
-                computeHeaderControlsLayout(SIDEBAR_WIDTH, panelWidth, SeqClient.getFontManager().getSelectedFont()).height();
+        float headerHeight = drawnHeader(panelWidth).height();
         UiBounds track = scrollTrack(SIDEBAR_WIDTH, panelWidth, headerHeight, screenHeight - headerHeight);
         return scroll.drag(UiPointer.at(click), track) || super.mouseDragged(click, deltaX, deltaY);
     }

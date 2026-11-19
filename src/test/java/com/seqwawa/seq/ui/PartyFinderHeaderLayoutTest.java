@@ -51,4 +51,24 @@ class PartyFinderHeaderLayoutTest {
             }
         }
     }
+
+    @Test
+    void aClickOnTheFirstCardIsHitTestedAgainstTheHeaderAsDrawnNotAsAPromotionWouldWrapIt() {
+        // Drawn for a member, where a leader's controls wrap onto more rows.
+        var drawn = PartyFinderScreen.computeHeaderControlsLayout(140, 320, List.of(85f), 80, 110, false);
+        var promoted = PartyFinderScreen.computeHeaderControlsLayout(
+                140, 320, List.of(100f, 55f, 85f, 90f, 65f, 80f), 80, 110, true);
+        var onFirstCard = new UiPointer(150, drawn.height() + 4);
+
+        var hitTested = PartyFinderScreen.hitTestedHeader(drawn, () -> promoted);
+
+        assertTrue(promoted.height() > onFirstCard.y(), "recomputed after the promotion, the header covers the card");
+        assertTrue(onFirstCard.y() >= hitTested.height(), "the click reaches the cards");
+        for (var control : java.util.Arrays.asList(hitTested.searchBar(), hitTested.manageButton(),
+                hitTested.inviteButton(), hitTested.openCloseButton(), hitTested.delistButton(),
+                hitTested.inviteAllButton(), hitTested.scanButton(), hitTested.newPartyButton(),
+                hitTested.roleDropdown())) {
+            assertFalse(control != null && control.contains(onFirstCard), "no header control takes it");
+        }
+    }
 }
