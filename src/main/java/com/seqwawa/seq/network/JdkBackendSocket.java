@@ -250,9 +250,12 @@ final class JdkBackendSocket implements BackendSocket {
 
         @Override
         public CompletionStage<?> onPong(WebSocket socket, ByteBuffer message) {
-            // Only a pong carrying an unanswered ping's data answers it (RFC 6455 section 5.5.3); one may come unasked, or again.
-            if (message.remaining() == Long.BYTES && unanswered.remove(message.getLong(message.position())) != null) {
-                answeredAt = clockMs.getAsLong();
+            // Only a pong carrying an unanswered ping's data answers it (RFC 6455 section 5.5.3); one may come unasked,
+            // again, or after its ping's reply deadline, before the next ping drops that ping.
+            Long sentAt = message.remaining() == Long.BYTES ? unanswered.remove(message.getLong(message.position())) : null;
+            long now = clockMs.getAsLong();
+            if (sentAt != null && now - sentAt <= replyDeadline.toMillis()) {
+                answeredAt = now;
             }
             socket.request(1);
             return null;

@@ -342,6 +342,33 @@ class JdkBackendSocketTest {
                 "the last answer came at 900, more than the deadline ago");
     }
 
+    @Test
+    void aPongPastItsPingsReplyDeadlineAnswersNothingEvenBeforeTheNextPingDropsIt() throws Exception {
+        // This clock moves only when the test moves it, between pings 400 ms apart; replies may take 1,000.
+        AtomicLong now = new AtomicLong();
+        server = new TinyServer();
+        socket = new JdkBackendSocket(server.uri(), events, Duration.ofMillis(400), Duration.ofMillis(1_000),
+                Duration.ofSeconds(5), now::get);
+        socket.connect(Map.of());
+        server.accept(101);
+        assertEquals("open", events.next());
+
+        assertEquals("ping", server.read());
+        byte[] first = server.lastPing;
+        now.set(500);
+        assertEquals("ping", server.read());
+        server.sendPong(server.lastPing);
+        awaitFramesHandled();
+        // The first ping went out at 0, so at 1,400 its pong is past the deadline, though no ping has dropped it yet.
+        now.set(1_400);
+        server.sendPong(first);
+        awaitFramesHandled();
+        now.set(1_600);
+
+        assertEquals("close:1006:The backend stopped answering:false:false", events.next(),
+                "the last answer in time came at 500, more than the deadline ago");
+    }
+
     /** Returns once the JDK has handled every frame the server sent so far: it answers a ping after them. */
     private void awaitFramesHandled() throws IOException {
         server.sendPing();
