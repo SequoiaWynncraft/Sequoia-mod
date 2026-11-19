@@ -51,10 +51,10 @@ Helpers
       serde_core 1.0.229, sha2 0.10.9, smallvec 1.16.3, thiserror 2.0.21, typenum 1.20.1,
       wasmparser 0.258.3, windows-link 0.2.1, windows-sys 0.61.2
     Apache-2.0 WITH LLVM-exception:
-      cranelift-bforest 0.136.2, cranelift-bitset 0.136.2, cranelift-entity 0.136.2,
-      pulley-interpreter 49.0.2, target-lexicon 0.13.5, wasmtime 49.0.2,
-      wasmtime-environ 49.0.2, wasmtime-internal-core 49.0.2,
-      wasmtime-internal-jit-icache-coherence 49.0.2, wasmtime-internal-unwinder 49.0.2
+      cranelift-bforest 0.136.4, cranelift-bitset 0.136.4, cranelift-entity 0.136.4,
+      pulley-interpreter 49.0.4, target-lexicon 0.13.5, wasmtime 49.0.4,
+      wasmtime-environ 49.0.4, wasmtime-internal-core 49.0.4,
+      wasmtime-internal-jit-icache-coherence 49.0.4, wasmtime-internal-unwinder 49.0.4
     Unlicense:
       memchr 2.8.3
     foldhash 0.2.0: Zlib
