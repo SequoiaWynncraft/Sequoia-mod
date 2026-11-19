@@ -138,8 +138,8 @@ record ConnectionEnvironment(
         /** The class the player is on, for the party finder, or null when it isn't known. */
         WynnClassType localClassType();
 
-        /** Shows a backend error in the party finder. */
-        void showPartyFinderError(String message);
+        /** Shows a backend error in the party finder, on the server connection {@code heardOn} it arrived on. */
+        void showPartyFinderError(String message, Object heardOn);
 
         /** Applies the guild storage totals the backend sent. Called on the game thread. */
         void applyGuildStorageSnapshot(long emeraldCurrent, long emeraldMax, long aspectCurrent, long aspectMax);
@@ -288,8 +288,8 @@ record ConnectionEnvironment(
         }
 
         @Override
-        public void showPartyFinderError(String message) {
-            SeqClient.getPartyFinderManager().pushUiError(message);
+        public void showPartyFinderError(String message, Object heardOn) {
+            SeqClient.getPartyFinderManager().pushUiError(message, heardOn);
         }
 
         @Override

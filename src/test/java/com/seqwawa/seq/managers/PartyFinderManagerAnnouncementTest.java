@@ -23,7 +23,7 @@ class PartyFinderManagerAnnouncementTest {
 
     @Test
     void buildsExplicitWynnPartyInviteCommand() {
-        assertEquals("party invite ScannedPlayer", PartyFinderManager.gamePartyInviteCommand("ScannedPlayer"));
+        assertEquals("party invite ScannedPlayer", PartyGameCommands.gamePartyInviteCommand("ScannedPlayer"));
     }
 
     private static final String LOCAL_UUID = "00000000-0000-0000-0000-000000000001";
@@ -47,7 +47,7 @@ class PartyFinderManagerAnnouncementTest {
                 BASE_TIME.minusSeconds(150),
                 List.of(new ReservedSlot(LOCAL_UUID, PartyRole.HEALER, BASE_TIME.minusSeconds(149))));
 
-        List<Listing> candidates = PartyFinderManager.selectOpenPartyAnnouncementCandidates(
+        List<Listing> candidates = PartyFinderNotices.selectOpenPartyAnnouncementCandidates(
                 List.of(eligible, full, closed, ownListing, inviteOnly, reservedForLocal),
                 LOCAL_UUID);
 
@@ -60,7 +60,7 @@ class PartyFinderManagerAnnouncementTest {
         Listing newest = listing(21L, "leader-new", PartyStatus.OPEN, 1, 0, BASE_TIME.minusSeconds(10));
         Listing oldest = listing(20L, "leader-old", PartyStatus.OPEN, 1, 0, BASE_TIME.minusSeconds(100));
 
-        List<Listing> candidates = PartyFinderManager.selectOpenPartyAnnouncementCandidates(
+        List<Listing> candidates = PartyFinderNotices.selectOpenPartyAnnouncementCandidates(
                 List.of(oldest, newest),
                 LOCAL_UUID);
 
@@ -72,7 +72,7 @@ class PartyFinderManagerAnnouncementTest {
         Listing newer = listing(31L, "leader-1", PartyStatus.OPEN, 2, 0, BASE_TIME.minusSeconds(5));
         Listing older = listing(30L, "leader-2", PartyStatus.OPEN, 1, 0, BASE_TIME.minusSeconds(50));
 
-        PartyFinderManager.OpenPartyAnnouncementSummary summary = PartyFinderManager.buildOpenPartyAnnouncementSummary(
+        PartyFinderNotices.OpenPartyAnnouncementSummary summary = PartyFinderNotices.buildOpenPartyAnnouncementSummary(
                 List.of(newer, older),
                 uuid -> "name-" + uuid);
 
@@ -95,7 +95,7 @@ class PartyFinderManagerAnnouncementTest {
                 BASE_TIME.minusSeconds(15),
                 List.of(new Activity(2L, "The Orphion's Nexus of Light", 4)));
 
-        PartyFinderManager.OpenPartyAnnouncementSummary summary = PartyFinderManager.buildOpenPartyAnnouncementSummary(
+        PartyFinderNotices.OpenPartyAnnouncementSummary summary = PartyFinderNotices.buildOpenPartyAnnouncementSummary(
                 List.of(listing),
                 uuid -> "name-" + uuid);
 
@@ -104,8 +104,8 @@ class PartyFinderManagerAnnouncementTest {
 
     @Test
     void buildOpenPartyAnnouncementSummary_returnsEmptyForNoCandidates() {
-        PartyFinderManager.OpenPartyAnnouncementSummary summary =
-                PartyFinderManager.buildOpenPartyAnnouncementSummary(List.of(), uuid -> "ignored");
+        PartyFinderNotices.OpenPartyAnnouncementSummary summary =
+                PartyFinderNotices.buildOpenPartyAnnouncementSummary(List.of(), uuid -> "ignored");
 
         assertTrue(summary.isEmpty());
     }
@@ -118,7 +118,7 @@ class PartyFinderManagerAnnouncementTest {
                 "00000000-0000-0000-0000-00000000abcd",
                 "LinkedPlayer");
 
-        String resolved = PartyFinderManager.resolveIdentityUuid(LOCAL_UUID, session);
+        String resolved = PartyFinderPlayer.resolveIdentityUuid(LOCAL_UUID, session);
 
         assertEquals("00000000-0000-0000-0000-00000000abcd", resolved);
     }
@@ -127,7 +127,7 @@ class PartyFinderManagerAnnouncementTest {
     void resolveIdentityUuid_fallsBackToCurrentPlayerUuidWhenSessionMissingUuid() {
         StoredAuthSession session = new StoredAuthSession("token", BASE_TIME.plusSeconds(600), "", "LinkedPlayer");
 
-        String resolved = PartyFinderManager.resolveIdentityUuid(LOCAL_UUID, session);
+        String resolved = PartyFinderPlayer.resolveIdentityUuid(LOCAL_UUID, session);
 
         assertEquals(LOCAL_UUID, resolved);
     }
@@ -136,19 +136,19 @@ class PartyFinderManagerAnnouncementTest {
     void staleWarningMessageUsesSingularMinute() {
         assertEquals(
                 "Your Party Finder listing looks inactive and will be removed in 1 minute unless activity resumes.",
-                PartyFinderManager.staleWarningMessage(1));
+                PartyFinderNotices.staleWarningMessage(1));
     }
 
     @Test
     void staleWarningMessageClampsNegativeTime() {
         assertEquals(
                 "Your Party Finder listing looks inactive and will be removed in 0 minutes unless activity resumes.",
-                PartyFinderManager.staleWarningMessage(-5));
+                PartyFinderNotices.staleWarningMessage(-5));
     }
 
     @Test
     void staleWarningExtendCommandTargetsWarnedListing() {
-        assertEquals("/seq p extend 42", PartyFinderManager.staleWarningExtendCommand(42));
+        assertEquals("/seq p extend 42", PartyFinderNotices.staleWarningExtendCommand(42));
     }
 
     @Test
@@ -214,10 +214,10 @@ class PartyFinderManagerAnnouncementTest {
                 List.of(new Member(LOCAL_UUID, PartyRole.DPS, WynnClassType.WARRIOR, BASE_TIME)),
                 List.of());
 
-        assertTrue(PartyFinderManager.shouldDisplayStaleWarning(valid, 42L, LOCAL_UUID));
-        assertFalse(PartyFinderManager.shouldDisplayStaleWarning(valid, 99L, LOCAL_UUID));
-        assertFalse(PartyFinderManager.shouldDisplayStaleWarning(leaderOnly, 42L, LOCAL_UUID));
-        assertFalse(PartyFinderManager.shouldDisplayStaleWarning(noLongerLeader, 42L, LOCAL_UUID));
+        assertTrue(PartyFinderNotices.shouldDisplayStaleWarning(valid, 42L, LOCAL_UUID));
+        assertFalse(PartyFinderNotices.shouldDisplayStaleWarning(valid, 99L, LOCAL_UUID));
+        assertFalse(PartyFinderNotices.shouldDisplayStaleWarning(leaderOnly, 42L, LOCAL_UUID));
+        assertFalse(PartyFinderNotices.shouldDisplayStaleWarning(noLongerLeader, 42L, LOCAL_UUID));
     }
 
     private static Listing listing(

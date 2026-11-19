@@ -68,6 +68,9 @@ public final class ConnectionManager {
     private static final long PRIVILEGED_SEND_THROTTLE_MS = 50;
     private static final Pattern MC_USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_]{3,16}$");
     private static final Pattern URL_PATTERN = Pattern.compile("^(https?://).+", Pattern.CASE_INSENSITIVE);
+    /** An invite token's value in a frame: whoever holds it can join that party. */
+    private static final Pattern INVITE_TOKEN =
+            Pattern.compile("(\"invite_?token\"\\s*:\\s*\")(?:[^\"\\\\]|\\\\.)*", Pattern.CASE_INSENSITIVE);
     static final int MAX_CONSECUTIVE_AUTH_REJECTIONS = 3;
     private static final int NORMAL_CLOSE = 1000;
     /** The close this client sends to drop a socket the backend stopped accepting as signed in; it reconnects. */
@@ -2005,7 +2008,7 @@ public final class ConnectionManager {
         try {
             JsonObject json = GSON.fromJson(message, JsonObject.class);
             if (json == null || !json.has("type")) {
-                SeqClient.LOGGER.warn("[WebSocket] Dropping message without type: {}", truncate(message, 512));
+                SeqClient.LOGGER.warn("[WebSocket] Dropping message without type: {}", forLog(message));
                 return;
             }
             String type = json.get("type").getAsString();
@@ -2017,7 +2020,14 @@ public final class ConnectionManager {
                         type,
                         extractPrimitiveString(json, "request_id"));
             } else {
-                SeqClient.LOGGER.info("[WebSocket] Received message type={} payload={}", type, truncate(message, 512));
+                SeqClient.LOGGER.info("[WebSocket] Received message type={} payload={}", type, forLog(message));
+            }
+
+            // Minecraft may switch account before the session, and this socket, end: what the party finder
+            // hears is for the account the socket signed in for, and no other.
+            if (type.startsWith("party_finder_") && !forPlayingAccount(receiving)) {
+                SeqClient.LOGGER.debug("[WebSocket] Ignoring {} for an account no longer playing", type);
+                return;
             }
 
             switch (type) {
@@ -2124,7 +2134,7 @@ public final class ConnectionManager {
                             () -> receiving.socket.isOpen() && receiving.signedIn()
                                     && receivedConnection != null && receivedConnection == game.serverConnection()
                                     && receivedAccount != null && receivedAccount == game.account()
-                                    && receiving.account != null && receiving.account.equals(game.profileId()),
+                                    && forPlayingAccount(receiving),
                             game::inServerQueue)
                             .run();
                 }
@@ -2143,7 +2153,8 @@ public final class ConnectionManager {
                 }
                 case "party_finder_update" -> deliver(Inbound.PARTY_FINDER_UPDATE, new PartyFinderUpdateMessage(
                         json.has("action") && !json.get("action").isJsonNull() ? json.get("action").getAsString() : "unknown",
-                        json.getAsJsonObject("listing")));
+                        json.getAsJsonObject("listing"),
+                        receivedConnection));
                 case "raid_profile_update" -> {
                     if (json.has("profile") && json.get("profile").isJsonObject()) {
                         deliver(Inbound.RAID_PROFILE_UPDATE, new RaidProfileUpdateMessage(
@@ -2154,20 +2165,27 @@ public final class ConnectionManager {
                         json.get("listing_id").getAsLong(),
                         json.get("inviter_uuid").getAsString(),
                         json.get("invite_token").getAsString(),
-                        json.has("listing") && json.get("listing").isJsonObject() ? json.getAsJsonObject("listing") : null));
+                        json.has("listing") && json.get("listing").isJsonObject() ? json.getAsJsonObject("listing") : null,
+                        receivedConnection));
                 case "party_finder_stale_warning" -> deliver(Inbound.PARTY_FINDER_STALE_WARNING, new PartyFinderStaleWarningMessage(
                         extractPrimitiveString(json, "reason"),
                         json.get("listing_id").getAsLong(),
                         json.has("disband_at") && !json.get("disband_at").isJsonNull()
                                 ? Instant.parse(json.get("disband_at").getAsString())
                                 : null,
-                        json.has("minutes_remaining") ? json.get("minutes_remaining").getAsLong() : 0L));
-                case "error" -> handleBackendError(receiving, json);
+                        json.has("minutes_remaining") ? json.get("minutes_remaining").getAsLong() : 0L,
+                        receivedConnection));
+                case "error" -> handleBackendError(receiving, json, receivedConnection);
                 default -> SeqClient.LOGGER.warn("[WebSocket] Unhandled incoming message type={}", type);
             }
         } catch (Exception e) {
-            SeqClient.LOGGER.error("[WebSocket] Failed to handle message payload={}", truncate(message, 512), e);
+            SeqClient.LOGGER.error("[WebSocket] Failed to handle message payload={}", forLog(message), e);
         }
+    }
+
+    /** Whether {@code receiving} signed in for the account Minecraft plays now, which may have switched before the session ends. */
+    private boolean forPlayingAccount(Attempt receiving) {
+        return receiving.account != null && receiving.account.equals(env.game().profileId());
     }
 
     /** The backend accepted the token: the socket is signed in, and probes whether the account is a member. */
@@ -2204,7 +2222,7 @@ public final class ConnectionManager {
         sendLocalPartyClassUpdate();
     }
 
-    private void handleBackendError(Attempt receiving, JsonObject json) {
+    private void handleBackendError(Attempt receiving, JsonObject json, Object receivedConnection) {
         String error = extractBackendErrorMessage(json);
         String backendCode = extractBackendErrorCode(json);
         String capability = extractCapability(json);
@@ -2256,7 +2274,11 @@ public final class ConnectionManager {
                 rejectToken(receiving, rejection,
                         expired ? AuthErrorCode.TOKEN_EXPIRED : AuthErrorCode.TOKEN_INVALID, rejection);
             }
-            case PARTY_FINDER -> env.game().showPartyFinderError(error);
+            case PARTY_FINDER -> {
+                if (forPlayingAccount(receiving)) {
+                    env.game().showPartyFinderError(error, receivedConnection);
+                }
+            }
             case CAPABILITY_DENIED -> {
                 SeqClient.LOGGER.info("[WebSocket] Capability authorization rejected capability={} message={}", capability, error);
                 notify(formatCapabilityAccessDenied(capability, error));
@@ -2381,6 +2403,11 @@ public final class ConnectionManager {
 
     public boolean hasPendingBombSharePrompt(String requestId) {
         return getPendingBombSharePrompt(requestId).isPresent();
+    }
+
+    /** A received frame as the log shows it: its first 512 characters, with invite tokens hidden. */
+    static String forLog(String message) {
+        return truncate(message == null ? null : INVITE_TOKEN.matcher(message).replaceAll("$1<hidden>"), 512);
     }
 
     private static String truncate(String input, int maxLength) {
@@ -2667,7 +2694,11 @@ public final class ConnectionManager {
         }
     }
 
-    public record PartyFinderUpdateMessage(String action, JsonObject listingJson) {}
+    /**
+     * A party finder frame's {@code serverConnection} is the player's when it arrived, compared by
+     * identity: what it shows in chat is for that connection, not one the player moved to since.
+     */
+    public record PartyFinderUpdateMessage(String action, JsonObject listingJson, Object serverConnection) {}
 
     /**
      * One member's raid profile changing.
@@ -2684,10 +2715,10 @@ public final class ConnectionManager {
     }
 
     public record PartyFinderInviteMessage(
-            long listingId, String inviterUUID, String inviteToken, JsonObject listingJson) {}
+            long listingId, String inviterUUID, String inviteToken, JsonObject listingJson, Object serverConnection) {}
 
     public record PartyFinderStaleWarningMessage(
-            String reason, long listingId, Instant disbandAt, long minutesRemaining) {}
+            String reason, long listingId, Instant disbandAt, long minutesRemaining, Object serverConnection) {}
 
     public record BombSharePromptMessage(
             String requestId,

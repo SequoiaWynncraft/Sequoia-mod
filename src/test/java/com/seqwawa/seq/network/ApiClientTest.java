@@ -15,11 +15,20 @@ import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneCategoryDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.ZonePlacementDraft;
 import com.seqwawa.seq.model.war.WarTeamType;
+import com.sun.net.httpserver.HttpServer;
+import java.net.InetSocketAddress;
+import java.net.http.HttpTimeoutException;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
@@ -27,10 +36,47 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ApiClientTest {
+
+    @Test
+    void anAnswerWhoseBodyStallsAfterItsHeadersFailsOnceTheRequestTimesOut() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        CountDownLatch release = new CountDownLatch(1);
+        server.setExecutor(Executors.newCachedThreadPool(runnable -> {
+            Thread thread = new Thread(runnable, "stalling-backend");
+            thread.setDaemon(true);
+            return thread;
+        }));
+        // Headers, and part of the body they promise, then nothing.
+        server.createContext("/", exchange -> {
+            exchange.sendResponseHeaders(200, 64);
+            exchange.getResponseBody().write("[{\"id\":".getBytes(StandardCharsets.UTF_8));
+            exchange.getResponseBody().flush();
+            try {
+                release.await(10, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            exchange.close();
+        });
+        server.start();
+        try {
+            ApiClient client = new ApiClient(
+                    "http://127.0.0.1:" + server.getAddress().getPort(), () -> true, Duration.ofMillis(300));
+
+            var listings = client.getListings(null, null);
+
+            ExecutionException failure = assertThrows(ExecutionException.class, () -> listings.get(5, TimeUnit.SECONDS));
+            assertInstanceOf(HttpTimeoutException.class, failure.getCause());
+        } finally {
+            release.countDown();
+            server.stop(0);
+        }
+    }
 
     @Test
     void princessRaidPayloadContainsOnlyEventIdentityAndRaidName() {

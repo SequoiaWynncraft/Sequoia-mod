@@ -8,6 +8,7 @@ import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
@@ -17,7 +18,10 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -76,6 +80,8 @@ public class ApiClient {
     private static final Pattern MINECRAFT_USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_]{3,16}$");
     private static final Set<String> WAR_DEFENSE_RATINGS =
             Set.of("Very Low", "Low", "Medium", "High", "Very High");
+    /** How long a request may take, from going out to the last byte of its answer. */
+    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(15);
 
     private static ApiClient instance;
 
@@ -90,6 +96,7 @@ public class ApiClient {
     private final String leafBaseUrl;
     /** The session whose token requests carry, or null for whichever is current as each goes out. */
     private final Session session;
+    private final Duration requestTimeout;
 
     public static ApiClient getInstance() {
         if (instance == null) {
@@ -104,6 +111,11 @@ public class ApiClient {
 
     /** A client of the backend at {@code baseUrl}, sending only while {@code serverAllowed}; a test passes its own. */
     ApiClient(String baseUrl, BooleanSupplier serverAllowed) {
+        this(baseUrl, serverAllowed, REQUEST_TIMEOUT);
+    }
+
+    /** As {@link #ApiClient(String, BooleanSupplier)}, giving each request {@code requestTimeout} to answer in full. */
+    ApiClient(String baseUrl, BooleanSupplier serverAllowed, Duration requestTimeout) {
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
                 .executor(Executors.newFixedThreadPool(2, r -> {
@@ -119,6 +131,7 @@ public class ApiClient {
         this.raidProfilesBaseUrl = BuildConfig.RAID_PROFILES_API_URL;
         this.leafBaseUrl = BuildConfig.LEAF_API_URL;
         this.session = null;
+        this.requestTimeout = requestTimeout;
     }
 
     private ApiClient(ApiClient shared, Session session) {
@@ -130,6 +143,7 @@ public class ApiClient {
         this.raidProfilesBaseUrl = shared.raidProfilesBaseUrl;
         this.leafBaseUrl = shared.leafBaseUrl;
         this.session = session;
+        this.requestTimeout = shared.requestTimeout;
     }
 
     /**
@@ -1153,7 +1167,7 @@ public class ApiClient {
     /** A request carrying {@code token} as its bearer, or no Authorization header when it is null. */
     private HttpRequest.Builder newRequestWithToken(String resolvedBaseUrl, String path, String token) {
         HttpRequest.Builder builder =
-                HttpRequest.newBuilder().uri(URI.create(resolvedBaseUrl + path)).timeout(Duration.ofSeconds(15));
+                HttpRequest.newBuilder().uri(URI.create(resolvedBaseUrl + path)).timeout(requestTimeout);
         builder.header(ClientVersion.MOD_VERSION_HEADER, ClientVersion.resolveInstalledVersion());
         if (token != null && !token.isBlank()) {
             builder.header("Authorization", "Bearer " + token);
@@ -1216,8 +1230,20 @@ public class ApiClient {
         if (!serverAllowed.getAsBoolean()) {
             return CompletableFuture.failedFuture(mainServerOnlyException());
         }
-        return httpClient
-                .sendAsync(request, HttpResponse.BodyHandlers.ofString())
+        CompletableFuture<HttpResponse<String>> exchange = httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString());
+        // The client's own timeout ends once the headers arrive: a body that stalls after them would
+        // leave the caller waiting for good. One deadline covers the whole answer.
+        long timeoutMs = request.timeout().orElse(requestTimeout).toMillis();
+        return exchange.copy()
+                .orTimeout(timeoutMs, TimeUnit.MILLISECONDS)
+                .exceptionally(error -> {
+                    if (error instanceof TimeoutException) {
+                        exchange.cancel(true);
+                        throw new CompletionException(new HttpTimeoutException(
+                                "No complete answer from " + request.uri().getPath() + " within " + timeoutMs + " ms"));
+                    }
+                    throw error instanceof CompletionException wrapped ? wrapped : new CompletionException(error);
+                })
                 .thenApply(resp -> {
                     if (resp.statusCode() >= 400) {
                         throw new ApiException(resp.statusCode(), resp.body());

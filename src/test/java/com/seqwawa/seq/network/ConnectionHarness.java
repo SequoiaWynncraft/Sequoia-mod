@@ -356,6 +356,8 @@ final class ConnectionHarness implements AutoCloseable {
         boolean inServerQueue;
         WynnClassType classType;
         final List<String> partyFinderErrors = new ArrayList<>();
+        /** The server connection each party finder error arrived on, in the same order. */
+        final List<Object> partyFinderErrorConnections = new ArrayList<>();
         final List<long[]> storageSnapshots = new ArrayList<>();
         final List<String> joinedServerIds = new ArrayList<>();
         /** Thrown by the next session join, to stand for Mojang refusing it. */
@@ -392,8 +394,9 @@ final class ConnectionHarness implements AutoCloseable {
         }
 
         @Override
-        public void showPartyFinderError(String message) {
+        public void showPartyFinderError(String message, Object heardOn) {
             partyFinderErrors.add(message);
+            partyFinderErrorConnections.add(heardOn);
         }
 
         @Override

@@ -196,6 +196,57 @@ class ConnectionThreadingTest {
     }
 
     @Test
+    void partyFinderFramesQueuedAfterMinecraftSwitchedAccountAreDropped() {
+        List<Object> heard = new ArrayList<>();
+        ConnectionManager.listen(ConnectionManager.Inbound.PARTY_FINDER_UPDATE, heard::add);
+        ConnectionManager.listen(ConnectionManager.Inbound.PARTY_FINDER_INVITE, heard::add);
+        ConnectionManager.listen(ConnectionManager.Inbound.PARTY_FINDER_STALE_WARNING, heard::add);
+        FakeBackendSocket socket = harness.connectAsMember();
+        socket.receive(partyFinderUpdate(7));
+        socket.receive("{\"type\":\"party_finder_invite\",\"listing_id\":7,\"inviter_uuid\":\"u-1\",\"invite_token\":\"t-1\"}");
+        socket.receive("{\"type\":\"party_finder_stale_warning\",\"listing_id\":7,\"minutes_remaining\":5}");
+        socket.receive("{\"type\":\"error\",\"code\":\"invalid_request\",\"message\":\"Listing is full\"}");
+
+        // Minecraft has switched profile; the session ends at the end of the tick, after the queue drains.
+        harness.game.profileId = java.util.UUID.fromString("20000000-0000-0000-0000-000000000002");
+        harness.settle();
+
+        assertEquals(List.of(), heard);
+        assertEquals(List.of(), harness.game.partyFinderErrors, "nor is its error shown on the party finder's banner");
+    }
+
+    @Test
+    void aPartyFinderFrameCarriesTheServerConnectionItArrivedOn() {
+        List<ConnectionManager.PartyFinderUpdateMessage> heard = new ArrayList<>();
+        ConnectionManager.listen(ConnectionManager.Inbound.PARTY_FINDER_UPDATE, heard::add);
+        FakeBackendSocket socket = harness.connectAsMember();
+        Object arrivedOn = harness.game.serverConnection;
+        socket.receive(partyFinderUpdate(7));
+
+        // The player reconnects before the game thread hands it on.
+        harness.game.serverConnection = new Object();
+        harness.settle();
+
+        assertEquals(1, heard.size());
+        assertTrue(heard.getFirst().serverConnection() == arrivedOn, "its chat lines are for the connection it arrived on");
+    }
+
+    @Test
+    void aPartyFinderErrorCarriesTheServerConnectionItArrivedOn() {
+        FakeBackendSocket socket = harness.connectAsMember();
+        Object arrivedOn = harness.game.serverConnection;
+        socket.receive("{\"type\":\"error\",\"code\":\"invalid_request\",\"message\":\"Listing is full\"}");
+
+        // The same account reconnects to Wynncraft before the game thread hands it on.
+        harness.game.serverConnection = new Object();
+        harness.settle();
+
+        assertEquals(List.of("Listing is full"), harness.game.partyFinderErrors);
+        assertTrue(harness.game.partyFinderErrorConnections.getFirst() == arrivedOn,
+                "its banner is for the connection it arrived on");
+    }
+
+    @Test
     void aListingQueuedBehindTheBackendsRefusalOfTheTokenIsDropped() {
         List<Integer> listings = new ArrayList<>();
         ConnectionManager.listen(ConnectionManager.Inbound.PARTY_FINDER_UPDATE, update -> listings.add(update.listingJson().get("id").getAsInt()));

@@ -2,8 +2,17 @@ package com.seqwawa.seq.ui;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import com.seqwawa.seq.model.Activity;
+import com.seqwawa.seq.model.Listing;
+import com.seqwawa.seq.model.PartyCloseReason;
+import com.seqwawa.seq.model.PartyStatus;
+import com.seqwawa.seq.ui.PartyFinderScreen.OpenClose;
+import com.seqwawa.seq.ui.PartyFinderScreen.LeaderControls;
+import com.seqwawa.seq.ui.PartyFinderScreen.PartyModalFor;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class PartyFinderHeaderLayoutTest {
@@ -11,9 +20,9 @@ class PartyFinderHeaderLayoutTest {
     void roleSelectorSitsBesideNewPartyAndLeavesRoomForTheTitle() {
         var layout = PartyFinderScreen.computeHeaderControlsLayout(140, 600, List.of(85f), 80, 110, false);
         assertEquals(layout.newPartyButton().y(), layout.roleDropdown().y());
-        assertEquals(layout.newPartyButton().x() + layout.newPartyButton().w() + 6, layout.roleDropdown().x());
-        assertTrue(layout.roleDropdown().x() + layout.roleDropdown().w() <= layout.titleRight() - 110 - 6);
-        assertEquals(140, layout.searchBar().w());
+        assertEquals(layout.newPartyButton().x() + layout.newPartyButton().width() + 6, layout.roleDropdown().x());
+        assertTrue(layout.roleDropdown().x() + layout.roleDropdown().width() <= layout.titleRight() - 110 - 6);
+        assertEquals(140, layout.searchBar().width());
         assertNull(layout.manageButton());
     }
 
@@ -23,7 +32,7 @@ class PartyFinderHeaderLayoutTest {
         assertTrue(layout.newPartyButton().y() > layout.searchBar().y());
         assertEquals(layout.newPartyButton().y(), layout.roleDropdown().y());
         assertEquals(148, layout.newPartyButton().x());
-        assertTrue(layout.height() >= layout.roleDropdown().y() + layout.roleDropdown().h());
+        assertTrue(layout.height() >= layout.roleDropdown().y() + layout.roleDropdown().height());
     }
 
     @Test
@@ -37,18 +46,111 @@ class PartyFinderHeaderLayoutTest {
                     layout.delistButton(), layout.inviteAllButton(), layout.scanButton()));
             for (int i = 0; i < controls.size(); i++) {
                 var a = controls.get(i);
-                assertTrue(a.x() >= 148 && a.w() >= 0);
-                assertTrue(a.x() + a.w() <= layout.titleRight());
-                assertTrue(a.y() + a.h() <= layout.height());
+                assertTrue(a.x() >= 148 && a.width() >= 0);
+                assertTrue(a.x() + a.width() <= layout.titleRight());
+                assertTrue(a.y() + a.height() <= layout.height());
                 if (a.y() == layout.searchBar().y()) {
-                    assertTrue(a.x() + a.w() <= layout.titleRight() - 110 - 6);
+                    assertTrue(a.x() + a.width() <= layout.titleRight() - 110 - 6);
                 }
                 for (int j = i + 1; j < controls.size(); j++) {
                     var c = controls.get(j);
-                    assertFalse(a.x() < c.x() + c.w() && a.x() + a.w() > c.x()
-                            && a.y() < c.y() + c.h() && a.y() + a.h() > c.y());
+                    assertFalse(a.x() < c.x() + c.width() && a.x() + a.width() > c.x()
+                            && a.y() < c.y() + c.height() && a.y() + a.height() > c.y());
                 }
             }
         }
+    }
+
+    @Test
+    void aClickOnTheFirstCardIsHitTestedAgainstTheHeaderAsDrawnNotAsAPromotionWouldWrapIt() {
+        // Drawn for a member, where a leader's controls wrap onto more rows.
+        var drawn = PartyFinderScreen.computeHeaderControlsLayout(140, 320, List.of(85f), 80, 110, false);
+        var promoted = PartyFinderScreen.computeHeaderControlsLayout(
+                140, 320, List.of(100f, 55f, 85f, 90f, 65f, 80f), 80, 110, true);
+        var onFirstCard = new UiPointer(150, drawn.height() + 4);
+
+        var hitTested = PartyFinderScreen.hitTestedHeader(drawn, () -> promoted);
+
+        assertTrue(promoted.height() > onFirstCard.y(), "recomputed after the promotion, the header covers the card");
+        assertTrue(onFirstCard.y() >= hitTested.height(), "the click reaches the cards");
+        for (var control : java.util.Arrays.asList(hitTested.searchBar(), hitTested.manageButton(),
+                hitTested.inviteButton(), hitTested.openCloseButton(), hitTested.delistButton(),
+                hitTested.inviteAllButton(), hitTested.scanButton(), hitTested.newPartyButton(),
+                hitTested.roleDropdown())) {
+            assertFalse(control != null && control.contains(onFirstCard), "no header control takes it");
+        }
+    }
+
+    @Test
+    void theOpenCloseButtonRunsWhatItShowedOrNothing() {
+        var drawn = LeaderControls.of(listing(7L, PartyStatus.OPEN, null), true);
+        assertEquals(OpenClose.CLOSE, drawn.openClose(), "drawn as Close party");
+
+        // The backend closed the listing after the frame that drew Close party.
+        assertNull(LeaderControls.openCloseClicked(drawn, listing(7L, PartyStatus.CLOSED, null), true),
+                "the click does not open the party it showed as open");
+        assertNull(LeaderControls.openCloseClicked(drawn, listing(8L, PartyStatus.OPEN, null), true), "another listing");
+        assertNull(LeaderControls.openCloseClicked(drawn, listing(7L, PartyStatus.OPEN, null), false),
+                "no longer the leader");
+        assertNull(LeaderControls.openCloseClicked(drawn, null, false), "the listing has gone");
+        assertNull(LeaderControls.openCloseClicked(null, listing(7L, PartyStatus.OPEN, null), true), "nothing drawn yet");
+        assertEquals(OpenClose.CLOSE, LeaderControls.openCloseClicked(drawn, listing(7L, PartyStatus.OPEN, null), true));
+
+        var autoClosed = LeaderControls.of(listing(7L, PartyStatus.CLOSED, PartyCloseReason.AUTO_CAPACITY), true);
+        assertEquals(OpenClose.AUTO_CLOSED, autoClosed.openClose());
+        assertNull(LeaderControls.openCloseClicked(autoClosed, listing(7L, PartyStatus.CLOSED, null), true),
+                "closed by the leader since, it is not reopened from the Auto-closed button");
+    }
+
+    @Test
+    void theLeadersOtherButtonsActOnTheListingTheyWereDrawnForOrNothing() {
+        var drawn = LeaderControls.of(listing(7L, PartyStatus.OPEN, null), true);
+
+        // Backend updates replaced the listing with another the player also leads, after the frame that drew it.
+        assertNull(LeaderControls.clicked(drawn, listing(8L, PartyStatus.OPEN, null), true),
+                "Delist party does not disband the listing that replaced the one it was drawn for");
+        assertNull(LeaderControls.clicked(drawn, listing(7L, PartyStatus.OPEN, null), false), "no longer the leader");
+        assertNull(LeaderControls.clicked(drawn, null, false), "the listing has gone");
+        assertNull(LeaderControls.clicked(null, listing(7L, PartyStatus.OPEN, null), true), "nothing drawn yet");
+        assertEquals(7L, LeaderControls.clicked(drawn, listing(7L, PartyStatus.CLOSED, null), true).listingId(),
+                "closed since, it is still the listing they act on");
+    }
+
+    @Test
+    void theManagePartyModalUpdatesTheListingItWasOpenedForOrCloses() {
+        var managing = PartyModalFor.of(listing(7L, PartyStatus.OPEN, null), true);
+        assertTrue(managing.updates(), "opened as Update party");
+        assertEquals(managing, PartyModalFor.still(managing, listing(7L, PartyStatus.CLOSED, null), true),
+                "the same listing, changed since, is still the one it updates");
+
+        // The listing was disbanded after the frame that drew Update party.
+        assertNull(PartyModalFor.still(managing, null, false), "it closes rather than create a party with its settings");
+        assertNull(PartyModalFor.still(managing, listing(8L, PartyStatus.OPEN, null), true), "another listing");
+        assertNull(PartyModalFor.still(managing, listing(7L, PartyStatus.OPEN, null), false), "no longer the leader");
+
+        var creating = PartyModalFor.of(null, false);
+        assertFalse(creating.updates(), "opened as Create party");
+        assertEquals(creating, PartyModalFor.still(creating, null, false));
+        assertNull(PartyModalFor.still(creating, listing(8L, PartyStatus.OPEN, null), true),
+                "leading a party since, it closes rather than update that party with these settings");
+        assertNull(PartyModalFor.still(creating, listing(8L, PartyStatus.OPEN, null), false), "in a party since");
+    }
+
+    @Test
+    void anUpdateWithNoRaidPickedKeepsTheReservedSlotsItsListingsRaidAllows() {
+        var prelude = new Listing(7L, List.of(new Activity(6L, "ANNI", 10)), null, "leader", null, PartyStatus.OPEN,
+                null, null, List.of(), List.of(), Instant.EPOCH);
+        var managing = PartyModalFor.of(prelude, true);
+
+        // The leader deselected Prelude: the update sends the listing's own raid, which allows nine.
+        assertEquals(Set.of("Prelude to Annihilation"), PartyFinderScreen.raidsToSend(Set.of(), managing, prelude));
+        assertEquals(9, PartyFinderScreen.reservedSlotLimit(Set.of(), managing, prelude), "six are not cut to three");
+        assertEquals(3, PartyFinderScreen.reservedSlotLimit(Set.of("Nest of the Grootslangs"), managing, prelude),
+                "another raid allows three");
+        assertEquals(3, PartyFinderScreen.reservedSlotLimit(Set.of(), PartyModalFor.CREATE, null), "a new party");
+    }
+
+    private static Listing listing(long id, PartyStatus status, PartyCloseReason closeReason) {
+        return new Listing(id, List.of(), null, "leader", null, status, closeReason, null, List.of(), List.of(), Instant.EPOCH);
     }
 }

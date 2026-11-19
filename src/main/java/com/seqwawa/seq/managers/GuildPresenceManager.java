@@ -8,6 +8,7 @@ import com.seqwawa.seq.client.TickQueue;
 import com.seqwawa.seq.integrations.WynntilsWorldStateAccess;
 import com.seqwawa.seq.model.GuildMemberPresence;
 import com.seqwawa.seq.model.KnownGuildMember;
+import com.seqwawa.seq.model.Listing;
 import com.seqwawa.seq.model.MemberFilter;
 import com.seqwawa.seq.model.MemberSort;
 import com.seqwawa.seq.model.PartyFinderSpot;
@@ -292,51 +293,67 @@ public final class GuildPresenceManager {
 
     /**
      * Opens a party finder listing for the group being put together, unless you already
-     * sit in one. {@code raid} picks the activity; with none, the listing covers every
-     * raid the catalog knows. The invitee is attached to it by the Wynn party sync once
-     * they accept the in-game invite.
-     *
-     * @return the party finder's own line, or null when nothing was attempted
+     * sit in one, and shows {@code show} the party finder's own line, if it has one. {@code raid}
+     * picks the activity; with none, the listing covers every raid the catalog knows. The invitee
+     * is attached to it by the Wynn party sync once they accept the in-game invite.
      */
-    public CompletableFuture<String> openPartyFinderListing(RaidType raid) {
+    public void openPartyFinderListing(RaidType raid, Consumer<String> show) {
         PartyFinderManager manager = SeqClient.getPartyFinderManager();
-        if (manager == null || !ConnectionManager.isConnected()) {
-            return CompletableFuture.completedFuture(null);
+        if (manager != null && ConnectionManager.isConnected()) {
+            openPartyFinderListing(manager, partyFinderActivities(raid, RaidProfileStore.getInstance().catalog()),
+                    listingRegion(currentWorld(), RaidProfileStore.getInstance().selfProfile().region()), show,
+                    GuildPresenceManager::syncWynnParty);
         }
-        long startedFor = generation;
-        if (manager.isInParty()) {
-            enableLinkedPartySync(manager.getCurrentListing().id(), startedFor);
-            return CompletableFuture.completedFuture(null);
-        }
-        List<String> activities = partyFinderActivities(raid, RaidProfileStore.getInstance().catalog());
-        if (activities.isEmpty() || !listingCreationInFlight.compareAndSet(false, true)) {
-            return CompletableFuture.completedFuture(null);
-        }
-        PartyRegion region = listingRegion(currentWorld(), RaidProfileStore.getInstance().selfProfile().region());
-        return manager.createPartyFromCommand(activities, region)
-                .thenApply(result -> {
-                    if (result.success() && result.data() != null) {
-                        enableLinkedPartySync(result.data().id(), startedFor);
-                    }
-                    return result.message();
-                })
-                .exceptionally(throwable -> "Could not open a party finder listing.")
-                .whenComplete((ignored, throwable) -> listingCreationInFlight.set(false));
     }
 
-    private void enableLinkedPartySync(long listingId, long startedFor) {
-        SeqClient.mc.execute(() -> {
-            PartyFinderManager manager = SeqClient.getPartyFinderManager();
-            WynnPartySyncManager sync = SeqClient.getWynnPartySyncManager();
-            if (startedFor != generation || manager == null || sync == null
-                    || manager.getCurrentListing() == null || manager.getCurrentListing().id() != listingId) {
-                return;
+    /**
+     * Test seam: opens the listing with {@code manager}, then runs {@code syncWynnParty} once it is
+     * the player's. Its line and its sync go only to the session and server connection it was
+     * asked on: a reconnect meanwhile sends no {@code party list} on the new connection.
+     */
+    void openPartyFinderListing(PartyFinderManager manager, List<String> activities, PartyRegion region,
+            Consumer<String> show, Consumer<PartyFinderManager> syncWynnParty) {
+        long startedFor = generation;
+        PartyFinderManager.Ticket ticket = manager.ticket();
+        if (manager.isInParty()) {
+            linkParty(manager, manager.getCurrentListing().id(), startedFor, syncWynnParty);
+            return;
+        }
+        if (activities.isEmpty() || !listingCreationInFlight.compareAndSet(false, true)) {
+            return;
+        }
+        CompletableFuture<PartyFinderManager.CommandResult<Listing>> created =
+                manager.actions().createPartyFromCommand(activities, region);
+        created.whenComplete((ignored, throwable) -> listingCreationInFlight.set(false));
+        manager.reply(ticket, created, (result, error) -> {
+            if (result != null && result.success() && result.data() != null) {
+                linkParty(manager, result.data().id(), startedFor, syncWynnParty);
             }
-            sync.enableAutomaticSync();
-            if (manager.isPartyLeader() && !sync.hasActiveParty()) {
-                sync.requestCurrentPartySnapshot();
+            String line = result == null ? "Could not open a party finder listing." : result.message();
+            if (line != null && !line.isBlank()) {
+                show.accept(line);
             }
         });
+    }
+
+    /** On the game thread: syncs the Wynn party with {@code listingId}, while it is still this account's party. */
+    private void linkParty(PartyFinderManager manager, long listingId, long startedFor,
+            Consumer<PartyFinderManager> syncWynnParty) {
+        Listing current = manager.getCurrentListing();
+        if (startedFor == generation && current != null && current.id() == listingId) {
+            syncWynnParty.accept(manager);
+        }
+    }
+
+    private static void syncWynnParty(PartyFinderManager manager) {
+        WynnPartySyncManager sync = SeqClient.getWynnPartySyncManager();
+        if (sync == null) {
+            return;
+        }
+        sync.enableAutomaticSync();
+        if (manager.isPartyLeader() && !sync.hasActiveParty()) {
+            sync.requestCurrentPartySnapshot();
+        }
     }
 
     /**
@@ -407,23 +424,26 @@ public final class GuildPresenceManager {
             return;
         }
         try {
-            manager.refreshListingsQuietly();
+            manager.actions().refreshListingsQuietly();
         } catch (RuntimeException e) {
             SeqClient.LOGGER.debug("[GuildPresence] Could not refresh party finder listings", e);
         }
     }
 
-    /** Joins a member's listing as DPS, the party finder's default, and reports its message. */
-    public CompletableFuture<String> joinPartyFinder(PartyFinderSpot spot) {
+    /**
+     * Joins a member's listing as DPS, the party finder's default, and shows {@code show} its
+     * message, on the session and server connection it was asked on.
+     */
+    public void joinPartyFinder(PartyFinderSpot spot, Consumer<String> show) {
         PartyFinderManager manager = SeqClient.getPartyFinderManager();
         if (manager == null || spot == null) {
-            return CompletableFuture.completedFuture("The party finder is not ready yet.");
+            show.accept("The party finder is not ready yet.");
+            return;
         }
-        return manager.joinPartyFromCommand(spot.listingId(), PartyRole.DPS)
-                .thenApply(result -> result.message() == null || result.message().isBlank()
-                        ? (result.success() ? "Joined the party." : "Could not join that party.")
-                        : result.message())
-                .exceptionally(throwable -> "Could not join that party.");
+        manager.reply(manager.actions().joinPartyFromCommand(spot.listingId(), PartyRole.DPS), (result, error) ->
+                show.accept(result == null || result.message() == null || result.message().isBlank()
+                        ? (result != null && result.success() ? "Joined the party." : "Could not join that party.")
+                        : result.message()));
     }
 
     public String currentWorld() {

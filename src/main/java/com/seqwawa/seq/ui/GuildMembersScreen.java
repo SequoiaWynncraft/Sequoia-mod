@@ -678,11 +678,7 @@ public class GuildMembersScreen extends Screen {
      * raid when there is one, and adds what the party finder said to the banner.
      */
     private void linkPartyFinder(String inviteLine, RaidType raid) {
-        presence().openPartyFinderListing(raid).thenAccept(result -> {
-            if (result != null && !result.isBlank()) {
-                SeqClient.mc.execute(() -> showStatusBanner(inviteLine + " " + result));
-            }
-        });
+        presence().openPartyFinderListing(raid, result -> showStatusBanner(inviteLine + " " + result));
     }
 
     private static String capitalize(String text) {
@@ -2066,8 +2062,7 @@ public class GuildMembersScreen extends Screen {
             showStatusBanner(raids.isEmpty()
                     ? "Joining their party as DPS"
                     : "Joining their " + String.join("/", raids) + " party as DPS");
-            presence().joinPartyFinder(hitbox.spot())
-                    .thenAccept(message -> SeqClient.mc.execute(() -> showStatusBanner(message)));
+            presence().joinPartyFinder(hitbox.spot(), this::showStatusBanner);
             return true;
         }
         return false;

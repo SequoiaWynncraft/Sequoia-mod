@@ -19,7 +19,6 @@ import com.seqwawa.seq.network.auth.NotSignedInException;
 import com.seqwawa.seq.network.auth.StoredAuthSession;
 import com.seqwawa.seq.ui.unlock.UnlockPopup;
 import com.sun.net.httpserver.HttpServer;
-import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -346,7 +345,7 @@ class SessionManagerTest {
 
     @Test
     void aRaidProgressFallbackDueAfterItsSessionEndedRefusesRatherThanGoOutWithoutAToken() throws Exception {
-        HttpServer backend = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        HttpServer backend = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         CountDownLatch posted = new CountDownLatch(1);
         CountDownLatch ended = new CountDownLatch(1);
         List<String> reads = new CopyOnWriteArrayList<>();
