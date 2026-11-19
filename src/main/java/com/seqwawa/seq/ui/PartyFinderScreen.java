@@ -166,6 +166,8 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
     private List<Card> renderedCards = List.of();
     /** The header as the last frame drew it: clicks are hit-tested against what the player saw, not a promotion since. */
     private HeaderControlsLayout drawnHeader;
+    /** The header's open/close button as the last frame drew it, or null: a click does what it showed, or nothing. */
+    private OpenCloseButton drawnOpenClose;
 
     /** A filter chip as drawn: turned {@code degrees} about its centre while it swings. */
     record TagChip(String tag, UiBounds bounds, float degrees) {
@@ -189,6 +191,40 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
 
     /** A card's Join or Leave button as drawn; {@code enabled} is false while it shows greyed out. */
     private record JoinButton(long listingId, boolean leave, boolean enabled, UiBounds bounds) {}
+
+    /** What the header's open/close button does for the leader's listing, and says. */
+    enum OpenClose {
+        CLOSE("Close party"),
+        OPEN("Open party"),
+        AUTO_CLOSED("Auto-closed");
+
+        final String label;
+
+        OpenClose(String label) {
+            this.label = label;
+        }
+
+        static OpenClose of(Listing listing) {
+            if (listing != null && listing.isAutoCapacityClosed()) return AUTO_CLOSED;
+            return listing != null && listing.status() == PartyStatus.CLOSED ? OPEN : CLOSE;
+        }
+    }
+
+    /** The open/close button as drawn: on which listing, doing what. */
+    record OpenCloseButton(long listingId, OpenClose operation) {
+        /** The button the player sees on {@code listing} while they {@code lead} it; else none. */
+        static OpenCloseButton of(Listing listing, boolean lead) {
+            return lead && listing != null ? new OpenCloseButton(listing.id(), OpenClose.of(listing)) : null;
+        }
+
+        /**
+         * What a click on {@code drawn} does once {@code current} is the player's listing: what it showed, while
+         * it is the same listing, they still lead it and it still shows that; else nothing (null).
+         */
+        static OpenClose clicked(OpenCloseButton drawn, Listing current, boolean lead) {
+            return drawn != null && drawn.equals(of(current, lead)) ? drawn.operation() : null;
+        }
+    }
 
     record HeaderControlsLayout(
             UiBounds searchBar,
@@ -313,6 +349,7 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
         float panelWidth = screenWidth - SIDEBAR_WIDTH;
         HeaderControlsLayout headerLayout = computeHeaderControlsLayout(panelX, panelWidth, fontName);
         drawnHeader = headerLayout;
+        drawnOpenClose = OpenCloseButton.of(party().getCurrentListing(), party().isPartyLeader());
         float headerHeight = headerLayout.height();
 
         canvas.fillRect(panelX, 0, panelWidth, screenHeight, color(BACKGROUND_BODY));
@@ -460,15 +497,15 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
         if (party().isPartyLeader()) {
             drawHeaderButton(canvas, fontName, layout.manageButton(), "Manage Party", color(ACCENT_PRIMARY), color(ACCENT_PRIMARY_HOVER));
             drawHeaderButton(canvas, fontName, layout.inviteButton(), "Invite", color(ACCENT_PRIMARY), color(ACCENT_PRIMARY_HOVER));
-            boolean autoClosed = isCurrentListingAutoClosed();
-            String openCloseLabel = autoClosed ? "Auto-closed" : (isCurrentListingClosed() ? "Open party" : "Close party");
+            OpenClose openClose = OpenClose.of(party().getCurrentListing());
+            boolean autoClosed = openClose == OpenClose.AUTO_CLOSED;
             Color openCloseBg = autoClosed ? color(ACCENT_DISABLED) : color(ACCENT_PRIMARY_DARK);
             Color openCloseHover = autoClosed ? color(ACCENT_DISABLED) : color(ACCENT_PRIMARY_DARK_HOVER);
             drawHeaderButton(
                     canvas,
                     fontName,
                     layout.openCloseButton(),
-                    openCloseLabel,
+                    openClose.label,
                     openCloseBg,
                     openCloseHover);
             drawHeaderButton(
@@ -565,11 +602,7 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
         if (party().isPartyLeader()) {
             widths.add(paddedHeaderButtonWidth("Manage Party", fontName));
             widths.add(paddedHeaderButtonWidth("Invite", fontName));
-            widths.add(paddedHeaderButtonWidth(
-                    isCurrentListingAutoClosed()
-                            ? "Auto-closed"
-                            : (isCurrentListingClosed() ? "Open party" : "Close party"),
-                    fontName));
+            widths.add(paddedHeaderButtonWidth(OpenClose.of(party().getCurrentListing()).label, fontName));
             widths.add(paddedHeaderButtonWidth("Delist party", fontName));
             widths.add(paddedHeaderButtonWidth("Invite all", fontName));
             widths.add(paddedHeaderButtonWidth("Scan party", fontName));
@@ -1610,16 +1643,6 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
         return false;
     }
 
-    private boolean isCurrentListingClosed() {
-        Listing current = party().getCurrentListing();
-        return current != null && current.status() == PartyStatus.CLOSED;
-    }
-
-    private boolean isCurrentListingAutoClosed() {
-        Listing current = party().getCurrentListing();
-        return current != null && current.isAutoCapacityClosed();
-    }
-
     private String partyActionLabel(PartyListing party) {
         if (party == null || party.status == null) {
             return "Join";
@@ -1808,14 +1831,14 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
                 return true;
             }
             if (contains(headerLayout.openCloseButton(), at)) {
-                if (party().getCurrentListing() == null) {
-                    showStatusBanner("Unable to update party state: no active listing.");
-                } else if (isCurrentListingAutoClosed()) {
+                OpenClose clicked = OpenCloseButton.clicked(
+                        drawnOpenClose, party().getCurrentListing(), party().isPartyLeader());
+                if (clicked == OpenClose.AUTO_CLOSED) {
                     showStatusBanner("Party is auto-closed at capacity and will reopen when a slot frees.");
-                } else if (isCurrentListingClosed()) {
-                    party().actions().reopenParty(party().getCurrentListing().id());
-                } else {
-                    party().actions().closeParty(party().getCurrentListing().id());
+                } else if (clicked == OpenClose.OPEN) {
+                    party().actions().reopenParty(drawnOpenClose.listingId());
+                } else if (clicked == OpenClose.CLOSE) {
+                    party().actions().closeParty(drawnOpenClose.listingId());
                 }
                 return true;
             }

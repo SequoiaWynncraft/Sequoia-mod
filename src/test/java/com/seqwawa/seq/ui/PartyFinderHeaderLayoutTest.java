@@ -2,6 +2,12 @@ package com.seqwawa.seq.ui;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import com.seqwawa.seq.model.Listing;
+import com.seqwawa.seq.model.PartyCloseReason;
+import com.seqwawa.seq.model.PartyStatus;
+import com.seqwawa.seq.ui.PartyFinderScreen.OpenClose;
+import com.seqwawa.seq.ui.PartyFinderScreen.OpenCloseButton;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -70,5 +76,29 @@ class PartyFinderHeaderLayoutTest {
                 hitTested.roleDropdown())) {
             assertFalse(control != null && control.contains(onFirstCard), "no header control takes it");
         }
+    }
+
+    @Test
+    void theOpenCloseButtonRunsWhatItShowedOrNothing() {
+        var drawn = OpenCloseButton.of(listing(7L, PartyStatus.OPEN, null), true);
+        assertEquals(OpenClose.CLOSE, drawn.operation(), "drawn as Close party");
+
+        // The backend closed the listing after the frame that drew Close party.
+        assertNull(OpenCloseButton.clicked(drawn, listing(7L, PartyStatus.CLOSED, null), true),
+                "the click does not open the party it showed as open");
+        assertNull(OpenCloseButton.clicked(drawn, listing(8L, PartyStatus.OPEN, null), true), "another listing");
+        assertNull(OpenCloseButton.clicked(drawn, listing(7L, PartyStatus.OPEN, null), false), "no longer the leader");
+        assertNull(OpenCloseButton.clicked(drawn, null, false), "the listing has gone");
+        assertNull(OpenCloseButton.clicked(null, listing(7L, PartyStatus.OPEN, null), true), "nothing drawn yet");
+        assertEquals(OpenClose.CLOSE, OpenCloseButton.clicked(drawn, listing(7L, PartyStatus.OPEN, null), true));
+
+        var autoClosed = OpenCloseButton.of(listing(7L, PartyStatus.CLOSED, PartyCloseReason.AUTO_CAPACITY), true);
+        assertEquals(OpenClose.AUTO_CLOSED, autoClosed.operation());
+        assertNull(OpenCloseButton.clicked(autoClosed, listing(7L, PartyStatus.CLOSED, null), true),
+                "closed by the leader since, it is not reopened from the Auto-closed button");
+    }
+
+    private static Listing listing(long id, PartyStatus status, PartyCloseReason closeReason) {
+        return new Listing(id, List.of(), null, "leader", null, status, closeReason, null, List.of(), List.of(), Instant.EPOCH);
     }
 }
