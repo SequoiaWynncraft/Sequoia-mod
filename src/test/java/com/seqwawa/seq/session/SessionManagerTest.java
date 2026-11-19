@@ -11,18 +11,26 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.seqwawa.seq.client.TickQueue;
+import com.seqwawa.seq.network.TestApiClients;
 import com.seqwawa.seq.network.auth.AuthErrorCode;
 import com.seqwawa.seq.network.auth.AuthState;
 import com.seqwawa.seq.network.auth.MinecraftAuthService;
 import com.seqwawa.seq.network.auth.NotSignedInException;
 import com.seqwawa.seq.network.auth.StoredAuthSession;
 import com.seqwawa.seq.ui.unlock.UnlockPopup;
+import com.sun.net.httpserver.HttpServer;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 import org.junit.jupiter.api.Test;
 
@@ -333,7 +341,48 @@ class SessionManagerTest {
         assertEquals("operator-token", sessions.current().token(false).join(), "the next session holds a token");
 
         // Guild raid progress, its 404/405 fallback GET included, asks its own session for the token, before any request.
-        assertNotSignedIn(previousClient.getGuildRaidProgress());
+        assertNotSignedIn(previousClient.getGuildRaidProgress(true));
+    }
+
+    @Test
+    void aRaidProgressFallbackDueAfterItsSessionEndedRefusesRatherThanGoOutWithoutAToken() throws Exception {
+        HttpServer backend = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        CountDownLatch posted = new CountDownLatch(1);
+        CountDownLatch ended = new CountDownLatch(1);
+        List<String> reads = new CopyOnWriteArrayList<>();
+        backend.createContext("/achievements/progress", exchange -> {
+            if ("POST".equals(exchange.getRequestMethod())) {
+                posted.countDown();
+                try {
+                    ended.await(5, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                // A backend without the recording route.
+                exchange.sendResponseHeaders(404, -1);
+            } else {
+                reads.add(String.valueOf(exchange.getRequestHeaders().getFirst("Authorization")));
+                byte[] body = "{}".getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(200, body.length);
+                exchange.getResponseBody().write(body);
+            }
+            exchange.close();
+        });
+        backend.start();
+        try {
+            var client = TestApiClients.at("http://127.0.0.1:" + backend.getAddress().getPort()).forSession(sessions.current());
+
+            // The POST goes out with the session's token; its 404 comes back once the session has ended.
+            CompletableFuture<?> progress = client.getGuildRaidProgress(true);
+            assertTrue(posted.await(5, TimeUnit.SECONDS), "the POST is under way");
+            sessions.end(EndReason.SIGN_OUT);
+            ended.countDown();
+
+            assertNotSignedIn(progress);
+            assertEquals(List.of(), reads, "the fallback read never goes out");
+        } finally {
+            backend.stop(0);
+        }
     }
 
     @Test

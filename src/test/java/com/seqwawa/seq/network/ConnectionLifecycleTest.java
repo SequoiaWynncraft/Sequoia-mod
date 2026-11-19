@@ -456,6 +456,54 @@ class ConnectionLifecycleTest {
     }
 
     @Test
+    void clearingTheSessionDropsAConnectHeldForTheClose() {
+        harness.connectAsMember();
+        harness.connection().disconnectManually();
+        // The player connects again before the backend answers the close, then clears the session.
+        harness.connectManually();
+        harness.signOut();
+
+        harness.echoClientClose();
+
+        assertTrue(harness.tokens.signedOutByUser, "the sign-out holds");
+        assertEquals(1, harness.sockets.size(), "nothing signs in again");
+        assertFalse(ConnectionManager.hasReconnectTask());
+    }
+
+    @Test
+    void clearingTheSessionDropsAConnectWaitingOutTheSignInBackoff() {
+        harness.tokens.token = null;
+        harness.connectAutomatically();
+        harness.failToken(new AuthException(AuthErrorCode.MINECRAFT_SESSION_INVALID, "Restart Minecraft", false));
+        harness.connectManually();
+        assertTrue(ConnectionManager.hasReconnectTask(), "the player's connect waits out the backoff");
+
+        harness.signOut();
+        harness.advance(2_000);
+
+        assertTrue(harness.tokens.signedOutByUser, "the sign-out holds");
+        assertEquals(1, harness.tokens.requests.size(), "nothing signs in again");
+        assertFalse(ConnectionManager.hasReconnectTask());
+    }
+
+    @Test
+    void aSessionThatEndsWhileItsSocketConnectsCutsTheHandshakeShortAndTheNextWaitsForItsClose() {
+        harness.connectAutomatically();
+        FakeBackendSocket first = harness.socket();
+        assertTrue(first.connected());
+
+        harness.switchAccount();
+        harness.connection().connect();
+
+        assertEquals(1, first.closes(), "the handshake is cut short");
+        assertEquals(1, harness.sockets.size(), "no second handshake until the first has closed");
+        harness.settle();
+        harness.connectAutomatically();
+        assertEquals(2, harness.sockets.size());
+        assertTrue(harness.socket().connected());
+    }
+
+    @Test
     void anAccountChangeDropsTheConnection() {
         FakeBackendSocket socket = harness.connectAsMember();
 
@@ -585,6 +633,7 @@ class ConnectionLifecycleTest {
 
         assertEquals(List.of("Connecting to production...", "Auth throttled. Retrying in 2s."), harness.told);
         assertEquals(1, harness.tokens.requests.size());
+        assertEquals(1, harness.tokens.allowSignIns, "only the player's own Connect lifts a sign-out");
         // Fixed in step 6: the retry the message promises used to never run.
         assertTrue(ConnectionManager.hasReconnectTask(), "the retry waits");
         assertFalse(ConnectionManager.canAutoConnectNow());
@@ -593,6 +642,7 @@ class ConnectionLifecycleTest {
         assertEquals(1, harness.tokens.requests.size());
         harness.advance(1);
         assertEquals(List.of(false, true), harness.tokens.requests, "the player's connect signs in afresh, unasked");
+        assertEquals(1, harness.tokens.allowSignIns, "the held connect lifts no sign-out of its own");
         assertEquals("Connecting to production...", harness.told.getLast());
     }
 

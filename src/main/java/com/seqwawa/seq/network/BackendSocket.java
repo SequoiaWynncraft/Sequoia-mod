@@ -25,7 +25,10 @@ interface BackendSocket {
     /** Sends one text frame, after those sent before it. False, and nothing sent, when the socket isn't open. */
     boolean send(String text);
 
-    /** Closes with {@code code}. The listener hears the close once the backend answers it, or the wait for that runs out. */
+    /**
+     * Closes with {@code code}. The listener hears the close once the backend answers it, or the wait
+     * for that runs out; a socket still connecting stops, and hears it at once.
+     */
     void close(int code, String reason);
 
     /** Where the socket connects, for the logs. */

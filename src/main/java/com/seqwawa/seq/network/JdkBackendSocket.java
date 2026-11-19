@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit;
  * The backend socket the game uses, on the JDK's own WebSocket client. It reports to its listener
  * under its lock, so no two calls overlap, and ends with one {@code onClose} however the socket ends:
  * the backend closes or answers our close, refuses the handshake, can't be reached, stops answering
- * pings, or never answers our close.
+ * pings, or never answers our close, or this side closes it while it connects.
  */
 final class JdkBackendSocket implements BackendSocket {
 
@@ -26,11 +26,13 @@ final class JdkBackendSocket implements BackendSocket {
 
     private final URI uri;
     private final Listener listener;
-    /** How often the socket pings; one that hears nothing back for that long is given up. */
+    /** How often the socket pings; one whose ping has no pong by the next is given up. */
     private final Duration pingEvery;
     /** How long a close waits for the backend's answer. */
     private final Duration closeWait;
     private WebSocket webSocket;
+    /** The handshake, which a close while connecting cancels. */
+    private volatile CompletableFuture<WebSocket> handshake = CompletableFuture.completedFuture(null);
     private boolean open;
     private boolean closing;
     private boolean ended;
@@ -38,8 +40,8 @@ final class JdkBackendSocket implements BackendSocket {
     private String closeReason;
     /** Each text frame waits for the one before it: the JDK takes one at a time. */
     private CompletableFuture<?> sending = CompletableFuture.completedFuture(null);
-    /** Whether anything arrived since the last ping. */
-    private volatile boolean heard = true;
+    /** Whether the backend answered the last ping with a pong. */
+    private volatile boolean answered = true;
 
     JdkBackendSocket(URI uri, Listener listener) {
         this(uri, listener, Duration.ofSeconds(30), Duration.ofSeconds(5));
@@ -56,7 +58,8 @@ final class JdkBackendSocket implements BackendSocket {
     public void connect(Map<String, String> headers) {
         WebSocket.Builder builder = CLIENT.newWebSocketBuilder().connectTimeout(Duration.ofSeconds(10));
         headers.forEach(builder::header);
-        builder.buildAsync(uri, new Events()).whenComplete((socket, failure) -> {
+        handshake = builder.buildAsync(uri, new Events());
+        handshake.whenComplete((socket, failure) -> {
             if (failure != null) {
                 fail(failure);
             }
@@ -100,7 +103,9 @@ final class JdkBackendSocket implements BackendSocket {
             closeReason = reason;
             socket = webSocket;
             if (socket == null) {
-                // Still connecting: the socket is cut off once it opens.
+                // Still connecting: it ends now, and a socket that opens anyway is cut off at once.
+                end(code, reason, false, null);
+                handshake.cancel(true);
                 return;
             }
             sending = sending.handle((ignored, failure) -> null).thenCompose(ignored -> socket.sendClose(code, reason));
@@ -154,19 +159,22 @@ final class JdkBackendSocket implements BackendSocket {
         end(ABNORMAL_CLOSE, message, false, cause instanceof Exception exception ? exception : new IOException(cause));
     }
 
-    /** Pings every {@link #pingEvery}; a socket that heard nothing since the last ping is given up. */
+    /** Pings every {@link #pingEvery}; a socket whose last ping never went out, or was never answered, is given up. */
     private void pingLater(WebSocket socket) {
         later(pingEvery, () -> {
             if (isClosing()) {
                 return;
             }
-            if (!heard) {
+            if (!answered) {
                 socket.abort();
                 end(ABNORMAL_CLOSE, "The backend stopped answering", false, null);
                 return;
             }
-            heard = false;
-            socket.sendPing(ByteBuffer.allocate(0));
+            answered = false;
+            socket.sendPing(ByteBuffer.allocate(0)).exceptionally(failure -> {
+                fail(failure);
+                return null;
+            });
             pingLater(socket);
         });
     }
@@ -198,7 +206,6 @@ final class JdkBackendSocket implements BackendSocket {
 
         @Override
         public CompletionStage<?> onText(WebSocket socket, CharSequence data, boolean last) {
-            heard = true;
             text.append(data);
             if (last) {
                 String message = text.toString();
@@ -212,14 +219,13 @@ final class JdkBackendSocket implements BackendSocket {
         @Override
         public CompletionStage<?> onPing(WebSocket socket, ByteBuffer message) {
             // The JDK answers with a pong by itself.
-            heard = true;
             socket.request(1);
             return null;
         }
 
         @Override
         public CompletionStage<?> onPong(WebSocket socket, ByteBuffer message) {
-            heard = true;
+            answered = true;
             socket.request(1);
             return null;
         }

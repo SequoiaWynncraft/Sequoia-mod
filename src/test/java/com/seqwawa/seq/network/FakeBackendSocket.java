@@ -76,11 +76,16 @@ final class FakeBackendSocket implements BackendSocket {
 
     @Override
     public void close(int code, String reason) {
+        boolean connecting = !open && !closing;
         open = false;
         closing = true;
         closes++;
         closeCode = code;
         closeReason = reason;
+        if (connecting) {
+            // As the real socket does: a handshake cut short ends at once, as this side's close.
+            listener.onClose(code, reason, false);
+        }
     }
 
     @Override

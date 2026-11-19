@@ -77,7 +77,7 @@ public final class GuildRaidProgressService {
     /** The progress for one session, fetched with {@code api}, which carries that session's token. */
     public static GuildRaidProgressService create(ApiClient api) {
         return new GuildRaidProgressService(
-                api::getGuildRaidProgress,
+                () -> api.getGuildRaidProgress(ChatManager.canAnnounceAchievements()),
                 Clocks::monotonicMillis,
                 ConnectionManager::isConnected,
                 ClientThread.queue(),

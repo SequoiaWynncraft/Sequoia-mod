@@ -72,6 +72,7 @@ public final class ConnectionManager {
     private static final int NORMAL_CLOSE = 1000;
     /** The close this client sends to drop a socket the backend stopped accepting as signed in; it reconnects. */
     private static final int CLOSE_TO_REAUTHENTICATE = 4001;
+    private static final long NO_SESSION = -1;
 
     private static final ConnectionEnvironment GAME = ConnectionEnvironment.inGame();
     private static volatile ConnectionManager instance;
@@ -93,7 +94,9 @@ public final class ConnectionManager {
     /** Sign-in rejections since the backend last accepted one; without a limit, a backend that keeps refusing is retried forever. */
     private int authRejections;
     /** The session whose end the connection already waits for. */
-    private long watchedSession = -1;
+    private long watchedSession = NO_SESSION;
+    /** The session a Connect the player asked for, held for a close or the sign-in backoff, belongs to; its end drops it. */
+    private long heldConnectFor = NO_SESSION;
 
     /** Spaces out sign-ins after a refusal, across reconnects; an accepted sign-in or another account clears it. */
     private final SignInBackoff signInBackoff;
@@ -143,6 +146,8 @@ public final class ConnectionManager {
     }
 
     public void connectManually() {
+        // Only the player's own Connect ends a sign-out of theirs; one held for a close or the backoff runs without.
+        env.tokens().allowSignIn();
         step(new Event.Connect(true));
     }
 
@@ -279,21 +284,23 @@ public final class ConnectionManager {
             case Event.TokenReady ready when isCurrent(ready.attempt(), State.SIGNING_IN) ->
                     tokenReady(ready.attempt(), ready.token(), ready.failure());
             case Event.Opened opened when isCurrent(opened.attempt(), State.CONNECTING) -> opened(opened.attempt());
-            case Event.Opened opened -> {
-                SeqClient.LOGGER.info("[WebSocket] Closing a superseded websocket connection");
-                opened.attempt().socket.close(NORMAL_CLOSE, "");
-            }
             case Event.Frame frame when isCurrent(frame.attempt(), State.OPEN) ->
                     handleMessage(frame.attempt(), frame.text(), frame.serverConnection(), frame.account());
             case Event.Frame frame -> settleTreasuryReply(frame.text());
             case Event.Failed failed when isLive(failed.attempt()) -> failed(failed.attempt(), failed.error());
             case Event.Closed closed when isLive(closed.attempt()) ->
                     closed(closed.attempt(), closed.code(), closed.reason(), closed.remote());
-            // A close already under way keeps its own verdict, such as reconnecting to sign in afresh.
-            case Event.SessionEnded ended when isLive(attempt) && state != State.CLOSING
-                    && attempt.session == ended.session() -> {
-                SeqClient.LOGGER.info("[WebSocket] Closing the connection of a session that ended");
-                end(attempt);
+            case Event.SessionEnded ended -> {
+                // A Connect its player asked for that is still held goes with the session.
+                if (heldConnectFor == ended.session()) {
+                    heldConnectFor = NO_SESSION;
+                    cancelWait();
+                }
+                // A close already under way keeps its own verdict, such as reconnecting to sign in afresh.
+                if (isLive(attempt) && state != State.CLOSING && attempt.session == ended.session()) {
+                    SeqClient.LOGGER.info("[WebSocket] Closing the connection of a session that ended");
+                    end(attempt);
+                }
             }
             case Event.TimeUp timeUp when state == State.WAITING -> {
                 waiting = null;
@@ -316,10 +323,9 @@ public final class ConnectionManager {
 
     private void connect(boolean playerAsked) {
         if (playerAsked) {
-            // Asking to connect ends the player's own disconnect or sign-out, and any pause the backend caused.
+            // Asking to connect ends the player's own disconnect, and any pause the backend caused.
             hold = Hold.NONE;
             authRejections = 0;
-            env.tokens().allowSignIn();
         } else if (isAutomaticConnectSuppressed()) {
             SeqClient.LOGGER.info("[WebSocket] Skipping automatic connect until the player connects explicitly");
             return;
@@ -351,7 +357,9 @@ public final class ConnectionManager {
         if (live != null && (state == State.CLOSING || live.socket.isClosing())) {
             // This socket's close, handled or about to be, decides what comes next; a Connect the player
             // asked for runs on a new socket once it is.
-            live.connectAfterClose |= playerAsked;
+            if (playerAsked) {
+                holdConnect();
+            }
             SeqClient.LOGGER.info("[WebSocket] Holding connect until the socket's close is handled playerAsked={}", playerAsked);
             return;
         }
@@ -375,18 +383,15 @@ public final class ConnectionManager {
             SeqClient.LOGGER.warn("[WebSocket] Auth attempt throttled waitMs={}", throttledMs);
             if (playerAsked) {
                 notify("Auth throttled. Retrying in " + Math.max(1, throttledMs / 1000) + "s.");
+                holdConnect();
             }
-            waitThen(throttledMs, () -> connect(playerAsked));
+            waitThen(throttledMs, playerAsked ? this::runHeldConnect : () -> connect(false));
             return;
         }
         Attempt next = new Attempt(treasury, playerAsked);
         attempt = next;
         next.session = env.tokens().sessionId();
-        if (next.session != watchedSession) {
-            long session = next.session;
-            watchedSession = session;
-            env.tokens().whenSessionEnds(session, () -> step(new Event.SessionEnded(session)));
-        }
+        watch(next.session);
         if (treasury) {
             state = State.CONNECTING;
             connectSocket(next, null);
@@ -397,6 +402,28 @@ public final class ConnectionManager {
                 .ensureValidToken(playerAsked)
                 .whenComplete((token, failure) ->
                         env.scheduler().execute(() -> step(new Event.TokenReady(next, token, failure))));
+    }
+
+    /** Holds the player's Connect for a close or the backoff, as the current session's: that session's end drops it. */
+    private void holdConnect() {
+        heldConnectFor = env.tokens().sessionId();
+        watch(heldConnectFor);
+    }
+
+    /** Runs the Connect the player asked for while it was held, unless something dropped it since. */
+    private void runHeldConnect() {
+        if (heldConnectFor != NO_SESSION) {
+            heldConnectFor = NO_SESSION;
+            connect(true);
+        }
+    }
+
+    /** Hears when {@code session} ends. */
+    private void watch(long session) {
+        if (session != watchedSession) {
+            watchedSession = session;
+            env.tokens().whenSessionEnds(session, () -> step(new Event.SessionEnded(session)));
+        }
     }
 
     private void disconnect(Stop why) {
@@ -421,21 +448,22 @@ public final class ConnectionManager {
     /** Ends {@code ended} on purpose: what it still reports changes nothing, and its close starts nothing. */
     private void end(Attempt ended) {
         ended.reconnect = false;
-        ended.connectAfterClose = false;
         ended.reporting = false;
+        heldConnectFor = NO_SESSION;
         ended.drop();
-        if (state == State.OPEN && ended.socket.isOpen()) {
+        if (state == State.CONNECTING || state == State.OPEN && ended.socket.isOpen()) {
+            // A handshake under way is cut short too; the next attempt waits for this socket's close either way.
             closeFromClient(ended, NORMAL_CLOSE, "");
         } else if (state != State.CLOSING) {
-            // Not open yet, or already closed by the backend: what its socket reports finds it replaced.
+            // Not connecting yet, or already closed by the backend: what its socket reports finds it replaced.
             state = State.IDLE;
         }
     }
 
-    /** Closes {@code closing}'s socket from this side. Its frames are dropped from now on; its close decides what follows. */
+    /** Closes {@code closing}'s socket, unless the backend already is. Its frames drop from now on; its close decides what follows. */
     private void closeFromClient(Attempt closing, int code, String reason) {
         state = State.CLOSING;
-        if (closing.socket.isOpen()) {
+        if (!closing.socket.isClosing()) {
             closing.closedByClient = true;
             closing.socket.close(code, reason);
         }
@@ -540,21 +568,21 @@ public final class ConnectionManager {
             SeqClient.LOGGER.info("[WebSocket] Reconnect not scheduled code={} remote={}", code, remote);
             closing.reporting = false;
         }
-        if (closing.connectAfterClose) {
-            SeqClient.LOGGER.info("[WebSocket] Running the connect asked for while this socket was closing");
-            connect(true);
-        }
+        runHeldConnect();
     }
 
     private void handleBackendClose(Attempt closing, BackendCloseClassifier.Kind kind) {
         switch (kind) {
             case AUTH_REJECTED -> {
                 closing.standing = Standing.REFUSED;
-                String message = "Backend rejected websocket authentication. Re-authenticating.";
-                closing.report(message);
-                signInBackoff.recordFailure();
-                recordAuthRejection(closing);
-                env.tokens().invalidateSession(closing.token, AuthErrorCode.WEBSOCKET_AUTH_REJECTED, message);
+                // An error that refused the token already counted this refusal, and dropped the token as it should.
+                if (!closing.refusalCounted) {
+                    String message = "Backend rejected websocket authentication. Re-authenticating.";
+                    closing.report(message);
+                    signInBackoff.recordFailure();
+                    recordAuthRejection(closing);
+                    env.tokens().invalidateSession(closing.token, AuthErrorCode.WEBSOCKET_AUTH_REJECTED, message);
+                }
             }
             // The backend explains in an error just before it closes; say it here only if that went unshown.
             case VERSION_UNSUPPORTED -> pauseAutoConnect(closing, closing.versionRejectionShown
@@ -651,6 +679,8 @@ public final class ConnectionManager {
         if (state == State.WAITING) {
             waiting.cancel();
             waiting = null;
+            // A Connect of the player's that waited out the backoff goes with the wait.
+            heldConnectFor = NO_SESSION;
             state = State.IDLE;
         }
     }
@@ -700,8 +730,8 @@ public final class ConnectionManager {
         /** Whether its close reconnects, unless the close itself refuses. */
         boolean reconnect = true;
         boolean closedByClient;
-        /** A Connect the player asked for while this socket was closing: it runs on a new one once the close is handled. */
-        boolean connectAfterClose;
+        /** A refusal of its sign-in is counted, so the backend saying it twice, an error then a close, counts once. */
+        boolean refusalCounted;
         boolean versionRejectionShown;
         volatile Standing standing = Standing.NONE;
         volatile boolean rankTracking;
@@ -840,6 +870,7 @@ public final class ConnectionManager {
      */
     private void rejectToken(Attempt refused, String notice, AuthErrorCode code, String message) {
         refused.standing = Standing.REFUSED;
+        refused.refusalCounted = true;
         signInBackoff.recordFailure();
         if (notice != null) {
             notify(notice);
@@ -1157,8 +1188,7 @@ public final class ConnectionManager {
             return false;
         }
 
-        send("bomb_share_request", buildBombShareRequestPayload(canonicalKey, requestedTypes));
-        return true;
+        return send("bomb_share_request", buildBombShareRequestPayload(canonicalKey, requestedTypes));
     }
 
     public boolean sendBombShareSubmit(String requestId, List<String> worlds) {
@@ -1170,8 +1200,7 @@ public final class ConnectionManager {
             return false;
         }
 
-        send("bomb_share_submit", buildBombShareSubmitPayload(requestId, worlds));
-        return true;
+        return send("bomb_share_submit", buildBombShareSubmitPayload(requestId, worlds));
     }
 
     public boolean sendTreasuryOut(TreasuryOutRequest request) {

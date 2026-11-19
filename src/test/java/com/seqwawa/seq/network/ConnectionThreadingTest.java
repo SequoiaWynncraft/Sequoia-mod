@@ -237,6 +237,7 @@ class ConnectionThreadingTest {
         assertEquals(2, harness.sockets.size());
         assertTrue(harness.socket().connected());
         assertFalse(ConnectionManager.hasReconnectTask(), "the player's connect replaces the reconnect");
+        assertEquals(1, harness.tokens.allowSignIns, "only the player's own Connect lifts a sign-out, not its held run");
     }
 
     @Test

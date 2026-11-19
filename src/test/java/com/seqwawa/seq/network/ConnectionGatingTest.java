@@ -272,6 +272,18 @@ class ConnectionGatingTest {
     }
 
     @Test
+    void aBombShareTheThrottleHoldsBackSaysItWasNotSent() {
+        FakeBackendSocket socket = harness.connectAsMember();
+        harness.advance(50);
+        socket.clearSent();
+
+        assertTrue(harness.connection().sendBombShareRequest("dxp", List.of(BombShareType.COMBAT_XP)));
+        assertFalse(harness.connection().sendBombShareSubmit("request-1", List.of("WC1")), "so nobody is told it was shared");
+        assertFalse(harness.connection().sendBombShareRequest("dxp", List.of(BombShareType.COMBAT_XP)));
+        assertEquals(List.of("bomb_share_request"), socket.sentTypes());
+    }
+
+    @Test
     void snapshotsAndLiveTelemetryAreNotThrottled() {
         FakeBackendSocket socket = harness.connectAsMember();
         socket.clearSent();

@@ -27,6 +27,8 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 /**
  * The game's socket against a real, if tiny, WebSocket server on this machine: the handshake and
@@ -117,19 +119,36 @@ class JdkBackendSocketTest {
         events.assertQuiet();
     }
 
-    @Test
-    void aRefusedHandshakeClosesWithItsStatusAsTheClassifierReadsIt() throws Exception {
+    @ParameterizedTest(name = "{0}")
+    @CsvSource({"401, AUTH_REJECTED", "403, HANDSHAKE_FORBIDDEN", "426, VERSION_UNSUPPORTED", "502, OTHER"})
+    void aRefusedHandshakeClosesWithItsStatusAsTheClassifierReadsIt(int status, BackendCloseClassifier.Kind kind)
+            throws Exception {
         server = new TinyServer();
         socket = new JdkBackendSocket(server.uri(), events, Duration.ofSeconds(30), Duration.ofSeconds(5));
         socket.connect(Map.of());
 
-        server.accept(401);
+        server.accept(status);
 
-        String close = events.next();
-        assertEquals("close:1002:Invalid status code received: 401:false", close);
-        assertEquals(BackendCloseClassifier.Kind.AUTH_REJECTED,
-                BackendCloseClassifier.classify(1002, "Invalid status code received: 401", false));
+        String reason = "Invalid status code received: " + status;
+        assertEquals("close:1002:" + reason + ":false", events.next());
+        assertEquals(kind, BackendCloseClassifier.classify(BackendCloseClassifier.HANDSHAKE_FAILED, reason, false));
         assertFalse(socket.isOpen());
+        events.assertQuiet();
+    }
+
+    @Test
+    void aCloseWhileConnectingEndsAtOnceAndDropsTheHandshake() throws Exception {
+        server = new TinyServer();
+        socket = new JdkBackendSocket(server.uri(), events, Duration.ofSeconds(30), Duration.ofSeconds(5));
+        socket.connect(Map.of());
+        server.takeRequest();
+
+        // The backend has yet to answer the handshake.
+        socket.close(1000, "");
+
+        assertEquals("close:1000::false", events.next());
+        assertTrue(socket.isClosing());
+        assertEquals(-1, server.in.read(), "the handshake's connection is dropped");
         events.assertQuiet();
     }
 
@@ -169,6 +188,27 @@ class JdkBackendSocketTest {
         assertEquals("close:1006:The backend stopped answering:false", events.next());
         assertFalse(socket.isOpen());
         events.assertQuiet();
+    }
+
+    @Test
+    void aBackendThatKeepsPingingButNeverAnswersOurPingIsGivenUp() throws Exception {
+        openSocket(QUICK, Duration.ofSeconds(5));
+        Thread chatter = new Thread(() -> {
+            try {
+                while (true) {
+                    server.sendPing();
+                    Thread.sleep(QUICK.toMillis() / 4);
+                }
+            } catch (IOException | InterruptedException ended) {
+                // The socket was given up.
+            }
+        });
+        chatter.setDaemon(true);
+        chatter.start();
+
+        assertEquals("close:1006:The backend stopped answering:false", events.next());
+        assertFalse(socket.isOpen());
+        chatter.interrupt();
     }
 
     @Test
@@ -234,6 +274,12 @@ class JdkBackendSocketTest {
         }
 
         void accept(int status) throws Exception {
+            takeRequest();
+            answer(status);
+        }
+
+        /** Takes the connection and reads the handshake request, without answering it. */
+        void takeRequest() throws IOException {
             connection = listening.accept();
             connection.setSoTimeout(5_000);
             in = new DataInputStream(connection.getInputStream());
@@ -244,6 +290,9 @@ class JdkBackendSocketTest {
                     requestHeaders.put(line.substring(0, colon).trim().toLowerCase(Locale.ROOT), line.substring(colon + 1).trim());
                 }
             }
+        }
+
+        void answer(int status) throws Exception {
             if (status != 101) {
                 out.write(("HTTP/1.1 " + status + " Refused\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
                         .getBytes(StandardCharsets.US_ASCII));
@@ -280,7 +329,7 @@ class JdkBackendSocketTest {
             frame(0xA, new byte[0]);
         }
 
-        private void frame(int opcode, byte[] payload) throws IOException {
+        private synchronized void frame(int opcode, byte[] payload) throws IOException {
             out.write(0x80 | opcode);
             out.write(payload.length);
             out.write(payload);

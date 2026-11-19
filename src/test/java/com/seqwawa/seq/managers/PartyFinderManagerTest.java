@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.seqwawa.seq.client.TickQueue;
 import com.seqwawa.seq.model.Activity;
 import com.seqwawa.seq.model.CreateInviteResponse;
 import com.seqwawa.seq.model.Listing;
@@ -16,8 +17,11 @@ import com.seqwawa.seq.model.PartyStatus;
 import com.seqwawa.seq.model.ReservedSlot;
 import com.seqwawa.seq.model.WynnClassType;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 class PartyFinderManagerTest {
@@ -25,6 +29,35 @@ class PartyFinderManagerTest {
     private static final String LEADER = "00000000-0000-0000-0000-00000000000a";
     private static final String KICK_TARGET = "00000000-0000-0000-0000-00000000000b";
     private static final String OTHER_MEMBER = "00000000-0000-0000-0000-00000000000c";
+
+    /** The game thread, which runs only when a test lets it. */
+    private final TickQueue gameThread = new TickQueue(() -> 0L);
+    /** The player's server connection, which a test can swap for another. */
+    private Object connection = new Object();
+    private final List<String> shown = new ArrayList<>();
+    private final List<String> sent = new ArrayList<>();
+    /** Plays the game for the player: shows what it is told, and sends what it is asked to. */
+    private final PartyFinderManager playing = new PartyFinderManager(gameThread) {
+        @Override
+        public void notify(String message) {
+            shown.add(message);
+        }
+
+        @Override
+        Object gameConnection() {
+            return connection;
+        }
+
+        @Override
+        void sendGameCommand(String command) {
+            sent.add(command);
+        }
+    };
+
+    @AfterEach
+    void restoreNameLookups() {
+        PartyFinderManager.playerNames = com.seqwawa.seq.utils.PlayerNameCache::resolveAsync;
+    }
 
     @Test
     void resetForgetsThePreviousAccountsPartyInvitesAndCards() {
@@ -145,30 +178,59 @@ class PartyFinderManagerTest {
 
     @Test
     void anInviteWhoseSessionEndedWhileItsInviterWasLookedUpIsNeverShown() {
-        List<String> shown = new java.util.ArrayList<>();
-        PartyFinderManager manager = new PartyFinderManager() {
-            @Override
-            public void notify(String message) {
-                shown.add(message);
-            }
-        };
-        java.util.concurrent.CompletableFuture<String> name = new java.util.concurrent.CompletableFuture<>();
-        PartyFinderManager.inviterNames = uuid -> name;
-        try {
-            manager.handlePartyFinderInvite(7L, LEADER, null, null);
-            // The session ends, as an account switch does, before the name comes back.
-            manager.reset();
-            name.complete("Inviter");
-            assertEquals(List.of(), shown);
+        CompletableFuture<String> name = new CompletableFuture<>();
+        PartyFinderManager.playerNames = uuid -> name;
+        playing.handlePartyFinderInvite(7L, LEADER, null, null);
+        // The session ends, as an account switch does, before the name comes back.
+        playing.reset();
+        name.complete("Inviter");
+        gameThread.runDue();
+        assertEquals(List.of(), shown);
 
-            java.util.concurrent.CompletableFuture<String> next = new java.util.concurrent.CompletableFuture<>();
-            PartyFinderManager.inviterNames = uuid -> next;
-            manager.handlePartyFinderInvite(8L, LEADER, null, null);
-            next.complete("Inviter");
-            assertEquals(List.of("Party Finder invite from Inviter."), shown);
-        } finally {
-            PartyFinderManager.inviterNames = com.seqwawa.seq.utils.PlayerNameCache::resolveAsync;
-        }
+        CompletableFuture<String> next = new CompletableFuture<>();
+        PartyFinderManager.playerNames = uuid -> next;
+        playing.handlePartyFinderInvite(8L, LEADER, null, null);
+        next.complete("Inviter");
+        gameThread.runDue();
+        assertEquals(List.of("Party Finder invite from Inviter."), shown);
+    }
+
+    @Test
+    void anInviteLookedUpJustBeforeItsSessionEndedIsNeverShown() {
+        CompletableFuture<String> name = new CompletableFuture<>();
+        PartyFinderManager.playerNames = uuid -> name;
+        playing.handlePartyFinderInvite(7L, LEADER, null, null);
+
+        // The name comes back, then the session ends before the game thread shows the invite.
+        name.complete("Inviter");
+        playing.reset();
+        gameThread.runDue();
+
+        assertEquals(List.of(), shown);
+    }
+
+    @Test
+    void aPartyCommandGoesOnlyToTheSessionAndServerConnectionItWasFor() {
+        CompletableFuture<String> name = new CompletableFuture<>();
+        PartyFinderManager.playerNames = uuid -> name;
+        UUID kicked = UUID.fromString(KICK_TARGET);
+
+        // The backend kicked them; the session ends, as an account switch ends it, while their name is looked up.
+        playing.sendGamePartyCommandForUuid(kicked, "party kick ");
+        playing.reset();
+        name.complete("Kicked");
+        gameThread.runDue();
+        assertEquals(List.of(), sent, "the next account never sends the previous one's command");
+
+        PartyFinderManager.playerNames = uuid -> CompletableFuture.completedFuture("Kicked");
+        playing.sendGamePartyCommandForUuid(kicked, "party kick ");
+        connection = new Object();
+        gameThread.runDue();
+        assertEquals(List.of(), sent, "nor does the same session's player on another server connection");
+
+        playing.sendGamePartyCommandForUuid(kicked, "party kick ");
+        gameThread.runDue();
+        assertEquals(List.of("party kick Kicked"), sent);
     }
 
     @Test

@@ -26,6 +26,7 @@ class ConnectionCloseTest {
     private static final String REFUSED_401 = "Invalid status code received: 401 Status line: HTTP/1.1 401 Unauthorized";
     private static final String REFUSED_403 = "Invalid status code received: 403 Status line: HTTP/1.1 403 Forbidden";
     private static final String REFUSED_502 = "Invalid status code received: 502 Status line: HTTP/1.1 502 Bad Gateway";
+    private static final String TOKEN_INVALID = "{\"type\":\"error\",\"code\":\"token_invalid\",\"message\":\"Token invalid\"}";
 
     @TempDir
     Path config;
@@ -82,6 +83,9 @@ class ConnectionCloseTest {
                 // Refusals no retry fixes: pause until the player connects.
                 Arguments.of("version unsupported (1008)", 1008, "mod_version_unsupported", true, new Outcome(false, true,
                         List.of("This version of Sequoia is no longer supported. Update the mod, then run /seq connect."))),
+                Arguments.of("refused handshake, 426", BackendCloseClassifier.HANDSHAKE_FAILED,
+                        "Invalid status code received: 426", false, new Outcome(false, true,
+                        List.of("This version of Sequoia is no longer supported. Update the mod, then run /seq connect."))),
                 Arguments.of("party finder ban (1008)", 1008, "party_finder_banned", true, new Outcome(false, true,
                         List.of("Sequoia closed the connection: this account is banned from the party finder. "
                                 + "Run /seq connect to try again."))),
@@ -129,6 +133,37 @@ class ConnectionCloseTest {
         assertEquals(2, harness.sockets.size());
         assertEquals(List.of(false, false), harness.tokens.requests,
                 "the reconnect asks for a token, which the invalidated session no longer has");
+    }
+
+    @Test
+    void aRefusalTheBackendSendsAsAnErrorThenACloseCountsOnce() {
+        FakeBackendSocket socket = harness.connectAsMember();
+
+        // Both reach the game thread on the same tick.
+        socket.receive(TOKEN_INVALID);
+        socket.closeFromBackend(BackendCloseClassifier.POLICY_VIOLATION, "account_revoked");
+        harness.settle();
+
+        assertEquals(List.of(AuthErrorCode.TOKEN_INVALID), harness.tokens.invalidations);
+        // One refusal's sign-in backoff: the reconnect connects after two seconds, not four.
+        harness.advance(1_999);
+        assertEquals(1, harness.sockets.size());
+        harness.advance(1);
+        assertEquals(2, harness.sockets.size());
+    }
+
+    @Test
+    void aBanThatClosesBehindARefusedTokenStillStopsReconnecting() {
+        FakeBackendSocket socket = harness.connectAsMember();
+
+        socket.receive(TOKEN_INVALID);
+        socket.closeFromBackend(BackendCloseClassifier.POLICY_VIOLATION, "party_finder_banned");
+        harness.settle();
+
+        assertFalse(ConnectionManager.hasReconnectTask());
+        assertFalse(ConnectionManager.canAutoConnectNow());
+        assertEquals("Sequoia closed the connection: this account is banned from the party finder. "
+                + "Run /seq connect to try again.", harness.told.getLast());
     }
 
     @Test

@@ -87,7 +87,10 @@ open, closing, waiting), changed only by its `step(event)`, on the game thread. 
 Connect and Disconnect, the sign-in's answer, each socket event, the timer and the end of the
 socket's session are its events. Each try at connecting has a socket of its own; an event from a
 socket that was replaced, or that this client closed, changes nothing. Every close is handled in
-one place, which decides whether to reconnect, and runs a Connect the player asked for meanwhile.
+one place, which decides whether to reconnect, and runs a Connect the player asked for meanwhile;
+a Connect held for a close or the sign-in backoff belongs to the session it was asked in, and that
+session's end drops it. A socket still connecting when its session ends is cut short, and the next
+waits for its close.
 Other code hears what the backend sends through `ConnectionManager.listen(type, listener)`,
 on the game thread.
 

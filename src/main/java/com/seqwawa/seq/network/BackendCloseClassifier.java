@@ -20,6 +20,7 @@ final class BackendCloseClassifier {
         CLIENT_INITIATED,
         /** The backend refused or revoked the token (a 401 handshake, an unlinked account): sign in afresh. */
         AUTH_REJECTED,
+        /** A 426 handshake, or a 1008 close naming it: only an update helps. */
         VERSION_UNSUPPORTED,
         PARTY_FINDER_BANNED,
         /** A 403 handshake: the backend refuses this account (a ban) or this transport, so retrying cannot help. */
@@ -48,6 +49,7 @@ final class BackendCloseClassifier {
             return switch (refused.group(1)) {
                 case "401" -> Kind.AUTH_REJECTED;
                 case "403" -> Kind.HANDSHAKE_FORBIDDEN;
+                case "426" -> Kind.VERSION_UNSUPPORTED;
                 default -> Kind.OTHER;
             };
         }
