@@ -1,17 +1,12 @@
 package com.seqwawa.seq.managers;
 
-import com.seqwawa.seq.accessors.EventBusAccessor;
 import com.seqwawa.seq.client.SeqClient;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 
-public class GameManager implements EventBusAccessor {
+public class GameManager {
     private static final String DEFAULT_RESOURCE_FONT = "mc";
-
-    public GameManager() {
-        seqsubscribe(this);
-    }
 
     public void loadFont() {
         //Minecraft font for when people dont want custom font. AKA fuck minecrafts renderer

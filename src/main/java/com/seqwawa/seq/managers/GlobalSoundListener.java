@@ -1,21 +1,26 @@
 package com.seqwawa.seq.managers;
 
-import com.collarmc.pounce.EventBus;
 import com.seqwawa.seq.client.SeqClient;
-import com.seqwawa.seq.events.SoundPlayedEvent;
+import com.seqwawa.seq.raids.tna.TnaSahurSoundDetector;
+import java.util.function.BiConsumer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.sounds.Sound;
 import net.minecraft.client.resources.sounds.SoundInstance;
 import net.minecraft.client.sounds.SoundEventListener;
 import net.minecraft.client.sounds.SoundManager;
 import net.minecraft.client.sounds.WeighedSoundEvents;
+import net.minecraft.resources.Identifier;
 
-/** Publishes all resolved client sounds through Sequoia's event bus. */
+/** Hands every resolved client sound, as its event and file, to the TNA Sahur detector. */
 public final class GlobalSoundListener implements SoundEventListener {
-    private static final GlobalSoundListener INSTANCE = new GlobalSoundListener();
+    private static final GlobalSoundListener INSTANCE = new GlobalSoundListener(TnaSahurSoundDetector::onSoundPlayed);
     private static boolean registered;
 
-    private GlobalSoundListener() {}
+    private final BiConsumer<Identifier, Identifier> sounds;
+
+    GlobalSoundListener(BiConsumer<Identifier, Identifier> sounds) {
+        this.sounds = sounds;
+    }
 
     public static void initialize() {
         if (registered) {
@@ -39,20 +44,9 @@ public final class GlobalSoundListener implements SoundEventListener {
 
     @Override
     public void onPlaySound(SoundInstance instance, WeighedSoundEvents soundEvent, float audibleRange) {
-        EventBus eventBus = SeqClient.getEventBus();
         Sound sound = instance.getSound();
-        if (eventBus == null || sound == null) {
-            return;
+        if (sound != null) {
+            sounds.accept(instance.getIdentifier(), sound.getLocation());
         }
-        eventBus.dispatch(new SoundPlayedEvent(
-                instance.getIdentifier(),
-                sound.getLocation(),
-                instance.getSource(),
-                instance.getX(),
-                instance.getY(),
-                instance.getZ(),
-                instance.getVolume(),
-                instance.getPitch(),
-                audibleRange));
     }
 }

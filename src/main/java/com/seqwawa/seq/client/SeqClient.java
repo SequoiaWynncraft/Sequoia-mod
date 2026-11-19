@@ -1,8 +1,5 @@
 package com.seqwawa.seq.client;
 
-import com.collarmc.pounce.EventBus;
-import com.collarmc.pounce.Preference;
-import com.collarmc.pounce.Subscribe;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.logging.LogUtils;
 import java.util.List;
@@ -25,8 +22,6 @@ import org.lwjgl.glfw.GLFW;
 import com.seqwawa.seq.command.SeqCommand;
 import com.seqwawa.seq.config.ConfigManager;
 import com.seqwawa.seq.config.Setting;
-import com.seqwawa.seq.events.GameStartEvent;
-import com.seqwawa.seq.events.MinecraftFinishedLoading;
 import com.seqwawa.seq.halcyon.HalcyonRangeVisualiserClient;
 import com.seqwawa.seq.images.ImagePreviews;
 import com.seqwawa.seq.images.ImagePreviewSettings;
@@ -107,9 +102,6 @@ public class SeqClient implements ClientModInitializer {
     public static final Logger LOGGER = LogUtils.getLogger();
 
     public static final Minecraft mc = Minecraft.getInstance();
-
-    @Getter
-    public static EventBus eventBus;
 
     @Getter
     public static FontManager fontManager;
@@ -401,13 +393,7 @@ public class SeqClient implements ClientModInitializer {
     public void onInitializeClient() {
         // First, so everything below can hand results to the game thread.
         ClientThread.install();
-        try {
-            eventBus = new EventBus(mc::execute);
-            eventBus.subscribe(this);
-            TnaSahurSoundDetector.initialize(eventBus);
-        } catch (Exception e) {
-            LOGGER.warn("Event bus failed to initialize.");
-        }
+        TnaSahurSoundDetector.initialize();
         fontManager = new FontManager();
         gameManager = new GameManager();
         partyFinderManager = new PartyFinderManager();
@@ -915,9 +901,8 @@ public class SeqClient implements ClientModInitializer {
         return shareBombsKey != null && shareBombsKey.isDown();
     }
 
-    @Subscribe(Preference.CALLER) // to stay in thread
-    public void onMinecraftFinishedLoading(MinecraftFinishedLoading ignored) {
-        // after minecraft done loading
+    /** Called on the game thread as Minecraft's constructor returns. */
+    public static void onMinecraftFinishedLoading() {
         GlobalSoundListener.initialize();
         MinecraftUiRenderer.initialize();
         SeqClient.gameManager.loadFont();
@@ -1312,8 +1297,8 @@ public class SeqClient implements ClientModInitializer {
         }
     }
 
-    @Subscribe(Preference.CALLER)
-    public void onGameStart(GameStartEvent ignored) {
+    /** Called when the title screen first opens. */
+    public static void onGameStart() {
         // Always reconciles what an earlier update left behind; goes online only if checks are on.
         UpdateManager.getInstance().start(checkUpdatesSetting == null || checkUpdatesSetting.getValue());
     }

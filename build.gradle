@@ -63,20 +63,10 @@ switch (org.gradle.internal.os.OperatingSystem.current()) {
         break
 }
 
-fabricApi {
-    configureDataGeneration {
-        client = true
-    }
-}
-
 repositories {
     mavenCentral()
     maven {
         url = "https://pkgs.dev.azure.com/djtheredstoner/DevAuth/_packaging/public/maven/v1"
-    }
-    maven {
-        name = "jitpack"
-        url = "https://jitpack.io"
     }
     maven {
         url = "https://api.modrinth.com/maven"
@@ -95,11 +85,7 @@ dependencies {
 
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
-    modImplementation("com.github.collarmc:pounce:${project.pounce_version}")
-    include("com.github.collarmc:pounce:${project.pounce_version}")
-
     modImplementation "maven.modrinth:wynntils:v${project.wynntils_version}-fabric"
-    modRuntimeOnly "maven.modrinth:wynntils:v${project.wynntils_version}-fabric"
 
     // Ship NanoVG explicitly (API + natives). Keep dependencies non-transitive
     // so we do not bundle LWJGL core modules that Minecraft already provides.
@@ -132,9 +118,6 @@ dependencies {
 
     // WebSocket client
     include(implementation("org.java-websocket:Java-WebSocket:1.6.0"))
-
-    // JSON
-    include(implementation("com.google.code.gson:gson:2.11.0"))
 
     // Theme files
     include(implementation("org.snakeyaml:snakeyaml-engine:3.0.1"))

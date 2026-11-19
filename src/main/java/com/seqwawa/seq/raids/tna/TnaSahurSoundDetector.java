@@ -1,9 +1,5 @@
 package com.seqwawa.seq.raids.tna;
 
-import com.collarmc.pounce.EventBus;
-import com.collarmc.pounce.Preference;
-import com.collarmc.pounce.Subscribe;
-import com.seqwawa.seq.events.SoundPlayedEvent;
 import java.util.Map;
 import java.util.Set;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -28,24 +24,23 @@ public final class TnaSahurSoundDetector {
 
     private TnaSahurSoundDetector() {}
 
-    public static void initialize(EventBus eventBus) {
-        eventBus.subscribeStrongly(INSTANCE);
+    public static void initialize() {
         ClientTickEvents.END_CLIENT_TICK.register(client -> INSTANCE.tick(monotonicMillis()));
         ClientWorldEvents.AFTER_CLIENT_WORLD_CHANGE.register((client, world) -> INSTANCE.tracker.reset());
     }
 
-    @Subscribe(Preference.CALLER)
-    public void onSoundPlayed(SoundPlayedEvent sound) {
+    /** Called on the game thread for every client sound Minecraft resolves (see GlobalSoundListener). */
+    public static void onSoundPlayed(Identifier eventId, Identifier soundId) {
         int challenge = TnaLineupHelper.activeTnaChallenge();
-        BeamKind kind = beamKind(sound.eventId(), sound.soundId());
+        BeamKind kind = beamKind(eventId, soundId);
         if (challenge != SAHUR_CHALLENGE || kind == null) {
             if (challenge != SAHUR_CHALLENGE) {
-                tracker.reset();
+                INSTANCE.tracker.reset();
             }
             return;
         }
 
-        tracker.record(kind, monotonicMillis());
+        INSTANCE.tracker.record(kind, monotonicMillis());
     }
 
     static IndicatorState indicatorState(long nowMs) {
