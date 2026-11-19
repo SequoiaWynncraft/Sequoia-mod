@@ -212,7 +212,9 @@ class PartyFinderManagerTest {
     void aReplyThatArrivesAfterAResetIsDroppedWithoutAWord() {
         PartyFinderManager manager = offline();
         CompletableFuture<Listing> request = new CompletableFuture<>();
-        CompletableFuture<Listing> guarded = manager.send(manager.ticket(), api -> request);
+        CompletableFuture<Listing> guarded = manager.send(manager.ticket(), api -> request, listing -> {
+            throw new AssertionError("the previous account's reply was applied");
+        });
 
         manager.reset();
         request.complete(listing(7L, "previous-leader", member("previous-leader"), member("previous-account")));
@@ -233,7 +235,7 @@ class PartyFinderManagerTest {
 
         CompletableFuture<Listing> guarded = manager.send(ticket, api -> {
             throw new AssertionError("the request went out");
-        });
+        }, Function.identity());
 
         assertTrue(PartyFinderManager.isSupersededByReset(guarded.handle((value, error) -> error).join()));
     }
@@ -242,7 +244,7 @@ class PartyFinderManagerTest {
     void aReplyWithNoResetInBetweenArrivesAsUsual() {
         PartyFinderManager manager = offline();
         CompletableFuture<String> request = new CompletableFuture<>();
-        CompletableFuture<String> guarded = manager.send(manager.ticket(), api -> request);
+        CompletableFuture<String> guarded = manager.send(manager.ticket(), api -> request, Function.identity());
 
         request.complete("listing");
         assertFalse(guarded.isDone(), "a reply is handed to the game thread");
@@ -302,7 +304,7 @@ class PartyFinderManagerTest {
         PartyFinderManager manager = offline();
         CompletableFuture<String> name = new CompletableFuture<>();
         names = uuid -> name;
-        manager.handlePartyFinderInvite(7L, OTHER_MEMBER, null, null);
+        manager.handlePartyFinderInvite(7L, OTHER_MEMBER, null, null, connection);
         // The session ends, as an account switch ends it, before the name comes back.
         manager.reset();
         name.complete("Inviter");
@@ -310,7 +312,7 @@ class PartyFinderManagerTest {
         assertEquals(List.of(), shown);
 
         names = uuid -> CompletableFuture.completedFuture("Inviter");
-        manager.handlePartyFinderInvite(8L, OTHER_MEMBER, null, null);
+        manager.handlePartyFinderInvite(8L, OTHER_MEMBER, null, null, connection);
         gameThread.runDue();
         assertEquals(List.of("Party Finder invite from Inviter."), shown);
     }
@@ -320,7 +322,7 @@ class PartyFinderManagerTest {
         PartyFinderManager manager = offline();
         CompletableFuture<String> name = new CompletableFuture<>();
         names = uuid -> name;
-        manager.handlePartyFinderInvite(7L, OTHER_MEMBER, null, null);
+        manager.handlePartyFinderInvite(7L, OTHER_MEMBER, null, null, connection);
 
         // The name comes back, then the session ends before the game thread shows the invite.
         name.complete("Inviter");
@@ -400,7 +402,8 @@ class PartyFinderManagerTest {
         CompletableFuture<String> reply = backend.hold("POST /party-finder/listings/7/transfer");
 
         CompletableFuture<CommandResult<Listing>> promoted = partyFinder.actions().promoteMemberFromCommand("Promoted");
-        backend.awaitRequest("POST /party-finder/listings/7/transfer");
+        // The looked-up name is acted on on the game thread.
+        runGameThreadUntil(() -> backend.saw("POST /party-finder/listings/7/transfer"));
         connection = new Object();
         reply.complete(listingJson(7L, KICK_TARGET, LEADER, KICK_TARGET));
 
@@ -423,7 +426,7 @@ class PartyFinderManagerTest {
         sessions.end(EndReason.SIGN_OUT);
         lookup.complete(KICK_TARGET);
 
-        String message = invited.get(5, TimeUnit.SECONDS).message();
+        String message = awaitOnGameThread(invited).message();
         assertFalse(backend.saw("POST /party-finder/listings/7/invite"), "no invite goes out, with any token");
         assertEquals(SESSION_ENDED, message);
     }
@@ -439,7 +442,7 @@ class PartyFinderManagerTest {
         sessions.end(EndReason.SIGN_OUT);
         lookup.complete(KICK_TARGET);
 
-        String message = kicked.get(5, TimeUnit.SECONDS).message();
+        String message = awaitOnGameThread(kicked).message();
         assertFalse(backend.saw("DELETE /party-finder/listings/7/members/" + KICK_TARGET), "no kick goes out");
         assertEquals(SESSION_ENDED, message);
     }
@@ -566,6 +569,168 @@ class PartyFinderManagerTest {
         gameThread.runDue();
 
         assertEquals(List.of("Joiner joined your party.", "Leaver left your party."), shown);
+    }
+
+    // ── A looked-up name is acted on on the game thread, and a reply applied where its session is checked ──
+
+    @Test
+    void aScreenInviteChecksItsLookedUpPlayerOnTheGameThreadAndOnlyForItsSession() {
+        PartyFinderManager partyFinder = offline();
+        partyFinder.applyJoined(inviteOnly(listing(7L, LEADER, member(LEADER))));
+        CompletableFuture<String> lookup = new CompletableFuture<>();
+        uuids = username -> lookup;
+
+        partyFinder.actions().createInvite("Nobody");
+        // The name service answers on a thread of its own: here, the test's.
+        lookup.complete(null);
+        assertNull(partyFinder.consumeLatestPartyError(), "nothing is written off the game thread");
+        gameThread.runDue();
+        gameThread.runDue();
+        assertEquals("Unable to find that player UUID.", partyFinder.consumeLatestPartyError());
+
+        CompletableFuture<String> late = new CompletableFuture<>();
+        uuids = username -> late;
+        partyFinder.actions().createInvite("Nobody");
+        partyFinder.reset();
+        late.complete(null);
+        gameThread.runDue();
+        gameThread.runDue();
+        assertNull(partyFinder.consumeLatestPartyError(), "the next account sees no banner for the previous one's invite");
+    }
+
+    @Test
+    void aKickCommandWhoseLookupFinishesOnAnotherThreadGoesOutFromTheGameThread() throws Exception {
+        PartyFinderManager partyFinder = sessionPartyFinder();
+        partyFinder.applyJoined(listing(7L, LEADER, member(LEADER), member(KICK_TARGET)));
+        CompletableFuture<String> lookup = new CompletableFuture<>();
+        uuids = username -> lookup;
+        String route = "DELETE /party-finder/listings/7/members/" + KICK_TARGET;
+        backend.answer(route, listingJson(7L, LEADER, LEADER));
+
+        CompletableFuture<CommandResult<Listing>> kicked = partyFinder.actions().kickMemberFromCommand("Kicked");
+        // The name service answers on a thread of its own: here, the test's.
+        lookup.complete(KICK_TARGET);
+        Thread.sleep(200);
+
+        assertFalse(backend.saw(route), "the lookup's answer waits for the game thread, as its reply will");
+        assertTrue(awaitOnGameThread(kicked).success());
+        assertEquals(1, partyFinder.getCurrentListing().members().size());
+    }
+
+    // ── What the socket heard is told on the server connection it heard it on ──
+
+    @Test
+    void whatTheSocketHeardBeforeAReconnectChangesTheListingsButIsNotToldOnTheNewConnection() {
+        PartyFinderManager partyFinder = offline();
+        names = uuid -> CompletableFuture.completedFuture("Joiner");
+        partyFinder.applyJoined(listing(7L, LEADER, member(LEADER)));
+        Object heardOn = connection;
+        // The player reconnects before the game thread hands on what the socket heard.
+        connection = new Object();
+
+        partyFinder.handlePartyFinderUpdate("UPDATED", listing(7L, LEADER, member(LEADER), member(KICK_TARGET)), heardOn);
+        partyFinder.handlePartyFinderInvite(8L, OTHER_MEMBER, null, null, heardOn);
+        partyFinder.handlePartyFinderStaleWarning("idle", 7L, null, 5, heardOn);
+        gameThread.runDue();
+
+        assertEquals(List.of(), shown);
+        assertEquals(2, partyFinder.getCurrentListing().members().size(), "the listing still takes the update");
+        partyFinder.handlePartyFinderStaleWarning("idle", 7L, null, 5, connection);
+        assertEquals(1, shown.size(), "a warning heard on the player's connection is shown");
+    }
+
+    // ── A screen's banner, and a linked listing's sync, stay with the connection they began on ──
+
+    @Test
+    void aScreenRequestThatFailsAfterAReconnectLeavesNoBannerOnTheNewConnection() throws Exception {
+        PartyFinderManager partyFinder = sessionPartyFinder();
+        partyFinder.applyJoined(listing(7L, LEADER, member(LEADER)));
+        String route = "POST /party-finder/listings/7/close";
+        CompletableFuture<String> refusal = backend.hold(route);
+
+        partyFinder.actions().closeParty(7L);
+        backend.awaitRequest(route);
+        // The same account reconnects to Wynncraft while the backend answers.
+        connection = new Object();
+        refusal.complete(null);
+        runGameThreadFor(300);
+
+        assertNull(partyFinder.consumeLatestPartyError(), "the failure is not shown on the new connection");
+    }
+
+    @Test
+    void aLinkedListingCreatedAcrossAReconnectSendsNoPartyListOnTheNewConnection() throws Exception {
+        PartyFinderManager partyFinder = sessionPartyFinder();
+        String route = "POST /party-finder/listings";
+        CompletableFuture<String> created = linkedCreateBackend(route);
+        GuildPresenceManager presence = presenceWithoutRoster();
+        List<String> told = new CopyOnWriteArrayList<>();
+        List<PartyFinderManager> synced = new CopyOnWriteArrayList<>();
+
+        presence.openPartyFinderListing(partyFinder, List.of("NOTG"), PartyRegion.NA, told::add, synced::add);
+        runGameThreadUntil(() -> backend.saw(route));
+        connection = new Object();
+        created.complete(listingJson(9L, LEADER, LEADER));
+        runGameThreadUntil(() -> partyFinder.getCurrentListing() != null);
+        runGameThreadFor(200);
+
+        assertEquals(List.of(), synced, "the Wynn party sync asks nothing on the new connection");
+        assertEquals(List.of(), told);
+    }
+
+    // ── Nothing waits on a request for good ──
+
+    @Test
+    void aRequestStillWaitingWhenItsSessionEndsIsSettledThen() throws Exception {
+        PartyFinderManager partyFinder = sessionPartyFinder();
+        partyFinder.applyJoined(listing(7L, OTHER_MEMBER, member(OTHER_MEMBER), member(LEADER)));
+        String route = "PATCH /party-finder/members/me/role";
+        backend.hold(route);
+
+        CompletableFuture<CommandResult<Listing>> changed = partyFinder.actions().changeRoleFromCommand(PartyRole.TANK);
+        backend.awaitRequest(route);
+        sessions.end(EndReason.SIGN_OUT);
+
+        assertTrue(changed.isDone(), "settled as the session ends, not whenever the backend answers");
+        assertEquals(SESSION_ENDED, changed.join().message());
+    }
+
+    @Test
+    void aLinkedListingStillWaitingWhenItsSessionEndsLetsTheNextSessionOpenOne() throws Exception {
+        PartyFinderManager partyFinder = sessionPartyFinder();
+        String route = "POST /party-finder/listings";
+        linkedCreateBackend(route);
+        GuildPresenceManager presence = presenceWithoutRoster();
+
+        presence.openPartyFinderListing(partyFinder, List.of("NOTG"), PartyRegion.NA, line -> {}, synced -> {});
+        runGameThreadUntil(() -> backend.saw(route));
+        sessions.end(EndReason.SIGN_OUT);
+        PartyFinderManager next = new PartyFinderManager(backend.client(sessions.current()), gameThread, playing);
+        presence.openPartyFinderListing(next, List.of("NOTG"), PartyRegion.NA, line -> {}, synced -> {});
+
+        runGameThreadUntil(() -> backend.requests.stream().filter(request -> request.route().equals(route)).count() == 2);
+    }
+
+    /** A backend with no listings and one raid, holding the create {@code route}'s reply until the test answers. */
+    private CompletableFuture<String> linkedCreateBackend(String route) {
+        backend.answer("GET /party-finder/listings", "[]");
+        backend.answer("GET /party-finder/activities", "[{\"id\":1,\"name\":\"NOTG\",\"maxPartySize\":4}]");
+        return backend.hold(route);
+    }
+
+    private GuildPresenceManager presenceWithoutRoster() {
+        return new GuildPresenceManager(prefix -> new CompletableFuture<>(), () -> true, answer -> {}, () -> clockMs,
+                gameThread);
+    }
+
+    /** Runs the game thread for {@code ms}, for what a reply the backend's client hands back may start. */
+    private void runGameThreadFor(long ms) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(ms);
+        while (System.nanoTime() < deadline) {
+            gameThread.runDue();
+            Thread.sleep(5);
+        }
+        gameThread.runDue();
     }
 
     /** Runs the game thread until {@code done}, for a reply the backend's client hands back from its own thread. */

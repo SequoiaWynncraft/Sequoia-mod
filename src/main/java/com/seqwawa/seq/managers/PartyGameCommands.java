@@ -144,7 +144,8 @@ public final class PartyGameCommands {
         }
 
         int skippedBeforeLookup = skipped;
-        return CompletableFuture.allOf(names.toArray(CompletableFuture[]::new)).thenCompose(ignored -> {
+        // The names come back on other threads; what was asked is checked, and the invites sent, on the game thread.
+        return CompletableFuture.allOf(names.toArray(CompletableFuture[]::new)).thenComposeAsync(ignored -> {
             Listing current = partyFinder.getCurrentListing();
             if (current == null || current.id() != listing.id()) {
                 return done(ticket, false, 0, skippedBeforeLookup, PARTY_CHANGED, notifyPlayer);
@@ -164,12 +165,8 @@ public final class PartyGameCommands {
             if (targets.isEmpty()) {
                 return done(ticket, true, 0, skippedByName, formatInviteAllMessage(0, skippedByName), notifyPlayer);
             }
-            CompletableFuture<InviteAllResult> dispatched = new CompletableFuture<>();
-            int skippedAtLookup = skippedByName;
-            partyFinder.gameThread.execute(() -> dispatch(ticket, listing.id(), targets, skippedAtLookup, notifyPlayer)
-                    .whenComplete((result, error) -> dispatched.complete(result)));
-            return dispatched;
-        });
+            return dispatch(ticket, listing.id(), targets, skippedByName, notifyPlayer);
+        }, partyFinder.gameThread);
     }
 
     /** On the game thread: the invites, one at a time, while the party and the player are the same. */

@@ -30,8 +30,9 @@ import java.util.stream.Collectors;
  * What the player asks of the party finder's backend, from {@code /seq p} or the screen: load,
  * create, join, leave, invite, kick and the rest. Each request goes out with its session's own
  * client, under the {@link Ticket} read where the action started, and its answer changes the
- * listings only while that session lasts. A command reports how it went; the screen shows a
- * failure on its banner.
+ * listings on the game thread, only while that session lasts; a name looked up on the way is
+ * handed to the game thread too. A command reports how it went; the screen shows a failure on
+ * its banner, to the session and server connection it was clicked on.
  */
 public final class PartyFinderActions {
 
@@ -56,9 +57,10 @@ public final class PartyFinderActions {
     /** Loads activities, then listings, showing a failure on the banner. Called when the screen opens. */
     public void refreshData() {
         Ticket ticket = partyFinder.ticket();
-        fetchActivities(ticket)
-                .exceptionally(error -> loadFailed(error, "Failed to load activities"))
-                .thenRun(() -> fetchListings(ticket).exceptionally(error -> loadFailed(error, "Failed to load listings")));
+        CompletableFuture<List<Activity>> activities = fetchActivities(ticket);
+        onScreen(ticket, activities, "Failed to load activities", "Failed to load activities");
+        activities.handle((loaded, error) -> null).thenRun(() ->
+                onScreen(ticket, fetchListings(ticket), "Failed to load listings", "Failed to load listings"));
     }
 
     /**
@@ -96,14 +98,17 @@ public final class PartyFinderActions {
     }
 
     private CompletableFuture<List<Activity>> fetchActivities(Ticket ticket) {
-        return partyFinder.send(ticket, ApiClient::getActivities).thenApply(activities -> {
-            partyFinder.replaceActivities(activities);
-            return activities;
-        });
+        return partyFinder.send(ticket, ApiClient::getActivities, applying(partyFinder::replaceActivities));
     }
 
     private CompletableFuture<List<Listing>> fetchListings(Ticket ticket) {
-        return partyFinder.send(ticket, api -> api.getListings(null, null)).thenApply(partyFinder::replaceListings);
+        return fetchListings(ticket, Function.identity());
+    }
+
+    /** Every listing there is, taken as the listings, then {@code then} with them, on the game thread. */
+    private <R> CompletableFuture<R> fetchListings(Ticket ticket, Function<List<Listing>, R> then) {
+        return partyFinder.send(ticket, api -> api.getListings(null, null),
+                fetched -> then.apply(partyFinder.replaceListings(fetched)));
     }
 
     private CompletableFuture<CommandResult<List<Activity>>> ensureActivitiesLoaded(Ticket ticket) {
@@ -123,19 +128,16 @@ public final class PartyFinderActions {
         if (current != null) {
             return CompletableFuture.completedFuture(CommandResult.success("Current listing ready.", current));
         }
-        return refreshListingsForCommand(ticket).thenApply(result -> {
-            if (!result.success()) {
-                return CommandResult.failure(result.message());
-            }
+        return fetchListings(ticket, listings -> {
             Listing led = partyFinder.adoptLedListing();
             if (led != null) {
                 return CommandResult.success("Resolved your led listing.", led);
             }
             Listing loaded = partyFinder.getCurrentListing();
             return loaded == null
-                    ? CommandResult.failure("You are not currently in a Sequoia party.")
+                    ? CommandResult.<Listing>failure("You are not currently in a Sequoia party.")
                     : CommandResult.success("Current listing loaded.", loaded);
-        });
+        }).exceptionally(error -> commandFailure(error, "Failed to load listings", "Failed to load listings"));
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -164,9 +166,8 @@ public final class PartyFinderActions {
         PartyRole createRole = Objects.requireNonNullElse(mapDisplayRole(role), PartyRole.DPS);
         PartyRegion listingRegion = region != null ? region : PartyRegion.NA;
         PartyJoinPolicy policy = joinPolicy != null ? joinPolicy : PartyJoinPolicy.DEFAULT_CREATE_POLICY;
-        onScreen(partyFinder.send(partyFinder.ticket(), api -> api.createListing(resolution.activityIds(), listingRegion,
-                        createRole, null, currentWorld(), policy, reservedSlots)).thenAccept(partyFinder::applyJoined),
-                "Unable to create party", "Failed to create party");
+        listingAction(api -> api.createListing(resolution.activityIds(), listingRegion, createRole, null, currentWorld(),
+                policy, reservedSlots), partyFinder::applyJoined, "Unable to create party", "Failed to create party");
     }
 
     /** Updates the player's listing from the modal, then sets its reserved slots. */
@@ -190,19 +191,19 @@ public final class PartyFinderActions {
         PartyRegion listingRegion = region != null ? region : (current.region() != null ? current.region() : PartyRegion.NA);
         PartyJoinPolicy policy = joinPolicy != null ? joinPolicy : current.resolvedJoinPolicy();
         Ticket ticket = partyFinder.ticket();
-        onScreen(partyFinder.send(ticket, api -> api.updateListing(current.id(), activityIds, listingRegion, current.note(),
-                        currentWorld(), policy)).thenAccept(listing -> {
+        onScreen(ticket, partyFinder.send(ticket, api -> api.updateListing(current.id(), activityIds, listingRegion,
+                        current.note(), currentWorld(), policy), applying(listing -> {
                     if (listing != null) {
                         partyFinder.applyUpdated(listing);
-                        onScreen(partyFinder.send(ticket, api -> api.reserveSlots(listing.id(), reservedSlots))
-                                        .thenAccept(updated -> {
+                        onScreen(ticket, partyFinder.send(ticket, api -> api.reserveSlots(listing.id(), reservedSlots),
+                                        applying(updated -> {
                                             if (updated != null) {
                                                 partyFinder.applyUpdated(updated);
                                             }
-                                        }),
+                                        })),
                                 "Unable to set reserved slots", "Failed to set reserved slots on update");
                     }
-                }),
+                })),
                 "Unable to update party", "Failed to update party");
     }
 
@@ -283,11 +284,11 @@ public final class PartyFinderActions {
             SeqClient.LOGGER.info("[PartyFinder] {} skipped: listing {} no longer has that member", name, listingId);
             return;
         }
-        onScreen(partyFinder.send(ticket, api -> call.apply(api, target)).thenAccept(listing -> {
+        onScreen(ticket, partyFinder.send(ticket, api -> call.apply(api, target), applying(listing -> {
             partyFinder.applyUpdated(listing);
             partyFinder.game().partyCommandFor(ticket, target, gameCommand);
             partyFinder.game().directMessage(ticket, target, message);
-        }), fallbackMessage, logMessage);
+        })), fallbackMessage, logMessage);
     }
 
     /** Creates a backend invite for {@code username} to the player's listing. */
@@ -323,33 +324,29 @@ public final class PartyFinderActions {
             return;
         }
 
-        player.uuidOf(normalizedUsername)
-                .thenCompose(resolvedUUID -> {
-                    String problem = inviteProblem(resolvedUUID, requested.id());
-                    if (problem != null) {
-                        partyFinder.pushUiError(problem);
-                        return CompletableFuture.completedFuture(false);
-                    }
-                    UUID targetUUID = parseUuid(resolvedUUID);
-                    SeqClient.LOGGER.info("[PartyFinderWS] createInvite calling API listingId={} targetUUID={}",
-                            requested.id(), targetUUID);
-                    return partyFinder.send(ticket, api -> api.createInvite(requested.id(), targetUUID))
-                            .thenApply(response -> {
-                                partyFinder.applyCreatedInvite(response, requested.id(), targetUUID, normalizedUsername);
-                                return true;
-                            });
-                })
-                .thenAccept(created -> {
-                    if (created) {
-                        partyFinder.forSamePlayer(ticket, () -> player.notify("Party Finder invite created."));
-                    } else {
-                        SeqClient.LOGGER.warn("[PartyFinderWS] createInvite did not complete successfully");
-                    }
-                })
-                .exceptionally(error -> {
-                    screenFailure(error, "Unable to create party invite", "Failed to create invite");
-                    return null;
-                });
+        // Null once the invite is created, else why it could not be.
+        CompletableFuture<String> invited = player.uuidOf(normalizedUsername).thenComposeAsync(resolvedUUID -> {
+            String problem = inviteProblem(resolvedUUID, requested.id());
+            if (problem != null) {
+                return CompletableFuture.completedFuture(problem);
+            }
+            UUID targetUUID = parseUuid(resolvedUUID);
+            SeqClient.LOGGER.info("[PartyFinderWS] createInvite calling API listingId={} targetUUID={}",
+                    requested.id(), targetUUID);
+            return partyFinder.send(ticket, api -> api.createInvite(requested.id(), targetUUID), response -> {
+                partyFinder.applyCreatedInvite(response, requested.id(), targetUUID, normalizedUsername);
+                return null;
+            });
+        }, partyFinder.gameThread);
+        partyFinder.reply(ticket, invited, (problem, error) -> {
+            if (error != null) {
+                screenFailure(error, "Unable to create party invite", "Failed to create invite");
+            } else if (problem != null) {
+                partyFinder.pushUiError(problem);
+            } else {
+                player.notify("Party Finder invite created.");
+            }
+        });
     }
 
     /** Why an invite to {@code resolvedUUID} cannot go out now, for the listing it was asked for; null when it can. */
@@ -377,13 +374,16 @@ public final class PartyFinderActions {
 
     private void listingAction(Function<ApiClient, CompletableFuture<Listing>> call, Consumer<Listing> apply,
             String fallbackMessage, String logMessage) {
-        onScreen(partyFinder.send(partyFinder.ticket(), call).thenAccept(apply), fallbackMessage, logMessage);
+        Ticket ticket = partyFinder.ticket();
+        onScreen(ticket, partyFinder.send(ticket, call, applying(apply)), fallbackMessage, logMessage);
     }
 
-    private void onScreen(CompletableFuture<Void> action, String fallbackMessage, String logMessage) {
-        action.exceptionally(error -> {
-            screenFailure(error, fallbackMessage, logMessage);
-            return null;
+    /** Shows {@code action}'s failure on the banner, to the session and server connection it was clicked on. */
+    private void onScreen(Ticket ticket, CompletableFuture<?> action, String fallbackMessage, String logMessage) {
+        partyFinder.reply(ticket, action, (ignored, error) -> {
+            if (error != null) {
+                screenFailure(error, fallbackMessage, logMessage);
+            }
         });
     }
 
@@ -393,15 +393,6 @@ public final class PartyFinderActions {
             SeqClient.LOGGER.warn("{}: {}", logMessage, message);
             partyFinder.pushUiError(message);
         }
-    }
-
-    private <T> T loadFailed(Throwable error, String what) {
-        String message = PartyFinderErrors.message(error, what);
-        if (message != null) {
-            SeqClient.LOGGER.error("{}: {}", what, message, error);
-            partyFinder.pushUiError(message);
-        }
-        return null;
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -425,8 +416,8 @@ public final class PartyFinderActions {
                 return fail("You are already in party #" + current.id() + ". Use /seq p update or leave/disband it first.");
             }
             return withActivities(ticket, activityInputs, resolution -> executeListingCommand(
-                    partyFinder.send(ticket, api -> api.createListing(resolution.activityIds(), listingRegion,
-                            PartyRole.DPS, null, currentWorld(), PartyJoinPolicy.DEFAULT_CREATE_POLICY, 0)),
+                    ticket, api -> api.createListing(resolution.activityIds(), listingRegion,
+                            PartyRole.DPS, null, currentWorld(), PartyJoinPolicy.DEFAULT_CREATE_POLICY, 0),
                     partyFinder::applyJoined,
                     "Unable to create party",
                     "Failed to create party",
@@ -439,9 +430,9 @@ public final class PartyFinderActions {
         Ticket ticket = partyFinder.ticket();
         return runLeaderListingCommand(ticket, "Only the party leader can update the Sequoia listing.",
                 listing -> withActivities(ticket, activityInputs, resolution -> executeListingCommand(
-                        partyFinder.send(ticket, api -> api.updateListing(listing.id(), resolution.activityIds(),
+                        ticket, api -> api.updateListing(listing.id(), resolution.activityIds(),
                                 listing.region() != null ? listing.region() : PartyRegion.NA, listing.note(),
-                                currentWorld(), listing.resolvedJoinPolicy())),
+                                currentWorld(), listing.resolvedJoinPolicy()),
                         partyFinder::applyUpdated,
                         "Unable to update party",
                         "Failed to update party",
@@ -468,7 +459,7 @@ public final class PartyFinderActions {
                 return fail("You are already in party #" + current.id() + ". Leave it before joining another listing.");
             }
             return executeListingCommand(
-                    partyFinder.send(ticket, api -> api.joinListing(listingId, resolvedRole, inviteToken)),
+                    ticket, api -> api.joinListing(listingId, resolvedRole, inviteToken),
                     partyFinder::applyJoined,
                     "Unable to join party",
                     "Failed to join party",
@@ -479,7 +470,7 @@ public final class PartyFinderActions {
     public CompletableFuture<CommandResult<Listing>> leavePartyFromCommand() {
         Ticket ticket = partyFinder.ticket();
         return withCurrentListing(ticket, listing -> executeListingCommand(
-                partyFinder.send(ticket, api -> api.leaveListing(listing.id())),
+                ticket, api -> api.leaveListing(listing.id()),
                 partyFinder::applyLeft,
                 "Unable to leave party",
                 "Failed to leave party",
@@ -500,7 +491,7 @@ public final class PartyFinderActions {
                 return fail(problem);
             }
             String normalizedUsername = username.trim();
-            return resolveUuidForCommand(normalizedUsername).thenCompose(uuidResult -> {
+            return resolveUuidForCommand(normalizedUsername).thenComposeAsync(uuidResult -> {
                 if (!uuidResult.success()) {
                     return fail(uuidResult.message());
                 }
@@ -508,14 +499,13 @@ public final class PartyFinderActions {
                 if (Listing.samePlayer(player.uuid(), targetUUID.toString())) {
                     return fail("You cannot invite yourself.");
                 }
-                return partyFinder.send(ticket, api -> api.createInvite(listing.id(), targetUUID))
-                        .thenApply(response -> {
+                return partyFinder.send(ticket, api -> api.createInvite(listing.id(), targetUUID), response -> {
                             partyFinder.applyCreatedInvite(response, listing.id(), targetUUID, normalizedUsername);
                             return CommandResult.<Void>success("Created Sequoia invite for " + normalizedUsername
                                     + " on party #" + listing.id() + ".", null);
                         })
                         .exceptionally(error -> commandFailure(error, "Unable to create party invite", "Failed to create invite"));
-            });
+            }, partyFinder.gameThread);
         });
     }
 
@@ -531,7 +521,7 @@ public final class PartyFinderActions {
                 return fail("No revocable invite for " + username.trim() + " was created during this session.");
             }
             return executeListingCommand(
-                    partyFinder.send(ticket, api -> api.revokeInvite(listing.id(), invite.inviteToken())),
+                    ticket, api -> api.revokeInvite(listing.id(), invite.inviteToken()),
                     updated -> {
                         partyFinder.forgetIssuedInvite(listing.id(), invite);
                         partyFinder.applyUpdated(updated);
@@ -549,7 +539,7 @@ public final class PartyFinderActions {
         Ticket ticket = partyFinder.ticket();
         String verb = requestedReservedSlots == 1 ? "slot" : "slots";
         return runLeaderListingCommand(ticket, "Only the party leader can reserve slots.", listing -> executeListingCommand(
-                partyFinder.send(ticket, api -> api.reserveSlots(listing.id(), requestedReservedSlots)),
+                ticket, api -> api.reserveSlots(listing.id(), requestedReservedSlots),
                 partyFinder::applyUpdated,
                 "Unable to set reserved slots",
                 "Failed to set reserved slots",
@@ -582,7 +572,7 @@ public final class PartyFinderActions {
                 return fail("That warning belongs to an older party listing.");
             }
             return executeListingCommand(
-                    partyFinder.send(ticket, api -> api.extendListing(listing.id())),
+                    ticket, api -> api.extendListing(listing.id()),
                     partyFinder::applyUpdated,
                     "Unable to extend party",
                     "Failed to extend party",
@@ -594,7 +584,7 @@ public final class PartyFinderActions {
         Ticket ticket = partyFinder.ticket();
         return runLeaderListingCommand(ticket, "Only the party leader can disband the Sequoia listing.",
                 listing -> executeListingCommand(
-                        partyFinder.send(ticket, api -> api.disbandListing(listing.id())),
+                        ticket, api -> api.disbandListing(listing.id()),
                         ignored -> partyFinder.applyDisbanded(listing.id()),
                         "Unable to disband party",
                         "Failed to disband party",
@@ -605,7 +595,7 @@ public final class PartyFinderActions {
         PartyRole resolvedRole = role != null ? role : PartyRole.DPS;
         Ticket ticket = partyFinder.ticket();
         return withCurrentListing(ticket, listing -> executeListingCommand(
-                partyFinder.send(ticket, api -> api.changeMyRole(resolvedRole)),
+                ticket, api -> api.changeMyRole(resolvedRole),
                 partyFinder::applyUpdated,
                 "Unable to change role",
                 "Failed to change role",
@@ -619,7 +609,7 @@ public final class PartyFinderActions {
                 return fail("You cannot kick the party leader.");
             }
             return executeListingCommand(
-                    partyFinder.send(ticket, api -> api.kickMember(target.listing().id(), target.uuid())),
+                    ticket, api -> api.kickMember(target.listing().id(), target.uuid()),
                     partyFinder::applyUpdated,
                     "Unable to kick member",
                     "Failed to kick member",
@@ -634,12 +624,11 @@ public final class PartyFinderActions {
                 return fail(target.username() + " is already the party leader.");
             }
             return executeListingCommand(
-                    partyFinder.send(ticket, api -> api.transferLeadership(target.listing().id(), target.uuid()))
-                            .thenApply(listing -> {
-                                partyFinder.game().partyCommandFor(ticket, target.uuid(), PartyGameCommands.PROMOTE);
-                                return listing;
-                            }),
-                    partyFinder::applyUpdated,
+                    ticket, api -> api.transferLeadership(target.listing().id(), target.uuid()),
+                    listing -> {
+                        partyFinder.applyUpdated(listing);
+                        partyFinder.game().partyCommandFor(ticket, target.uuid(), PartyGameCommands.PROMOTE);
+                    },
                     "Unable to promote member",
                     "Failed to transfer leadership",
                     updated -> "Transferred party #" + updated.id() + " leadership to " + target.username() + ".");
@@ -667,7 +656,7 @@ public final class PartyFinderActions {
             String fallbackMessage, String logMessage, Function<Listing, String> successMessage) {
         Ticket ticket = partyFinder.ticket();
         return runLeaderListingCommand(ticket, notLeaderMessage, listing -> executeListingCommand(
-                partyFinder.send(ticket, api -> call.apply(api, listing.id())),
+                ticket, api -> call.apply(api, listing.id()),
                 partyFinder::applyUpdated, fallbackMessage, logMessage, successMessage));
     }
 
@@ -701,7 +690,7 @@ public final class PartyFinderActions {
         }
         String normalizedUsername = username.trim();
         return runLeaderListingCommand(ticket, "Only the party leader can manage party members.", listing ->
-                resolveUuidForCommand(normalizedUsername).thenCompose(uuidResult -> {
+                resolveUuidForCommand(normalizedUsername).thenComposeAsync(uuidResult -> {
                     if (!uuidResult.success()) {
                         return fail(uuidResult.message());
                     }
@@ -709,7 +698,7 @@ public final class PartyFinderActions {
                         return fail(normalizedUsername + " is not in your Sequoia party.");
                     }
                     return action.apply(new MemberTarget(listing, uuidResult.data(), normalizedUsername));
-                }));
+                }, partyFinder.gameThread));
     }
 
     private CompletableFuture<CommandResult<UUID>> resolveUuidForCommand(String username) {
@@ -724,18 +713,27 @@ public final class PartyFinderActions {
         });
     }
 
+    /** {@code call}, its reply applied as the session's, and how it went. */
     private CompletableFuture<CommandResult<Listing>> executeListingCommand(
-            CompletableFuture<Listing> request,
+            Ticket ticket,
+            Function<ApiClient, CompletableFuture<Listing>> call,
             Consumer<Listing> apply,
             String fallbackMessage,
             String logMessage,
             Function<Listing, String> successMessage) {
-        return request
-                .thenApply(listing -> {
+        return partyFinder.send(ticket, call, listing -> {
                     apply.accept(listing);
                     return CommandResult.success(successMessage.apply(listing), listing);
                 })
                 .exceptionally(error -> commandFailure(error, fallbackMessage, logMessage));
+    }
+
+    /** {@code apply}, as a step that hands on the reply it applied. */
+    private static <T> Function<T, T> applying(Consumer<? super T> apply) {
+        return value -> {
+            apply.accept(value);
+            return value;
+        };
     }
 
     private static <T> CommandResult<T> commandFailure(Throwable error, String fallbackMessage, String logMessage) {

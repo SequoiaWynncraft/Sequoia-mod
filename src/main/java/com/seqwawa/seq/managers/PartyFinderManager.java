@@ -24,7 +24,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BiConsumer;
@@ -39,8 +38,9 @@ import lombok.Getter;
  * it shows in chat. Each is made by this one and ends with it.
  *
  * <p>Every action reads a {@link Ticket} where it starts, before it waits on anything, and checks
- * it again before it changes anything: a request never goes out with the next account's token, and
- * a command never reaches the account, or the server connection, after the one it was for.
+ * it again, on the game thread, in the same task that changes anything: a request never goes out
+ * with the next account's token, and a command never reaches the account, or the server
+ * connection, after the one it was for.
  */
 public class PartyFinderManager {
 
@@ -71,6 +71,8 @@ public class PartyFinderManager {
     private volatile int listingsVersion;
     /** Moves on at each {@link #reset()}: the session's end. A {@link Ticket} remembers it. */
     private volatile long resetGeneration;
+    /** Requests still waiting for their reply, which the session's end settles. */
+    private final Set<CompletableFuture<?>> inFlight = ConcurrentHashMap.newKeySet();
     private volatile String latestPartyError;
 
     /** Where what the player sees or sends is handed to the game thread; a test passes its own queue. */
@@ -126,13 +128,15 @@ public class PartyFinderManager {
     /** Hands the backend's party finder messages to the current session's party finder, from now on. */
     public static void listen() {
         ConnectionManager.listen(ConnectionManager.Inbound.PARTY_FINDER_UPDATE, update -> SeqClient.getPartyFinderManager()
-                .handlePartyFinderUpdate(update.action(), GSON.fromJson(update.listingJson(), Listing.class)));
+                .handlePartyFinderUpdate(update.action(), GSON.fromJson(update.listingJson(), Listing.class),
+                        update.serverConnection()));
         ConnectionManager.listen(ConnectionManager.Inbound.PARTY_FINDER_INVITE, invite -> SeqClient.getPartyFinderManager()
                 .handlePartyFinderInvite(invite.listingId(), invite.inviterUUID(), invite.inviteToken(),
-                        invite.listingJson() == null ? null : GSON.fromJson(invite.listingJson(), Listing.class)));
+                        invite.listingJson() == null ? null : GSON.fromJson(invite.listingJson(), Listing.class),
+                        invite.serverConnection()));
         ConnectionManager.listen(ConnectionManager.Inbound.PARTY_FINDER_STALE_WARNING, warning -> SeqClient
-                .getPartyFinderManager().notices.staleWarning(
-                        warning.reason(), warning.listingId(), warning.disbandAt(), warning.minutesRemaining()));
+                .getPartyFinderManager().handlePartyFinderStaleWarning(warning.reason(), warning.listingId(),
+                        warning.disbandAt(), warning.minutesRemaining(), warning.serverConnection()));
     }
 
     public void tickOpenPartyAnnouncements() {
@@ -171,29 +175,47 @@ public class PartyFinderManager {
      * past a reconnect or a sign-out, tells nobody.
      */
     public <T> void reply(CompletableFuture<T> result, BiConsumer<? super T, ? super Throwable> reply) {
-        Ticket ticket = ticket();
+        reply(ticket(), result, reply);
+    }
+
+    /** As {@link #reply(CompletableFuture, BiConsumer)}, for an action that read {@code ticket} where it started. */
+    <T> void reply(Ticket ticket, CompletableFuture<T> result, BiConsumer<? super T, ? super Throwable> reply) {
         result.whenComplete((value, error) -> forSamePlayer(ticket, () -> reply.accept(value, error)));
     }
 
     /**
-     * {@code call}, sent with this session's backend client, unless the session ended since
-     * {@code ticket} was read. Its reply is handed to the game thread, and what is chained on it
-     * runs there; a reply that arrives after the session ends fails with {@link SupersededByReset}
-     * instead. A reply for the previous account must not restore its party, listings or invites.
+     * {@code call}, sent with this session's backend client unless the session ended since
+     * {@code ticket} was read, and its reply handed to {@code apply} on the game thread, in the
+     * task that checks the session still lasts: what a reply changes, it changes there, never in a
+     * step chained on later. A reply that arrives after the session ends, and a request still
+     * waiting when it ends, fail with {@link SupersededByReset} instead: a reply for the previous
+     * account must not restore its party, listings or invites, and nothing waits on one for good.
      */
-    <T> CompletableFuture<T> send(Ticket ticket, Function<ApiClient, CompletableFuture<T>> call) {
+    <T, R> CompletableFuture<R> send(
+            Ticket ticket, Function<ApiClient, CompletableFuture<T>> call, Function<? super T, ? extends R> apply) {
+        CompletableFuture<R> applied = new CompletableFuture<>();
+        inFlight.add(applied);
+        // Checked once it is in flight: a reset from here on settles it.
         if (!holds(ticket)) {
-            return CompletableFuture.failedFuture(new SupersededByReset());
+            inFlight.remove(applied);
+            applied.completeExceptionally(new SupersededByReset());
+            return applied;
         }
-        return call.apply(api).handleAsync((result, error) -> {
+        call.apply(api).whenCompleteAsync((result, error) -> {
+            inFlight.remove(applied);
             if (!holds(ticket)) {
-                throw new SupersededByReset();
+                applied.completeExceptionally(new SupersededByReset());
+            } else if (error != null) {
+                applied.completeExceptionally(error);
+            } else {
+                try {
+                    applied.complete(apply.apply(result));
+                } catch (RuntimeException failure) {
+                    applied.completeExceptionally(failure);
+                }
             }
-            if (error != null) {
-                throw error instanceof CompletionException wrapped ? wrapped : new CompletionException(error);
-            }
-            return result;
         }, gameThread);
+        return applied;
     }
 
     /** A request whose session ended before it went out, or before its reply came; it is dropped without a word. */
@@ -218,7 +240,8 @@ public class PartyFinderManager {
     /**
      * Forgets what described this session: its party, the invites it issued and the cards, so
      * nothing (such as the class updates the client tick sends while in a party) acts on them for
-     * whoever signs in next, and what it started but has not finished does nothing.
+     * whoever signs in next, and what it started but has not finished does nothing: a request
+     * still waiting for its reply fails now.
      */
     public void reset() {
         resetGeneration++;
@@ -233,6 +256,9 @@ public class PartyFinderManager {
         listingsVersion++;
         latestPartyError = null;
         notices.reset();
+        List<CompletableFuture<?>> waiting = List.copyOf(inFlight);
+        inFlight.removeAll(waiting);
+        waiting.forEach(request -> request.completeExceptionally(new SupersededByReset()));
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -299,7 +325,16 @@ public class PartyFinderManager {
     // The backend's socket
     // ══════════════════════════════════════════════════════════════
 
+    /** An update as if the socket had just received it, on the player's server connection now. */
     public void handlePartyFinderUpdate(String action, Listing listing) {
+        handlePartyFinderUpdate(action, listing, player.connection());
+    }
+
+    /**
+     * What the socket said of {@code listing}, while the player was on the server connection
+     * {@code heardOn}: the listings take it, and the player hears of it only on that connection.
+     */
+    public void handlePartyFinderUpdate(String action, Listing listing, Object heardOn) {
         if (listing == null) {
             SeqClient.LOGGER.warn("[PartyFinderWS] Ignoring party update action={} because listing is null", action);
             return;
@@ -330,10 +365,13 @@ public class PartyFinderManager {
             default -> {}
         }
         refreshCurrentListing();
-        notices.partyUpdated(action, previousListing, listing, myUUID);
+        if (stillOn(heardOn)) {
+            notices.partyUpdated(action, previousListing, listing, myUUID);
+        }
     }
 
-    public void handlePartyFinderInvite(long listingId, String inviterUUID, String inviteToken, Listing listing) {
+    public void handlePartyFinderInvite(
+            long listingId, String inviterUUID, String inviteToken, Listing listing, Object heardOn) {
         SeqClient.LOGGER.info(
                 "[PartyFinderWS] handlePartyFinderInvite listingId={} inviterUUID={} tokenPresent={} hasListing={}",
                 listingId,
@@ -345,7 +383,21 @@ public class PartyFinderManager {
             listingsVersion++;
             refreshCurrentListing();
         }
-        notices.invited(listingId, inviterUUID, inviteToken);
+        if (stillOn(heardOn)) {
+            notices.invited(listingId, inviterUUID, inviteToken);
+        }
+    }
+
+    void handlePartyFinderStaleWarning(
+            String reason, long listingId, Instant disbandAt, long minutesRemaining, Object heardOn) {
+        if (stillOn(heardOn)) {
+            notices.staleWarning(reason, listingId, disbandAt, minutesRemaining);
+        }
+    }
+
+    /** Whether the player is still on {@code heardOn}, the connection a frame arrived on: its chat lines are for that one. */
+    private boolean stillOn(Object heardOn) {
+        return heardOn == player.connection();
     }
 
     // ══════════════════════════════════════════════════════════════
