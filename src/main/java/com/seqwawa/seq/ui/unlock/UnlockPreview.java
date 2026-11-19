@@ -449,7 +449,7 @@ public final class UnlockPreview {
                                 new LeafQuests.Goal("wars", null, "Take part in 6 wars", 2, 6))),
                 List.of());
         Instant at = Instant.now();
-        List<LeafEvents.Event> recent = List.of(
+        LeafEvents recent = LeafEvents.of(List.of(
                 event(6, "leaf_earned", at.minus(Duration.ofMinutes(12)),
                         "{\"source\":\"raid\",\"leaf\":330,\"xp\":330,\"detail\":\"The Nameless Anomaly\"}"),
                 event(5, "leaf_earned", at.minus(Duration.ofMinutes(41)),
@@ -460,7 +460,7 @@ public final class UnlockPreview {
                                 + "\"label\":\"Gold\",\"leaf\":1000,\"xp\":1000}"),
                 event(2, "level_up", at.minus(Duration.ofHours(3)), "{\"level\":7,\"leaf\":225}"),
                 event(1, "leaf_earned", at.minus(Duration.ofHours(5)),
-                        "{\"source\":\"war\",\"leaf\":26,\"xp\":26,\"detail\":\"Ragni\",\"in_claim\":false}"));
+                        "{\"source\":\"war\",\"leaf\":26,\"xp\":26,\"detail\":\"Ragni\",\"in_claim\":false}")));
         return new LeafQuestService.Snapshot(new LeafAccount(12_480, 13_120, new LeafAccount.Level(7, 640, 2_500)), quests,
                 recent);
     }

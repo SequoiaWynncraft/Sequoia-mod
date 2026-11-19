@@ -127,7 +127,7 @@ public final class QuestBoardScreen extends SequoiaPanelScreen {
         LeafHeader.render(canvas, shown.account(), stale, panel.x(), top, contentWidth);
         for (Spot spot : spots) {
             Quest quest = spot.card().quest();
-            QuestCard.RerollLook look = rerolls.look(quest, rerollHit(panel, spot, pointer), clock);
+            QuestCard.RerollLook look = rerolls.look(quest, rerollHit(panel, spot, pointer), service().rerolling(), clock);
             QuestCard.render(canvas, spot.card(), spot.x(), spot.y(), spot.width(), look,
                     rerolls.notice(spot.card().slot(), clock));
         }
@@ -175,6 +175,8 @@ public final class QuestBoardScreen extends SequoiaPanelScreen {
 
     /** "950", "1.2k", "12.5k", "250k", "1.5M": short enough for a narrow card. */
     static String shortCount(long count) {
+        // A correction can leave a member in debt; their balance shortens like any other.
+        if (count < 0) return "-" + shortCount(count == Long.MIN_VALUE ? Long.MAX_VALUE : -count);
         if (count < 1_000) return Long.toString(count);
         if (count < 1_000_000) return trimmed(count / 1_000.0) + "k";
         return trimmed(count / 1_000_000.0) + "M";
@@ -395,8 +397,8 @@ public final class QuestBoardScreen extends SequoiaPanelScreen {
         for (Spot spot : spots(panel, Instant.now())) {
             Quest quest = spot.card().quest();
             if (quest == null || !quest.rerollable() || !rerollHit(panel, spot, at)) continue;
-            if (rerolls.press(quest, Clocks.monotonicMillis())) {
-                service().reroll(quest.id()).thenAccept(outcome -> {
+            if (rerolls.press(quest, service().rerolling(), Clocks.monotonicMillis())) {
+                service().reroll(quest).thenAccept(outcome -> {
                     rerolls.finished(quest, outcome, Clocks.monotonicMillis());
                     triggerImmediateNarration(true);
                 });
@@ -431,8 +433,11 @@ public final class QuestBoardScreen extends SequoiaPanelScreen {
         narration.append(formatCount(shown.account().leaf())).append(" Leaf, ")
                 .append(levelLine(shown.account().levelOrFirst())).append(". ");
         if (stale) narration.append(STALE_LINE).append(". ");
+        long clock = Clocks.monotonicMillis();
         for (Card card : cards(shown.quests(), Instant.now())) {
             narration.append(card.heading()).append(", ").append(card.timer()).append(": ");
+            String notice = rerolls.notice(card.slot(), clock);
+            if (notice != null) narration.append(notice).append(". ");
             if (card.quest() == null) {
                 narration.append(card.emptyLine()).append(". ");
                 continue;

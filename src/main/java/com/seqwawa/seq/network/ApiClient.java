@@ -448,23 +448,41 @@ public class ApiClient {
                 token -> sendAsync(newRequestWithToken(leafBaseUrl, path, token).GET().build(), LeafQuests.class));
     }
 
-    /** The member's latest Leaf events, newest first: what paid Leaf, finished a quest or reached a level. */
+    /** The member's latest Leaf events: what paid Leaf, finished a quest or reached a level. */
     public CompletableFuture<LeafEvents> getLeafEvents(Function<Boolean, CompletableFuture<String>> tokenFor) {
         return callWithTokenRetry(tokenFor,
                 token -> sendAsync(newRequestWithToken(leafBaseUrl, "/v1/me/events", token).GET().build(), LeafEvents.class));
     }
 
     /**
-     * Swaps the quest {@code questId}, such as {@code daily:4}, for another, paying what
-     * Leaf asks. Leaf refuses with 409 and a code when the quest changed since it was
-     * read or the balance is short; see {@link #leafErrorCode}.
+     * Swaps {@code quest} for another, paying the {@code reroll_leaf} it was shown with
+     * and nothing else: Leaf refuses with 409 {@code cost_changed} when rerolling it costs
+     * something else now, and with other codes when the quest changed since it was read
+     * or the balance is short; see {@link #leafErrorCode}.
      */
-    public CompletableFuture<LeafQuests.Rerolled> rerollLeafQuest(String questId,
+    public CompletableFuture<LeafQuests.Rerolled> rerollLeafQuest(LeafQuests.Quest quest,
             Function<Boolean, CompletableFuture<String>> tokenFor) {
-        String path = "/v1/me/quests/" + URLEncoder.encode(questId, StandardCharsets.UTF_8) + "/reroll";
+        if (!quest.rerollable()) {
+            return CompletableFuture.failedFuture(new IllegalArgumentException("Leaf offers no reroll of " + quest.id()));
+        }
         return callWithTokenRetry(tokenFor, token -> sendAsync(
-                newRequestWithToken(leafBaseUrl, path, token).POST(HttpRequest.BodyPublishers.noBody()).build(),
+                newRequestWithToken(leafBaseUrl, rerollPath(quest), token)
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(rerollBody(quest).toString()))
+                        .build(),
                 LeafQuests.Rerolled.class));
+    }
+
+    /** Where a reroll of {@code quest} goes, its id escaped as a path segment. */
+    static String rerollPath(LeafQuests.Quest quest) {
+        return "/v1/me/quests/" + URLEncoder.encode(quest.id(), StandardCharsets.UTF_8) + "/reroll";
+    }
+
+    /** What a reroll of {@code quest} sends: the cost it was shown with, which Leaf charges or refuses. */
+    static JsonObject rerollBody(LeafQuests.Quest quest) {
+        JsonObject agreed = new JsonObject();
+        agreed.addProperty("leaf", quest.rerollLeaf());
+        return agreed;
     }
 
     /** The {@code code} of a Leaf error answer, such as {@code insufficient_leaf}, or null for any other failure. */

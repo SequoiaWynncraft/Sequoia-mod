@@ -42,21 +42,23 @@ public final class LeafQuestService {
 
     /**
      * What the board and the sidebar show, all from the same read: the balance and
-     * level, the quests, and the latest events, newest first.
+     * level, the quests, and the latest events.
+     *
+     * @param recentFailed whether the latest events could not be read, so {@code recent} is empty for that reason
      */
-    public record Snapshot(LeafAccount account, LeafQuests quests, List<LeafEvents.Event> recent, boolean recentFailed) {
+    public record Snapshot(LeafAccount account, LeafQuests quests, LeafEvents recent, boolean recentFailed) {
         public static final Snapshot EMPTY = new Snapshot(LeafAccount.EMPTY, LeafQuests.EMPTY);
 
         public Snapshot(LeafAccount account, LeafQuests quests) {
-            this(account, quests, List.of(), false);
+            this(account, quests, LeafEvents.EMPTY, false);
         }
 
-        public Snapshot(LeafAccount account, LeafQuests quests, List<LeafEvents.Event> recent) {
+        public Snapshot(LeafAccount account, LeafQuests quests, LeafEvents recent) {
             this(account, quests, recent, false);
         }
 
         public Snapshot {
-            recent = recent == null ? List.of() : recent.stream().filter(Objects::nonNull).toList();
+            recent = recent == null ? LeafEvents.EMPTY : recent;
         }
 
         /** This snapshot after a reroll Leaf made: the new quest in its slot, and the balance after paying. */
@@ -89,12 +91,16 @@ public final class LeafQuestService {
         NOT_ENOUGH_LEAF,
         /** The quest was finished or swapped since the board read it; the board reads again. */
         CHANGED,
+        /** Rerolling it costs something other than the board showed now; the board reads again. */
+        COST_CHANGED,
+        /** Another reroll was still waiting on Leaf, so this one wasn't sent. */
+        BUSY,
         FAILED
     }
 
     private final Executor gameThread;
-    /** Asks Leaf to swap one quest, by its id, for another. */
-    private final Function<String, CompletableFuture<LeafQuests.Rerolled>> rerolls;
+    /** Asks Leaf to swap one quest for another, paying the cost it was shown with. */
+    private final Function<LeafQuests.Quest, CompletableFuture<LeafQuests.Rerolled>> rerolls;
     /**
      * Keeps what the board shows when a refresh fails, and forgets it when there is no
      * session to read with or the player is not a member. A read that takes longer
@@ -104,15 +110,20 @@ public final class LeafQuestService {
     private final Refreshable<Snapshot> reads;
     /** Fixed sample data the development preview shows instead of reading Leaf, or null. */
     private Snapshot preview;
+    /** The quest a reroll is waiting on Leaf for, or null. Kept here, not on a board, so reopening one can't start a second. */
+    private String rerolling;
+    /** Counts {@link #reset()}s, so a reroll's answer that arrives after one changes nothing. */
+    private int generation;
 
     LeafQuestService(Function<Read, CompletableFuture<Snapshot>> fetcher, LongSupplier clock, Duration readDeadline,
             TickQueue gameThread) {
-        this(fetcher, questId -> CompletableFuture.failedFuture(new UnsupportedOperationException("No rerolls here")),
+        this(fetcher, quest -> CompletableFuture.failedFuture(new UnsupportedOperationException("No rerolls here")),
                 clock, readDeadline, gameThread);
     }
 
     LeafQuestService(Function<Read, CompletableFuture<Snapshot>> fetcher,
-            Function<String, CompletableFuture<LeafQuests.Rerolled>> rerolls, LongSupplier clock, Duration readDeadline,
+            Function<LeafQuests.Quest, CompletableFuture<LeafQuests.Rerolled>> rerolls, LongSupplier clock,
+            Duration readDeadline,
             TickQueue gameThread) {
         this.gameThread = gameThread;
         this.rerolls = rerolls;
@@ -141,7 +152,7 @@ public final class LeafQuestService {
     public static LeafQuestService forSession(Function<Boolean, CompletableFuture<String>> tokens) {
         // The session's tokens refuse once it has ended, so a reroll never goes out for the next account.
         return new LeafQuestService(read -> fetch(read, tokens),
-                questId -> ApiClient.getInstance().rerollLeafQuest(questId, tokens), Clocks::monotonicMillis,
+                quest -> ApiClient.getInstance().rerollLeafQuest(quest, tokens), Clocks::monotonicMillis,
                 READ_DEADLINE, ClientThread.queue());
     }
 
@@ -157,8 +168,8 @@ public final class LeafQuestService {
                     .thenApply(recent -> recent == null ? LeafEvents.EMPTY : recent)
                     .exceptionally(failure -> null);
             return api.getLeafAccount(tokenFor).thenCombine(events, (account, recent) -> recent == null
-                    ? new Snapshot(account, quests, List.of(), true)
-                    : new Snapshot(account, quests, recent.eventsOrEmpty(), false));
+                    ? new Snapshot(account, quests, LeafEvents.EMPTY, true)
+                    : new Snapshot(account, quests, recent, false));
         });
     }
 
@@ -209,6 +220,8 @@ public final class LeafQuestService {
     /** Forgets everything and drops the read running, for a session that ended. Game thread only. */
     public void reset() {
         preview = null;
+        rerolling = null;
+        generation++;
         reads.reset();
     }
 
@@ -227,14 +240,24 @@ public final class LeafQuestService {
     }
 
     /**
-     * Asks Leaf to swap the quest {@code questId} for another, paying what it costs. Once
-     * Leaf has, the snapshot shows the new quest and balance at once, and the next refresh
-     * reads the rest. Completes on the game thread. Game thread only.
+     * Asks Leaf to swap {@code quest} for another, paying the cost the board showed with
+     * it, {@link LeafQuests.Quest#rerollLeaf()}, and nothing else. Once Leaf has, the
+     * snapshot shows the new quest and balance at once, and the next refresh reads the
+     * rest. Completes on the game thread. Game thread only.
      */
-    public CompletableFuture<Reroll> reroll(String questId) {
-        if (preview != null) return CompletableFuture.completedFuture(Reroll.FAILED);
+    public CompletableFuture<Reroll> reroll(LeafQuests.Quest quest) {
+        if (preview != null || quest == null || !quest.rerollable()) return CompletableFuture.completedFuture(Reroll.FAILED);
+        if (rerolling != null) return CompletableFuture.completedFuture(Reroll.BUSY);
+        String questId = quest.id();
+        rerolling = questId;
+        int started = generation;
         CompletableFuture<Reroll> outcome = new CompletableFuture<>();
-        rerolls.apply(questId).whenComplete((rerolled, failure) -> gameThread.execute(() -> {
+        rerolls.apply(quest).whenComplete((rerolled, failure) -> gameThread.execute(() -> {
+            if (started != generation) {
+                outcome.complete(Reroll.FAILED);
+                return;
+            }
+            rerolling = null;
             if (failure == null && rerolled != null && rerolled.quest() != null && rerolled.quest().slot() != null) {
                 reads.mutate(shown -> shown.withRerolled(rerolled));
                 reads.markStale();
@@ -247,6 +270,10 @@ public final class LeafQuestService {
                 return;
             }
             reads.markStale();
+            if ("cost_changed".equals(code)) {
+                outcome.complete(Reroll.COST_CHANGED);
+                return;
+            }
             if ("not_current".equals(code) || "not_rerollable".equals(code)) {
                 outcome.complete(Reroll.CHANGED);
                 return;
@@ -255,6 +282,11 @@ public final class LeafQuestService {
             outcome.complete(Reroll.FAILED);
         }));
         return outcome;
+    }
+
+    /** The id of the quest a reroll is waiting on Leaf for, or null when none is. */
+    public String rerolling() {
+        return rerolling;
     }
 
     /**

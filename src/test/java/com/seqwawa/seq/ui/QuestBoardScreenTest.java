@@ -212,4 +212,11 @@ class QuestBoardScreenTest {
         assertFalse(QuestBoardScreen.rerollHit(panel, scrolledAway, new UiPointer(hidden.centerX(), hidden.centerY())),
                 "scrolled above the board, under the header");
     }
+
+    @Test
+    void aBalanceInDebtShortensLikeAnyOther() {
+        assertEquals("-12.5k", QuestBoardScreen.shortCount(-12_480));
+        assertEquals("-950", QuestBoardScreen.shortCount(-950));
+        assertEquals("12.5k", QuestBoardScreen.shortCount(12_480));
+    }
 }

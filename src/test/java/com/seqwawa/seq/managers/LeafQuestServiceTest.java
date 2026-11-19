@@ -36,14 +36,15 @@ class LeafQuestServiceTest {
 
     /** What Leaf answers the next reroll with, and the quest ids rerolls asked for. */
     private final AtomicReference<CompletableFuture<LeafQuests.Rerolled>> rerollAnswer = new AtomicReference<>();
+    /** Each quest a reroll was sent for, with the cost it agreed to: "daily:4 for 100". */
     private final List<String> rerolled = new java.util.ArrayList<>();
 
     private LeafQuestService rerollingService() {
         return new LeafQuestService(read -> {
             calls.incrementAndGet();
             return answer.get();
-        }, questId -> {
-            rerolled.add(questId);
+        }, quest -> {
+            rerolled.add(quest.id() + " for " + quest.rerollLeaf());
             return rerollAnswer.get();
         }, now::get, LeafQuestService.READ_DEADLINE, ticks);
     }
@@ -81,12 +82,12 @@ class LeafQuestServiceTest {
     void aRerollShowsTheNewQuestAndBalanceAtOnceAndReadsTheRestAgain() {
         LeafQuestService service = readWithDaily();
 
-        CompletableFuture<LeafQuestService.Reroll> outcome = service.reroll("daily:4");
+        CompletableFuture<LeafQuestService.Reroll> outcome = service.reroll(daily("daily:4", 100L));
         assertFalse(outcome.isDone(), "the answer is handed back on the game thread");
         ticks.runDue();
 
-        assertEquals(LeafQuestService.Reroll.DONE, outcome.join());
-        assertEquals(List.of("daily:4"), rerolled);
+        assertEquals(LeafQuestService.Reroll.DONE, outcome.getNow(null));
+        assertEquals(List.of("daily:4 for 100"), rerolled);
         assertEquals("daily:5", service.snapshot().quests().quest(LeafQuests.DAILY).id());
         assertEquals(400, service.snapshot().account().leaf());
         assertEquals(900, service.snapshot().account().xp(), "spending leaves the XP");
@@ -99,10 +100,10 @@ class LeafQuestServiceTest {
         rerollAnswer.set(CompletableFuture.failedFuture(new ApiClient.ApiException(409,
                 "{\"code\":\"insufficient_leaf\",\"message\":\"You don't have enough Leaf to reroll it\"}")));
 
-        CompletableFuture<LeafQuestService.Reroll> outcome = service.reroll("daily:4");
+        CompletableFuture<LeafQuestService.Reroll> outcome = service.reroll(daily("daily:4", 100L));
         ticks.runDue();
 
-        assertEquals(LeafQuestService.Reroll.NOT_ENOUGH_LEAF, outcome.join());
+        assertEquals(LeafQuestService.Reroll.NOT_ENOUGH_LEAF, outcome.getNow(null));
         assertEquals("daily:4", service.snapshot().quests().quest(LeafQuests.DAILY).id());
         assertEquals(500, service.snapshot().account().leaf());
     }
@@ -112,11 +113,32 @@ class LeafQuestServiceTest {
         LeafQuestService service = readWithDaily();
         rerollAnswer.set(CompletableFuture.failedFuture(new ApiClient.ApiException(409, "{\"code\":\"not_current\"}")));
 
-        CompletableFuture<LeafQuestService.Reroll> outcome = service.reroll("daily:4");
+        CompletableFuture<LeafQuestService.Reroll> outcome = service.reroll(daily("daily:4", 100L));
         ticks.runDue();
 
-        assertEquals(LeafQuestService.Reroll.CHANGED, outcome.join());
+        assertEquals(LeafQuestService.Reroll.CHANGED, outcome.getNow(null));
         assertTrue(service.requestRefresh());
+    }
+
+    @Test
+    void aRerollLeafWouldChargeSomethingElseForReadsTheQuestsAgain() {
+        LeafQuestService service = readWithDaily();
+        rerollAnswer.set(CompletableFuture.failedFuture(new ApiClient.ApiException(409, "{\"code\":\"cost_changed\"}")));
+
+        CompletableFuture<LeafQuestService.Reroll> outcome = service.reroll(daily("daily:4", 0L));
+        ticks.runDue();
+
+        assertEquals(LeafQuestService.Reroll.COST_CHANGED, outcome.getNow(null));
+        assertEquals(500, service.snapshot().account().leaf());
+        assertTrue(service.requestRefresh());
+    }
+
+    @Test
+    void sendsNoRerollForAQuestLeafOffersNone() {
+        LeafQuestService service = readWithDaily();
+
+        assertEquals(LeafQuestService.Reroll.FAILED, service.reroll(daily("daily:4", null)).getNow(null));
+        assertTrue(rerolled.isEmpty());
     }
 
     @Test
@@ -124,11 +146,45 @@ class LeafQuestServiceTest {
         LeafQuestService service = readWithDaily();
         rerollAnswer.set(CompletableFuture.failedFuture(new ApiClient.ApiException(502, "Bad gateway")));
 
-        CompletableFuture<LeafQuestService.Reroll> outcome = service.reroll("daily:4");
+        CompletableFuture<LeafQuestService.Reroll> outcome = service.reroll(daily("daily:4", 100L));
         ticks.runDue();
 
-        assertEquals(LeafQuestService.Reroll.FAILED, outcome.join());
+        assertEquals(LeafQuestService.Reroll.FAILED, outcome.getNow(null));
         assertEquals("daily:4", service.snapshot().quests().quest(LeafQuests.DAILY).id());
+    }
+
+    @Test
+    void sendsNoSecondRerollWhileOneWaitsOnLeaf() {
+        LeafQuestService service = readWithDaily();
+        CompletableFuture<LeafQuests.Rerolled> slow = new CompletableFuture<>();
+        rerollAnswer.set(slow);
+
+        CompletableFuture<LeafQuestService.Reroll> first = service.reroll(daily("daily:4", 100L));
+        assertEquals("daily:4", service.rerolling());
+        // Not join(): without the guard this would wait on the first reroll's answer for good.
+        assertEquals(LeafQuestService.Reroll.BUSY, service.reroll(daily("weekly:2", 0L)).getNow(null));
+        assertEquals(List.of("daily:4 for 100"), rerolled);
+
+        slow.complete(new LeafQuests.Rerolled(400, 100, daily("daily:5", 100L)));
+        ticks.runDue();
+        assertEquals(LeafQuestService.Reroll.DONE, first.getNow(null));
+        assertEquals(null, service.rerolling());
+    }
+
+    @Test
+    void aRerollAnsweredAfterTheSessionEndedChangesNothing() {
+        LeafQuestService service = readWithDaily();
+        CompletableFuture<LeafQuests.Rerolled> slow = new CompletableFuture<>();
+        rerollAnswer.set(slow);
+        CompletableFuture<LeafQuestService.Reroll> outcome = service.reroll(daily("daily:4", 100L));
+
+        service.reset();
+        slow.complete(new LeafQuests.Rerolled(400, 100, daily("daily:5", 100L)));
+        ticks.runDue();
+
+        assertEquals(LeafQuestService.Reroll.FAILED, outcome.getNow(null));
+        assertEquals(Snapshot.EMPTY, service.snapshot());
+        assertEquals(null, service.rerolling());
     }
 
     @Test
@@ -136,7 +192,7 @@ class LeafQuestServiceTest {
         LeafQuestService service = rerollingService();
         service.showPreview(snapshot(100));
 
-        assertEquals(LeafQuestService.Reroll.FAILED, service.reroll("daily:1").join());
+        assertEquals(LeafQuestService.Reroll.FAILED, service.reroll(daily("daily:1", 0L)).getNow(null));
         assertTrue(rerolled.isEmpty());
     }
 
@@ -280,9 +336,9 @@ class LeafQuestServiceTest {
         withGap.add(null);
         withGap.add(new com.seqwawa.seq.model.LeafEvents.Event(1, "level_up", null, new com.google.gson.JsonObject()));
 
-        Snapshot snapshot = new Snapshot(LeafAccount.EMPTY, LeafQuests.EMPTY, withGap);
+        Snapshot snapshot = new Snapshot(LeafAccount.EMPTY, LeafQuests.EMPTY, com.seqwawa.seq.model.LeafEvents.of(withGap));
 
-        assertEquals(1, snapshot.recent().size());
+        assertEquals(1, snapshot.recent().newestFirst().size());
         assertFalse(snapshot.recentFailed());
     }
 

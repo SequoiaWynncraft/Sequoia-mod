@@ -57,7 +57,7 @@ public record UnlockPopup(
                         objective == null ? RAID_ICON : objectiveIcon(text(objective, "type"), text(objective, "raid")));
             }
             case "achievement_paid" -> {
-                String tier = text(data, "tier") == null ? null : text(data, "tier").toLowerCase(Locale.ROOT);
+                String tier = milestoneTier(data);
                 String label = text(data, "label") != null ? text(data, "label") : capitalise(text(data, "milestone"));
                 long threshold = number(data, "threshold");
                 String ladder = ladderPhrase(text(data, "ladder"));
@@ -70,6 +70,16 @@ public record UnlockPopup(
                     "Leaf level up", number(data, "leaf"), 0, "level", null);
             default -> null;
         };
+    }
+
+    /**
+     * The tier an {@code achievement_paid} event is drawn in, lower case: its {@code tier},
+     * or its {@code milestone} when Sierra sent no tier. Leaf pays by the milestone, so a
+     * payout is never drawn smaller than what it paid for.
+     */
+    public static String milestoneTier(JsonObject data) {
+        String tier = text(data, "tier") != null ? text(data, "tier") : text(data, "milestone");
+        return tier == null ? null : tier.toLowerCase(Locale.ROOT);
     }
 
     public static final String WAR_ICON = "unlock_war";
