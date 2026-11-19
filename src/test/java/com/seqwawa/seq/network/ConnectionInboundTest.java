@@ -13,6 +13,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -252,6 +253,20 @@ class ConnectionInboundTest {
         socket.receive("{\"type\":\"guild_chat\",\"username\":\"Recruit\",\"message\":\"hi\",\"should_be_displayed\":true}");
         harness.game.account = new Object();
         harness.settle();
+
+        assertEquals(List.of(), received);
+    }
+
+    @Test
+    void guildChatThePreviousAccountsSocketReceivesAfterMinecraftSwitchedAccountIsDropped() {
+        List<ConnectionManager.GuildChatMessage> received = new ArrayList<>();
+        ConnectionManager.listen(ConnectionManager.Inbound.GUILD_CHAT, received::add);
+        connect();
+        // Minecraft switched account before the session noticed, so the socket still signs in for the previous one.
+        harness.game.account = new Object();
+        harness.game.profileId = UUID.fromString("f1000000-0000-0000-0000-000000000002");
+
+        harness.receive("{\"type\":\"guild_chat\",\"username\":\"Recruit\",\"message\":\"hi\",\"should_be_displayed\":true}");
 
         assertEquals(List.of(), received);
     }

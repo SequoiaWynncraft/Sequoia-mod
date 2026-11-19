@@ -2117,12 +2117,14 @@ public final class ConnectionManager {
                     env.game().applyGuildStorageSnapshot(emeraldCurrent, emeraldMax, aspectCurrent, aspectMax);
                 }
                 case "guild_chat" -> {
-                    // Checked against the server connection and account the message arrived in.
+                    // Checked against the server connection and account the message arrived in, and the account
+                    // its socket signed in for: Minecraft may switch account before the session ends.
                     ConnectionEnvironment.Game game = env.game();
                     guildChatDelivery(json,
                             () -> receiving.socket.isOpen() && receiving.signedIn()
                                     && receivedConnection != null && receivedConnection == game.serverConnection()
-                                    && receivedAccount != null && receivedAccount == game.account(),
+                                    && receivedAccount != null && receivedAccount == game.account()
+                                    && receiving.account != null && receiving.account.equals(game.profileId()),
                             game::inServerQueue)
                             .run();
                 }
