@@ -11,6 +11,15 @@ import com.seqwawa.seq.map.WorldEventService;
 import com.seqwawa.seq.model.LeafAccount;
 import com.seqwawa.seq.model.LeafEvents;
 import com.seqwawa.seq.model.LeafQuests;
+import com.seqwawa.seq.model.Activity;
+import com.seqwawa.seq.model.Listing;
+import com.seqwawa.seq.model.Member;
+import com.seqwawa.seq.model.PartyJoinPolicy;
+import com.seqwawa.seq.model.PartyRegion;
+import com.seqwawa.seq.model.PartyRole;
+import com.seqwawa.seq.model.PartyStatus;
+import com.seqwawa.seq.model.ReservedSlot;
+import com.seqwawa.seq.model.WynnClassType;
 import com.seqwawa.seq.ui.AchievementsScreen;
 import com.seqwawa.seq.ui.ConnectionScreen;
 import com.seqwawa.seq.ui.GuildMembersScreen;
@@ -25,6 +34,7 @@ import com.seqwawa.seq.ui.ThemeEditorScreen;
 import com.seqwawa.seq.ui.UpdatePromptScreen;
 import com.seqwawa.seq.ui.WarQueueHudEditorScreen;
 import com.seqwawa.seq.ui.WorldMapScreen;
+import com.seqwawa.seq.utils.PlayerNameCache;
 import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import java.time.Duration;
 import java.time.Instant;
@@ -32,6 +42,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.function.Function;
+import java.util.stream.Stream;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.loader.api.FabricLoader;
@@ -92,6 +103,32 @@ public final class UnlockPreview {
             new GalleryScreen("premade-party-editor", parent -> new PremadePartyEditorScreen(parent, null)),
             new GalleryScreen("update-prompt", UpdatePromptScreen::new),
             new GalleryScreen("hud-editor", WarQueueHudEditorScreen::new));
+    /** Party Finder's create modal, and a party the player leads. Each starts from no party. */
+    private static final List<GalleryScreen> PARTY_GALLERY = List.of(
+            new GalleryScreen("party-finder-create", parent -> {
+                SeqClient.getPartyFinderManager().reset();
+                return new PartyFinderScreen(parent, true);
+            }),
+            new GalleryScreen("party-finder-party", parent -> {
+                SeqClient.getPartyFinderManager().reset();
+                showSampleParties();
+                return new PartyFinderScreen(parent);
+            }));
+
+    /** A gallery screenshot: which screen, and whether at the narrow size. */
+    private record Shot(GalleryScreen screen, boolean narrow) {}
+
+    /**
+     * Every screen wide, then every one narrow, then the party finder's states, narrow first:
+     * the shots before those come at the same moments as before they were added.
+     */
+    private static final List<Shot> SHOTS = Stream.of(
+                    GALLERY.stream().map(screen -> new Shot(screen, false)),
+                    GALLERY.stream().map(screen -> new Shot(screen, true)),
+                    PARTY_GALLERY.stream().map(screen -> new Shot(screen, true)),
+                    PARTY_GALLERY.stream().map(screen -> new Shot(screen, false)))
+            .flatMap(Function.identity())
+            .toList();
     /** Ticks the gallery waits after closing the player in, for the blocks and their light to settle. */
     private static final int GALLERY_SETUP_TICKS = 40;
     /** Ticks each gallery screen has to load before its screenshot. */
@@ -231,7 +268,7 @@ public final class UnlockPreview {
                 int galleryTick = inStage - GALLERY_SETUP_TICKS;
                 if (galleryTick < 0) return;
                 int step = galleryTick / GALLERY_TICKS_PER_SCREEN;
-                if (step >= GALLERY.size() * 2) {
+                if (step >= SHOTS.size()) {
                     MinecraftUiRenderer.previewUiScale = null;
                     mc.resizeDisplay();
                     checkEscapeGoesBack(mc);
@@ -241,20 +278,18 @@ public final class UnlockPreview {
                     next(Stage.DONE);
                     return;
                 }
-                // Every screen at 1280x720 first, then every one again at the narrow size.
-                boolean narrow = step >= GALLERY.size();
-                GalleryScreen screen = GALLERY.get(step % GALLERY.size());
+                Shot shot = SHOTS.get(step);
                 if (galleryTick % GALLERY_TICKS_PER_SCREEN == 0) {
-                    if (step == GALLERY.size()) {
-                        MinecraftUiRenderer.previewUiScale = 1.5f;
+                    if (step > 0 && SHOTS.get(step - 1).narrow() != shot.narrow()) {
+                        MinecraftUiRenderer.previewUiScale = shot.narrow() ? 1.5f : null;
                         mc.resizeDisplay();
                     }
                     // Fresh sample data, so the board's "in 6h 11m" and "12m ago" don't depend on how long the tour took.
                     LeafQuestService.getInstance().showPreview(sampleBoard());
-                    mc.setScreen(screen.open().apply(null));
+                    mc.setScreen(shot.screen().open().apply(null));
                 }
                 if (galleryTick % GALLERY_TICKS_PER_SCREEN == GALLERY_TICKS_PER_SCREEN - 1) {
-                    grab("gallery-" + screen.name() + (narrow ? "-narrow" : "") + ".png");
+                    grab("gallery-" + shot.screen().name() + (shot.narrow() ? "-narrow" : "") + ".png");
                 }
             }
             case DONE -> {
@@ -301,6 +336,37 @@ public final class UnlockPreview {
                 SeqClient.LOGGER.warn("[Unlock preview] Couldn't close the player in: {}", e.getMessage());
             }
         });
+    }
+
+    /**
+     * A party the player leads, open with its members, and more listings than fit, for
+     * the party finder's cards, leader buttons and scrollbar. Names are cached first, so
+     * no card waits for Mojang.
+     */
+    private static void showSampleParties() {
+        var partyFinder = SeqClient.getPartyFinderManager();
+        String me = Minecraft.getInstance().player.getUUID().toString();
+        Instant at = Instant.parse("2026-11-19T00:00:00Z");
+        String healer = "00000000-0000-4000-8000-000000000100";
+        PlayerNameCache.put(healer, "Willowmere");
+        partyFinder.handlePartyFinderUpdate("UPDATED", new Listing(40,
+                List.of(new Activity(0, "NOTG", 4), new Activity(1, "TNA", 4)), null, me, PartyRegion.EU, null,
+                PartyStatus.OPEN, null, null,
+                List.of(new Member(me, PartyRole.TANK, WynnClassType.WARRIOR, at),
+                        new Member(healer, PartyRole.HEALER, WynnClassType.SHAMAN, at)),
+                List.of(new ReservedSlot(null, PartyRole.DPS, at)), at, PartyJoinPolicy.OPEN));
+        String[] raids = {"NOTG", "TNA", "TCC", "NOL", "TWP", "ANNI"};
+        WynnClassType[] classes = WynnClassType.values();
+        for (int i = 1; i <= 9; i++) {
+            String leader = String.format(Locale.ROOT, "00000000-0000-4000-8000-0000000000%02d", i);
+            PlayerNameCache.put(leader, "Leader" + i);
+            partyFinder.handlePartyFinderUpdate("UPDATED", new Listing(40 + i,
+                    List.of(new Activity(i % raids.length, raids[i % raids.length], 4)), null, leader, PartyRegion.NA,
+                    null, i % 3 == 0 ? PartyStatus.CLOSED : PartyStatus.OPEN, null, null,
+                    List.of(new Member(leader, PartyRole.DPS, classes[i % classes.length], at)), List.of(), at,
+                    i % 4 == 0 ? PartyJoinPolicy.INVITE_ONLY : PartyJoinPolicy.OPEN));
+        }
+        partyFinder.getParties().forEach(card -> card.expanded = card.id == 40 || card.id == 41);
     }
 
     /**
