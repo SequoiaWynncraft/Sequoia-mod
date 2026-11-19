@@ -456,7 +456,7 @@ class RaidProfileStoreTest {
 
         assertTrue(store.needsSetup());
 
-        store.dismissSetup();
+        store.dismissSetup(1);
 
         assertFalse(store.needsSetup(), "skipping is remembered");
     }
@@ -466,7 +466,7 @@ class RaidProfileStoreTest {
         var playing = new java.util.concurrent.atomic.AtomicReference<>(MAIN_ACCOUNT);
         RaidProfileStore store = storeFor(directory, playing);
         store.load();
-        store.dismissSetup();
+        store.dismissSetup(1);
 
         RaidProfileStore reloaded = storeFor(directory, playing);
         reloaded.load();
@@ -479,7 +479,7 @@ class RaidProfileStoreTest {
         var playing = new java.util.concurrent.atomic.AtomicReference<>(MAIN_ACCOUNT);
         RaidProfileStore store = storeFor(directory, playing);
         store.load();
-        store.dismissSetup();
+        store.dismissSetup(1);
 
         playing.set(ALT_ACCOUNT);
 
@@ -523,10 +523,10 @@ class RaidProfileStoreTest {
                 profile -> answer,
                 () -> 1L);
         store.load();
-        store.dismissSetup();
+        store.dismissSetup(1);
         playing.set(MAIN_ACCOUNT);
 
-        CompletableFuture<Boolean> saved = store.saveSelfProfile(RaidTeamProfile.empty());
+        CompletableFuture<Boolean> saved = store.saveSelfProfile(RaidTeamProfile.empty(), 1);
         // The player switches to the alt before the backend answers the main account's save.
         playing.set(ALT_ACCOUNT);
         answer.complete(RaidProfileStore.parseProfilesResponse(BACKEND_PAYLOAD).orElseThrow().profiles().get(0));
@@ -535,24 +535,23 @@ class RaidProfileStoreTest {
         assertFalse(store.needsSetup(), "the alt skipped setup, and the main account's save does not undo that");
     }
 
+    /** A store for the main account, in whichever session {@code session} holds. */
+    private static RaidProfileStore storeIn(Path directory, java.util.concurrent.atomic.AtomicLong session,
+            java.util.function.Supplier<CompletableFuture<RaidProfilesResponse>> fetch,
+            java.util.function.Function<RaidTeamProfile, CompletableFuture<RaidProfilesResponse.Profile>> save) {
+        return new RaidProfileStore(directory.resolve("raid-profile.json"), directory.resolve("cache/raid-profiles.json"),
+                fetch, () -> false, Runnable::run, Runnable::run, () -> MAIN_ACCOUNT, save, session::get);
+    }
+
     @Test
     void aSaveThatFailsAfterItsSessionEndedLeavesTheNextSessionsPanelAlone(@TempDir Path directory) {
         var session = new java.util.concurrent.atomic.AtomicLong(1);
         var answer = new CompletableFuture<RaidProfilesResponse.Profile>();
-        RaidProfileStore store = new RaidProfileStore(
-                directory.resolve("raid-profile.json"),
-                directory.resolve("cache/raid-profiles.json"),
-                () -> CompletableFuture.completedFuture(
-                        RaidProfileStore.parseProfilesResponse(BACKEND_PAYLOAD).orElse(null)),
-                () -> false,
-                Runnable::run,
-                Runnable::run,
-                () -> MAIN_ACCOUNT,
-                profile -> answer,
-                session::get);
+        RaidProfileStore store = storeIn(directory, session, () -> CompletableFuture.completedFuture(
+                RaidProfileStore.parseProfilesResponse(BACKEND_PAYLOAD).orElse(null)), profile -> answer);
         store.load();
 
-        CompletableFuture<Boolean> saved = store.saveSelfProfile(RaidTeamProfile.empty());
+        CompletableFuture<Boolean> saved = store.saveSelfProfile(RaidTeamProfile.empty(), 1);
         // The player switches account and the next session's panel loads; then the old save's retry is refused.
         session.set(2);
         store.refresh().join();
@@ -560,6 +559,52 @@ class RaidProfileStoreTest {
 
         assertFalse(saved.join());
         assertNull(store.lastError(), "the next session's panel shows its own state");
+    }
+
+    @Test
+    void aSetupLeftOpenFromAnEndedSessionSavesAndSkipsNothing(@TempDir Path directory) {
+        var session = new java.util.concurrent.atomic.AtomicLong(1);
+        var sent = new AtomicInteger();
+        RaidProfileStore store = storeIn(directory, session, CompletableFuture::new, profile -> {
+            sent.incrementAndGet();
+            return new CompletableFuture<>();
+        });
+        store.load();
+
+        // The player switches account with session 1's setup open, then clicks Save or Not now.
+        session.set(2);
+
+        assertFalse(store.isCurrentSession(1), "the screen closes");
+        assertFalse(store.saveSelfProfile(RaidTeamProfile.empty(), 1).getNow(true), "refused at once");
+        assertEquals(0, sent.get(), "session 1's draft never reaches the next account's profile");
+        store.dismissSetup(1);
+        assertTrue(store.needsSetup(), "the next account's setup is still its own to skip");
+    }
+
+    @Test
+    void aFetchAnEndedSessionStartedLeavesTheNextSessionsPanelAlone(@TempDir Path directory) {
+        var session = new java.util.concurrent.atomic.AtomicLong(1);
+        List<CompletableFuture<RaidProfilesResponse>> fetches = new ArrayList<>();
+        RaidProfileStore store = storeIn(directory, session, () -> {
+            fetches.add(new CompletableFuture<>());
+            return fetches.getLast();
+        }, profile -> new CompletableFuture<>());
+        store.load();
+
+        // Session 1's fetch, a save's follow-up say, is still running when the player switches account.
+        store.refresh();
+        session.set(2);
+        store.refresh();
+        assertEquals(2, fetches.size(), "session 2 fetches for itself rather than waiting on session 1's");
+
+        fetches.get(0).completeExceptionally(new com.seqwawa.seq.network.auth.NotSignedInException());
+        session.set(3);
+        fetches.get(1).completeExceptionally(new com.seqwawa.seq.network.auth.NotSignedInException());
+        assertNull(store.lastError(), "neither ended session's answer reaches the panel of the session after it");
+
+        store.refresh();
+        fetches.get(2).completeExceptionally(new com.seqwawa.seq.network.auth.NotSignedInException());
+        assertNotNull(store.lastError(), "session 3's own fetch still shows how it went");
     }
 
     @Test

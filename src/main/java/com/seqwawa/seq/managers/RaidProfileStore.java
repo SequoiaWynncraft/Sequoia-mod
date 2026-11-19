@@ -126,6 +126,8 @@ public final class RaidProfileStore {
     /** Whether a fetch has worked since the game started. */
     private volatile boolean fetchedOnce;
     private volatile String lastError;
+    /** The session the last fetch started in: once it has ended, its answer leaves {@link #lastError} alone. Game thread only. */
+    private long fetchedIn;
 
     RaidProfileStore(Path localPath, Path cachePath) {
         this(
@@ -298,6 +300,7 @@ public final class RaidProfileStore {
 
     /** Fetches only when the loaded copy is old enough to be worth replacing. Game thread only. */
     public CompletableFuture<Void> refreshIfStale() {
+        dropEndedSessionsFetch();
         published.request();
         return settled();
     }
@@ -309,8 +312,17 @@ public final class RaidProfileStore {
      * answer, so it can't win with older data. Game thread only; completes there.
      */
     public CompletableFuture<Void> refresh() {
+        dropEndedSessionsFetch();
         published.force();
         return settled();
+    }
+
+    /** A fetch an ended session started is dropped, so the current one fetches for itself rather than waiting on it. */
+    private void dropEndedSessionsFetch() {
+        if (published.isLoading() && !isCurrentSession(fetchedIn)) {
+            published.cancel();
+            published.markStale();
+        }
     }
 
     private CompletableFuture<Void> settled() {
@@ -319,6 +331,7 @@ public final class RaidProfileStore {
 
     /** Reads the backend's answer into what the store shows, keeping the last catalog when it sends none. */
     private CompletableFuture<Published> fetchPublished() {
+        fetchedIn = session.getAsLong();
         return fetch.get().thenApply(response -> {
             if (response == null) {
                 throw new IllegalStateException("The backend sent no raid profiles.");
@@ -337,7 +350,9 @@ public final class RaidProfileStore {
 
     private void fetched(Published fetched) {
         fetchedOnce = true;
-        lastError = null;
+        if (isCurrentSession(fetchedIn)) {
+            lastError = null;
+        }
         if (fetched.source() != null) {
             disk.execute(() -> writeCache(fetched.source()));
         }
@@ -349,12 +364,15 @@ public final class RaidProfileStore {
     }
 
     private void fetchFailed(Throwable failure) {
-        lastError = RaidProfileApiError.describe(failure, "Could not load the guild's raid profiles.");
+        String shown = RaidProfileApiError.describe(failure, "Could not load the guild's raid profiles.");
+        if (isCurrentSession(fetchedIn)) {
+            lastError = shown;
+        }
         SeqClient.LOGGER.warn(
                 "[RaidProfiles] GET {}/raid-profiles failed: {} | shown: {}",
                 BuildConfig.RAID_PROFILES_API_URL,
                 RaidProfileApiError.describeForLog(failure),
-                lastError);
+                shown);
     }
 
     /** Shows a whole response, as a fetch would. */
@@ -435,17 +453,25 @@ public final class RaidProfileStore {
         });
     }
 
+    /** Whether {@code sessionId} is the current session's: a screen opened in an ended one closes. */
+    public boolean isCurrentSession(long sessionId) {
+        return session.getAsLong() == sessionId;
+    }
+
     /**
      * Saves your profile and applies what the backend stored, so what you see is what
-     * the guild sees, including any normalising the server did.
+     * the guild sees, including any normalising the server did. Nothing is sent once
+     * {@code savedIn}, the session the draft was made in, has ended: the token would be the next account's.
      */
-    public CompletableFuture<Boolean> saveSelfProfile(RaidTeamProfile profile) {
+    public CompletableFuture<Boolean> saveSelfProfile(RaidTeamProfile profile, long savedIn) {
+        if (!isCurrentSession(savedIn)) {
+            return CompletableFuture.completedFuture(false);
+        }
         RaidTeamProfile toSave = profile == null ? RaidTeamProfile.empty() : profile;
         // Whose setup it answers: the account playing now, not whoever plays when the answer lands.
         String savedBy = accountKey();
-        // Only the session that sent it hears how it went: a later one's panel shows its own state.
-        long savedIn = session.getAsLong();
-        // The answer is handled on the game thread, where the store's state lives.
+        // The answer is handled on the game thread, where the store's state lives; only
+        // the session that sent it hears how it went, as a later one's panel shows its own state.
         return save.apply(toSave)
                 .thenApplyAsync(saved -> {
                     forgetSetupDismissal(savedBy);
@@ -453,7 +479,7 @@ public final class RaidProfileStore {
                     // The response is authoritative, including a username that may be a
                     // rename ahead of the token.
                     applyProfileUpdate(saved);
-                    if (session.getAsLong() == savedIn) {
+                    if (isCurrentSession(savedIn)) {
                         // Pull the authoritative copy in the background; the entry above keeps
                         // the panel responsive meanwhile.
                         refresh();
@@ -463,7 +489,7 @@ public final class RaidProfileStore {
                 }, gameThread)
                 .exceptionallyAsync(throwable -> {
                     String shown = RaidProfileApiError.describe(throwable, "Could not save your profile.");
-                    if (session.getAsLong() == savedIn) {
+                    if (isCurrentSession(savedIn)) {
                         lastError = shown;
                     }
                     SeqClient.LOGGER.warn(
@@ -482,8 +508,11 @@ public final class RaidProfileStore {
         return !selfProfile().isComplete() && !setupDismissedHere();
     }
 
-    /** Records that this account closed setup without filling anything in. */
-    public void dismissSetup() {
+    /** Records that this account closed setup without filling anything in, unless {@code sessionId} has ended since. */
+    public void dismissSetup(long sessionId) {
+        if (!isCurrentSession(sessionId)) {
+            return;
+        }
         String self = accountKey();
         if (self == null) {
             unclaimedSetupDismissal = true;

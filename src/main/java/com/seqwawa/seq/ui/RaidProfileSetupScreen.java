@@ -10,6 +10,7 @@ import com.seqwawa.seq.model.RaidBuild;
 import com.seqwawa.seq.model.RaidCatalog;
 import com.seqwawa.seq.model.RaidTeamProfile;
 import com.seqwawa.seq.model.RaidType;
+import com.seqwawa.seq.session.SessionManager;
 import com.seqwawa.seq.utils.rendering.UiCanvas;
 import com.seqwawa.seq.utils.rendering.UiRenderer;
 import java.awt.Color;
@@ -58,6 +59,8 @@ public class RaidProfileSetupScreen extends Screen {
     private final Screen parent;
     /** True for the once-only first run, false when reopened from "Edit profile". */
     private final boolean firstRun;
+    /** The session it opened in, whose account the draft is: once another is current, it closes. */
+    private final long session = SessionManager.getInstance().current().id();
 
     private RaidTeamProfile draft;
     /** Set once the form is touched, so a late fetch cannot overwrite the edits. */
@@ -99,6 +102,14 @@ public class RaidProfileSetupScreen extends Screen {
         // The form needs the meta list, and the draft starts from the stored profile.
         if (catalog().isEmpty() || !profiles().hasLoadedProfiles()) {
             profiles().refresh();
+        }
+    }
+
+    @Override
+    public void tick() {
+        // Without a skip: the next account's setup is its own to answer.
+        if (!profiles().isCurrentSession(session)) {
+            SeqClient.mc.setScreen(parent);
         }
     }
 
@@ -552,10 +563,10 @@ public class RaidProfileSetupScreen extends Screen {
         }
         saving = true;
         error = null;
-        profiles().saveSelfProfile(draft.withStatus(statusInput)).thenAccept(saved -> SeqClient.mc.execute(() -> {
+        profiles().saveSelfProfile(draft.withStatus(statusInput), session).thenAccept(saved -> SeqClient.mc.execute(() -> {
             saving = false;
-            if (SeqClient.mc.screen != this) {
-                // The player already left; do not pull them back into the panel.
+            if (SeqClient.mc.screen != this || !profiles().isCurrentSession(session)) {
+                // The player already left, or their session ended; do not pull them back into the panel.
                 return;
             }
             if (saved) {
@@ -569,7 +580,7 @@ public class RaidProfileSetupScreen extends Screen {
     private void skip() {
         if (firstRun) {
             // Only a first run records a decision; cancelling an edit does not.
-            RaidProfileStore.getInstance().dismissSetup();
+            profiles().dismissSetup(session);
         }
         SeqClient.mc.setScreen(new GuildMembersScreen(parent));
     }

@@ -110,7 +110,7 @@ A profile with `"builds": []` means the player shared a profile with no builds s
 ## PUT /raid-profiles/me
 
 Saving sends the caller's profile without a username. The bearer token identifies the caller.
-The setup screen remains open until the request succeeds.
+The setup screen remains open until the request succeeds, or until its session ends: then it closes and sends nothing.
 
 ```json
 {

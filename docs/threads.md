@@ -71,7 +71,8 @@ one way: `end(reason)`, for an account switch, /seq logout, Clear session or a r
   rest still run, so the next session always starts.
 - **Ask your own session.** Work that belongs to a session takes its token from `Session.token`,
   not the auth service, and hands results to its own session's objects. `getInstance()` answers
-  with whichever session is current by the time it is called.
+  with whichever session is current by the time it is called. A screen that acts for one account,
+  such as the War Planner or raid-profile setup, closes once the session it opened in has ended.
 - **A rejected token** ends only the sign-in that still holds it. A refusal that lands after
   its sign-in already ended, such as an old socket's after an account switch, ends nothing.
 
