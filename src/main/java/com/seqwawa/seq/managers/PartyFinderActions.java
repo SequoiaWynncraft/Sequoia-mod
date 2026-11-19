@@ -37,6 +37,7 @@ import java.util.stream.Collectors;
 public final class PartyFinderActions {
 
     private static final String SESSION_ENDED = "You reconnected, changed account or signed out before this finished.";
+    private static final String PARTY_CHANGED = "Your active party changed before this finished. Try again.";
 
     private final PartyFinderManager partyFinder;
     private final PartyFinderPlayer player;
@@ -276,9 +277,11 @@ public final class PartyFinderActions {
             String gameCommand, String message, String fallbackMessage, String logMessage) {
         // Read as the click lands: the reply may come back after the player reconnected or signed out.
         Ticket ticket = partyFinder.ticket();
-        UUID target = memberActionTarget(partyFinder.getListings(), listingId, memberUuid);
+        Listing led = stillLed(listingId);
+        UUID target = led == null ? null : memberActionTarget(List.of(led), listingId, memberUuid);
         if (target == null) {
-            SeqClient.LOGGER.info("[PartyFinder] {} skipped: listing {} no longer has that member", name, listingId);
+            SeqClient.LOGGER.info("[PartyFinder] {} skipped: the player no longer leads listing {} with that member",
+                    name, listingId);
             return;
         }
         onScreen(ticket, partyFinder.send(ticket, api -> call.apply(api, target), applying(listing -> {
@@ -355,8 +358,7 @@ public final class PartyFinderActions {
         if (targetUUID == null) {
             return "Unable to resolve a valid UUID for that player.";
         }
-        String myUUID = player.uuid();
-        if (myUUID != null && myUUID.equalsIgnoreCase(targetUUID.toString())) {
+        if (Listing.samePlayer(player.uuid(), targetUUID.toString())) {
             return "You cannot invite yourself.";
         }
         Listing current = partyFinder.getCurrentListing();
@@ -426,15 +428,20 @@ public final class PartyFinderActions {
     public CompletableFuture<CommandResult<Listing>> updatePartyFromCommand(List<String> activityInputs) {
         Ticket ticket = partyFinder.ticket();
         return runLeaderListingCommand(ticket, "Only the party leader can update the Sequoia listing.",
-                listing -> withActivities(ticket, activityInputs, resolution -> executeListingCommand(
-                        ticket, api -> api.updateListing(listing.id(), resolution.activityIds(),
-                                listing.region() != null ? listing.region() : PartyRegion.NA, listing.note(),
-                                currentWorld(), listing.resolvedJoinPolicy()),
-                        partyFinder::applyUpdated,
-                        "Unable to update party",
-                        "Failed to update party",
-                        updated -> "Updated party #" + updated.id() + " to "
-                                + formatActivityNames(resolution.displayNames()) + ".")));
+                listing -> withActivities(ticket, activityInputs, resolution -> {
+                    // As it is once the raids are loaded: the update sends its policy and note again,
+                    // and must not undo a change made meanwhile.
+                    Listing current = stillLed(listing.id());
+                    return current == null ? fail(changedSince(ticket)) : executeListingCommand(
+                            ticket, api -> api.updateListing(current.id(), resolution.activityIds(),
+                                    current.region() != null ? current.region() : PartyRegion.NA, current.note(),
+                                    currentWorld(), current.resolvedJoinPolicy()),
+                            partyFinder::applyUpdated,
+                            "Unable to update party",
+                            "Failed to update party",
+                            updated -> "Updated party #" + updated.id() + " to "
+                                    + formatActivityNames(resolution.displayNames()) + ".");
+                }));
     }
 
     public CompletableFuture<CommandResult<Listing>> joinPartyFromCommand(long listingId, PartyRole role) {
@@ -493,8 +500,12 @@ public final class PartyFinderActions {
                     return fail(uuidResult.message());
                 }
                 UUID targetUUID = uuidResult.data();
-                if (Listing.samePlayer(player.uuid(), targetUUID.toString())) {
-                    return fail("You cannot invite yourself.");
+                // As the screen's invite does: the party may have changed, or lost its reserved slot, meanwhile.
+                String changed = partyFinder.isCurrent(ticket)
+                        ? inviteProblem(targetUUID.toString(), listing.id())
+                        : SESSION_ENDED;
+                if (changed != null) {
+                    return fail(changed);
                 }
                 return partyFinder.send(ticket, api -> api.createInvite(listing.id(), targetUUID), response -> {
                             partyFinder.applyCreatedInvite(response, listing.id(), targetUUID, normalizedUsername);
@@ -691,10 +702,14 @@ public final class PartyFinderActions {
                     if (!uuidResult.success()) {
                         return fail(uuidResult.message());
                     }
-                    if (listing.member(uuidResult.data().toString()) == null) {
+                    Listing current = stillLed(listing.id());
+                    if (current == null) {
+                        return fail(changedSince(ticket));
+                    }
+                    if (current.member(uuidResult.data().toString()) == null) {
                         return fail(normalizedUsername + " is not in your Sequoia party.");
                     }
-                    return action.apply(new MemberTarget(listing, uuidResult.data(), normalizedUsername));
+                    return action.apply(new MemberTarget(current, uuidResult.data(), normalizedUsername));
                 }, partyFinder.gameThread));
     }
 
@@ -746,6 +761,17 @@ public final class PartyFinderActions {
     // ══════════════════════════════════════════════════════════════
     // Checks and names
     // ══════════════════════════════════════════════════════════════
+
+    /** The player's listing now, while it is still {@code listingId} and they still lead it; else null. */
+    private Listing stillLed(long listingId) {
+        Listing current = partyFinder.getCurrentListing();
+        return current != null && current.id() == listingId && partyFinder.isPartyLeader() ? current : null;
+    }
+
+    /** Why a command that waited lost its listing: its session or server connection ended, or its party changed. */
+    private String changedSince(Ticket ticket) {
+        return partyFinder.isCurrent(ticket) ? PARTY_CHANGED : SESSION_ENDED;
+    }
 
     /** The UUID {@code memberUuid} names while it is still a member of {@code listingId}, else null. */
     static UUID memberActionTarget(List<Listing> listings, long listingId, String memberUuid) {

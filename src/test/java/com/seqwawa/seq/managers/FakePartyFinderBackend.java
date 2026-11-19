@@ -29,6 +29,8 @@ final class FakePartyFinderBackend implements AutoCloseable {
     record Request(String route, String authorization) {}
 
     final List<Request> requests = new CopyOnWriteArrayList<>();
+    /** The last body each route was sent. */
+    private final Map<String, String> bodies = new ConcurrentHashMap<>();
     private final Map<String, Supplier<CompletableFuture<String>>> routes = new ConcurrentHashMap<>();
     private final HttpServer server;
 
@@ -42,6 +44,7 @@ final class FakePartyFinderBackend implements AutoCloseable {
         }));
         server.createContext("/", exchange -> {
             String route = exchange.getRequestMethod() + " " + exchange.getRequestURI().getPath();
+            bodies.put(route, new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             requests.add(new Request(route, exchange.getRequestHeaders().getFirst("Authorization")));
             Supplier<CompletableFuture<String>> answer = routes.get(route);
             String body = null;
@@ -81,6 +84,11 @@ final class FakePartyFinderBackend implements AutoCloseable {
             assertTrue(System.nanoTime() < deadline, "the backend never saw " + route);
             Thread.sleep(5);
         }
+    }
+
+    /** What {@code route} was last sent, or null if it never was. */
+    String body(String route) {
+        return bodies.get(route);
     }
 
     boolean saw(String route) {

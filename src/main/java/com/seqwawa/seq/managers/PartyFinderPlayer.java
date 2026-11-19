@@ -2,6 +2,7 @@ package com.seqwawa.seq.managers;
 
 import com.seqwawa.seq.accessors.NotificationAccessor;
 import com.seqwawa.seq.client.SeqClient;
+import com.seqwawa.seq.network.ConnectionManager;
 import com.seqwawa.seq.network.auth.MinecraftAuthService;
 import com.seqwawa.seq.network.auth.StoredAuthSession;
 import com.seqwawa.seq.utils.PlayerNameCache;
@@ -47,6 +48,20 @@ class PartyFinderPlayer {
     /** Looks up {@code username}'s UUID, null when there is none. */
     CompletableFuture<String> uuidOf(String username) {
         return PlayerNameCache.resolveUUID(username);
+    }
+
+    /** Whether they asked to be reminded of open parties, and are connected to Sequoia to hear of them. */
+    boolean wantsOpenPartyReminders() {
+        return SeqClient.getAnnounceOpenPartiesSetting() != null
+                && SeqClient.getAnnounceOpenPartiesIntervalMinutesSetting() != null
+                && SeqClient.getAnnounceOpenPartiesSetting().getValue()
+                && ConnectionManager.isConnected();
+    }
+
+    /** Whether {@code username} is in their Wynncraft party, as the party sync last saw it. Game thread only. */
+    boolean inWynnParty(String username) {
+        WynnPartySyncManager sync = SeqClient.getWynnPartySyncManager();
+        return sync != null && sync.isObservedMember(username);
     }
 
     /** Sends {@code command} as the player. Game thread only. */

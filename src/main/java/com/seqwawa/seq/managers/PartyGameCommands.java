@@ -14,8 +14,6 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
 /**
  * The party commands the party finder sends in the game, as the player: kick, promote and invite,
@@ -27,12 +25,14 @@ public final class PartyGameCommands {
 
     static final String KICK = "party kick ";
     static final String PROMOTE = "party promote ";
-    private static final long NAME_LOOKUP_TIMEOUT_SECONDS = 3L;
     private static final long INVITE_ALL_COMMAND_DELAY_MS = 500L;
     private static final String PARTY_CHANGED = "your active party changed before invites could be sent.";
 
     private final PartyFinderManager partyFinder;
     private final PartyFinderPlayer player;
+    /** The Invite All still sending, and what it began under: another waits for it to finish. Game thread only. */
+    private CompletableFuture<InviteAllResult> inviteAllRunning = CompletableFuture.completedFuture(null);
+    private Ticket inviteAllTicket;
 
     public record InviteAllResult(boolean success, boolean sentAny, int sentCount, int skippedCount, String message) {}
 
@@ -49,8 +49,7 @@ public final class PartyGameCommands {
 
     /** Sends {@code prefix} and {@code target}'s name, once it is known, for {@code ticket}'s player. */
     void partyCommandFor(Ticket ticket, UUID target, String prefix) {
-        player.nameOf(target.toString())
-                .completeOnTimeout(null, NAME_LOOKUP_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        partyFinder.nameSoon(target.toString())
                 .thenAccept(resolvedName -> {
                     String name = PartyFinderPlayer.commandName(resolvedName);
                     if (name == null) {
@@ -106,6 +105,18 @@ public final class PartyGameCommands {
     }
 
     private CompletableFuture<InviteAllResult> inviteAll(Ticket ticket, boolean notifyPlayer) {
+        // One at a time: a second, clicked during the first's wait, would invite the same players again at once.
+        // One begun on a connection since left sends nothing more, so it holds back none.
+        if (!inviteAllRunning.isDone() && partyFinder.isCurrent(inviteAllTicket)) {
+            return done(ticket, false, 0, 0, "party invites are already going out.", notifyPlayer);
+        }
+        CompletableFuture<InviteAllResult> running = startInviteAll(ticket, notifyPlayer);
+        inviteAllRunning = running;
+        inviteAllTicket = ticket;
+        return running;
+    }
+
+    private CompletableFuture<InviteAllResult> startInviteAll(Ticket ticket, boolean notifyPlayer) {
         Listing listing = partyFinder.getCurrentListing();
         if (listing == null) {
             return done(ticket, false, 0, 0, "no active party found.", notifyPlayer);
@@ -121,12 +132,6 @@ public final class PartyGameCommands {
             return done(ticket, true, 0, 0, "no valid party members to invite.", notifyPlayer);
         }
 
-        WynnPartySyncManager syncManager = SeqClient.getWynnPartySyncManager();
-        Set<String> inWynnParty = syncManager == null
-                ? Set.of()
-                : syncManager.getObservedMemberUsernames().stream()
-                        .map(username -> username.toLowerCase(Locale.ROOT))
-                        .collect(Collectors.toUnmodifiableSet());
         String myUUID = player.uuid();
         List<String> candidates = new ArrayList<>();
         List<CompletableFuture<String>> names = new ArrayList<>();
@@ -156,7 +161,7 @@ public final class PartyGameCommands {
             for (int i = 0; i < candidates.size(); i++) {
                 String username = PartyFinderPlayer.commandName(names.get(i).getNow(null));
                 String key = username == null ? null : username.toLowerCase(Locale.ROOT);
-                if (key == null || !seen.add(key) || inWynnParty.contains(key)) {
+                if (key == null || !seen.add(key)) {
                     skippedByName++;
                 } else {
                     targets.add(new InviteTarget(candidates.get(i), username));
@@ -182,14 +187,16 @@ public final class PartyGameCommands {
     }
 
     /**
-     * Invites the next target still in the party, and waits half a second from then before the
-     * one after, so a late tick never sends two at once.
+     * Invites the next target still in the listing and not yet in the Wynn party, as each is when
+     * their turn comes, and waits half a second from then before the one after, so a late tick
+     * never sends two at once.
      */
     private void inviteNext(Ticket ticket, long listingId, Iterator<InviteTarget> targets, int sent, int skipped,
             boolean notifyPlayer, CompletableFuture<InviteAllResult> finished) {
         while (targets.hasNext()) {
             InviteTarget target = targets.next();
-            if (stillFor(ticket, listingId) != null || !partyFinder.getCurrentListing().hasMember(target.memberUUID())) {
+            if (stillFor(ticket, listingId) != null || !partyFinder.getCurrentListing().hasMember(target.memberUUID())
+                    || player.inWynnParty(target.username())) {
                 skipped++;
                 continue;
             }

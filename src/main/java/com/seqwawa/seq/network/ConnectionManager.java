@@ -68,6 +68,9 @@ public final class ConnectionManager {
     private static final long PRIVILEGED_SEND_THROTTLE_MS = 50;
     private static final Pattern MC_USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_]{3,16}$");
     private static final Pattern URL_PATTERN = Pattern.compile("^(https?://).+", Pattern.CASE_INSENSITIVE);
+    /** An invite token's value in a frame: whoever holds it can join that party. */
+    private static final Pattern INVITE_TOKEN =
+            Pattern.compile("(\"invite_?token\"\\s*:\\s*\")(?:[^\"\\\\]|\\\\.)*", Pattern.CASE_INSENSITIVE);
     static final int MAX_CONSECUTIVE_AUTH_REJECTIONS = 3;
     private static final int NORMAL_CLOSE = 1000;
     /** The close this client sends to drop a socket the backend stopped accepting as signed in; it reconnects. */
@@ -2005,7 +2008,7 @@ public final class ConnectionManager {
         try {
             JsonObject json = GSON.fromJson(message, JsonObject.class);
             if (json == null || !json.has("type")) {
-                SeqClient.LOGGER.warn("[WebSocket] Dropping message without type: {}", truncate(message, 512));
+                SeqClient.LOGGER.warn("[WebSocket] Dropping message without type: {}", forLog(message));
                 return;
             }
             String type = json.get("type").getAsString();
@@ -2017,7 +2020,7 @@ public final class ConnectionManager {
                         type,
                         extractPrimitiveString(json, "request_id"));
             } else {
-                SeqClient.LOGGER.info("[WebSocket] Received message type={} payload={}", type, truncate(message, 512));
+                SeqClient.LOGGER.info("[WebSocket] Received message type={} payload={}", type, forLog(message));
             }
 
             // Minecraft may switch account before the session, and this socket, end: what the party finder
@@ -2176,7 +2179,7 @@ public final class ConnectionManager {
                 default -> SeqClient.LOGGER.warn("[WebSocket] Unhandled incoming message type={}", type);
             }
         } catch (Exception e) {
-            SeqClient.LOGGER.error("[WebSocket] Failed to handle message payload={}", truncate(message, 512), e);
+            SeqClient.LOGGER.error("[WebSocket] Failed to handle message payload={}", forLog(message), e);
         }
     }
 
@@ -2400,6 +2403,11 @@ public final class ConnectionManager {
 
     public boolean hasPendingBombSharePrompt(String requestId) {
         return getPendingBombSharePrompt(requestId).isPresent();
+    }
+
+    /** A received frame as the log shows it: its first 512 characters, with invite tokens hidden. */
+    static String forLog(String message) {
+        return truncate(message == null ? null : INVITE_TOKEN.matcher(message).replaceAll("$1<hidden>"), 512);
     }
 
     private static String truncate(String input, int maxLength) {

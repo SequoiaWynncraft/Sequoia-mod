@@ -27,8 +27,10 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
@@ -54,6 +56,9 @@ class PartyFinderManagerTest {
     private final List<String> sent = new CopyOnWriteArrayList<>();
     private Function<String, CompletableFuture<String>> names = uuid -> CompletableFuture.completedFuture(null);
     private Function<String, CompletableFuture<String>> uuids = username -> CompletableFuture.completedFuture(null);
+    /** The Wynncraft party as the party sync sees it, by name. */
+    private final Set<String> wynnParty = ConcurrentHashMap.newKeySet();
+    private volatile boolean remindersOn;
     /** Plays the game as the leader: shows what it is told, and sends what it is asked to. */
     private final PartyFinderPlayer playing = new PartyFinderPlayer() {
         @Override
@@ -84,6 +89,16 @@ class PartyFinderManagerTest {
         @Override
         CompletableFuture<String> uuidOf(String username) {
             return uuids.apply(username);
+        }
+
+        @Override
+        boolean wantsOpenPartyReminders() {
+            return remindersOn;
+        }
+
+        @Override
+        boolean inWynnParty(String username) {
+            return wynnParty.contains(username);
         }
 
         @Override
@@ -749,6 +764,208 @@ class PartyFinderManagerTest {
         runGameThreadUntil(() -> backend.requests.stream().filter(request -> request.route().equals(route)).count() == 2);
     }
 
+    // ── #179 review: what an action waited for is read again before it acts ──
+
+    @Test
+    void anUpdateCommandSendsThePolicyTheListingHasOnceItsRaidsHaveLoaded() throws Exception {
+        PartyFinderManager partyFinder = sessionPartyFinder();
+        partyFinder.applyJoined(listing(7L, LEADER, member(LEADER)));
+        CompletableFuture<String> raids = backend.hold("GET /party-finder/activities");
+        String route = "POST /party-finder/listings/7/update";
+        backend.answer(route, listingJson(7L, LEADER, LEADER));
+
+        CompletableFuture<CommandResult<Listing>> updated = partyFinder.actions().updatePartyFromCommand(List.of("NOTG"));
+        backend.awaitRequest("GET /party-finder/activities");
+        // The player makes the party invite-only while the raids load.
+        partyFinder.applyUpdated(inviteOnly(listing(7L, LEADER, member(LEADER))));
+        raids.complete("[{\"id\":1,\"name\":\"NOTG\",\"maxPartySize\":4}]");
+
+        assertTrue(awaitOnGameThread(updated).success());
+        assertTrue(backend.body(route).contains("\"joinPolicy\":\"INVITE_ONLY\""), "the update does not undo it");
+    }
+
+    @Test
+    void anUpdateCommandWhoseLeaderPassedThePartyOnWhileItsRaidsLoadedSendsNothing() throws Exception {
+        PartyFinderManager partyFinder = sessionPartyFinder();
+        partyFinder.applyJoined(listing(7L, LEADER, member(LEADER), member(KICK_TARGET)));
+        CompletableFuture<String> raids = backend.hold("GET /party-finder/activities");
+
+        CompletableFuture<CommandResult<Listing>> updated = partyFinder.actions().updatePartyFromCommand(List.of("NOTG"));
+        backend.awaitRequest("GET /party-finder/activities");
+        partyFinder.applyUpdated(listing(7L, KICK_TARGET, member(LEADER), member(KICK_TARGET)));
+        raids.complete("[{\"id\":1,\"name\":\"NOTG\",\"maxPartySize\":4}]");
+
+        assertEquals("Your active party changed before this finished. Try again.", awaitOnGameThread(updated).message());
+        assertFalse(backend.saw("POST /party-finder/listings/7/update"));
+    }
+
+    @Test
+    void anInviteCommandChecksTheReservedSlotAgainOnceTheTargetIsLookedUp() throws Exception {
+        PartyFinderManager partyFinder = sessionPartyFinder();
+        partyFinder.applyJoined(reservingOne(listing(7L, LEADER, member(LEADER))));
+        CompletableFuture<String> lookup = new CompletableFuture<>();
+        uuids = username -> lookup;
+        String route = "POST /party-finder/listings/7/invite";
+        backend.answer(route, "{\"inviteToken\":\"token\",\"listing\":" + listingJson(7L, LEADER, LEADER) + "}");
+
+        CompletableFuture<CommandResult<Void>> refused = partyFinder.actions().createInviteFromCommand("Target");
+        // The open listing's only reserved slot goes while the target is looked up.
+        partyFinder.applyUpdated(listing(7L, LEADER, member(LEADER)));
+        lookup.complete(KICK_TARGET);
+
+        assertEquals("Add at least one reserved slot before creating a party finder invite.",
+                awaitOnGameThread(refused).message());
+        assertFalse(backend.saw(route));
+
+        // An invite-only listing needs no reserved slot.
+        partyFinder.applyUpdated(inviteOnly(listing(7L, LEADER, member(LEADER))));
+        assertTrue(awaitOnGameThread(partyFinder.actions().createInviteFromCommand("Target")).success());
+        assertTrue(backend.saw(route));
+    }
+
+    @Test
+    void aKickOrPromoteCommandActsOnTheListingAsItIsOnceTheMemberIsLookedUp() throws Exception {
+        PartyFinderManager partyFinder = sessionPartyFinder();
+        partyFinder.applyJoined(listing(7L, LEADER, member(LEADER), member(KICK_TARGET), member(OTHER_MEMBER)));
+        CompletableFuture<String> kickLookup = new CompletableFuture<>();
+        uuids = username -> kickLookup;
+
+        CompletableFuture<CommandResult<Listing>> kicked = partyFinder.actions().kickMemberFromCommand("Kicked");
+        // They leave while their UUID is looked up.
+        partyFinder.applyUpdated(listing(7L, LEADER, member(LEADER), member(OTHER_MEMBER)));
+        kickLookup.complete(KICK_TARGET);
+        assertEquals("Kicked is not in your Sequoia party.", awaitOnGameThread(kicked).message());
+
+        CompletableFuture<String> promoteLookup = new CompletableFuture<>();
+        uuids = username -> promoteLookup;
+        CompletableFuture<CommandResult<Listing>> promoted = partyFinder.actions().promoteMemberFromCommand("Other");
+        // The player passed the party on meanwhile.
+        partyFinder.applyUpdated(listing(7L, KICK_TARGET, member(LEADER), member(OTHER_MEMBER)));
+        promoteLookup.complete(OTHER_MEMBER);
+        assertEquals("Your active party changed before this finished. Try again.", awaitOnGameThread(promoted).message());
+
+        assertEquals(List.of(), backend.requests, "neither goes out");
+    }
+
+    @Test
+    void aMemberButtonDrawnOnAListingThePlayerNoLongerLeadsActsOnNobody() throws Exception {
+        PartyFinderManager partyFinder = sessionPartyFinder();
+        names = uuid -> CompletableFuture.completedFuture("Kicked");
+        // The player led listing 7 when the button was drawn; they lead listing 9 now, and 7 still lists the member.
+        partyFinder.applyJoined(listing(9L, LEADER, member(LEADER)));
+        partyFinder.applyUpdated(listing(7L, OTHER_MEMBER, member(OTHER_MEMBER), member(KICK_TARGET)));
+        String route = "DELETE /party-finder/listings/7/members/" + KICK_TARGET;
+        backend.answer(route, listingJson(7L, OTHER_MEMBER, OTHER_MEMBER));
+
+        partyFinder.actions().kickMemberById(7L, KICK_TARGET);
+        partyFinder.actions().promoteMemberById(7L, KICK_TARGET);
+        runGameThreadFor(200);
+
+        assertEquals(List.of(), backend.requests);
+        assertEquals(List.of(), sent);
+    }
+
+    @Test
+    void aNameLookupThatOutlastsItsWaitIsLeftToFinishForItsOtherCallers() {
+        PartyFinderManager partyFinder = offline();
+        // The name cache hands everyone who asks for this name the same lookup.
+        CompletableFuture<String> shared = new CompletableFuture<>();
+        names = uuid -> shared;
+
+        partyFinder.handlePartyFinderInvite(7L, OTHER_MEMBER, null, null, connection);
+        partyFinder.game().partyCommandFor(partyFinder.ticket(), UUID.fromString(KICK_TARGET), PartyGameCommands.KICK);
+        clockMs += 3_000;
+        gameThread.runDue();
+        gameThread.runDue();
+
+        assertEquals(List.of("Party Finder invite from a player."), shown, "the invite is shown without the name");
+        assertEquals(List.of(), sent, "a command never names nobody");
+        assertFalse(shared.isDone(), "the lookup is not ended for everyone else");
+    }
+
+    @Test
+    void anOpenPartyReminderListsTheListingsAsTheyAreWhenItIsShown() throws Exception {
+        PartyFinderManager partyFinder = sessionPartyFinder();
+        remindersOn = true;
+        names = uuid -> CompletableFuture.completedFuture(Map.of(OTHER_MEMBER, "Eight", THIRD_MEMBER, "Nine").get(uuid));
+        backend.answer("GET /party-finder/listings",
+                "[" + listingJson(8L, OTHER_MEMBER, OTHER_MEMBER) + "," + listingJson(9L, THIRD_MEMBER, THIRD_MEMBER) + "]");
+
+        partyFinder.notices.remindOfOpenParties();
+        // The refresh is applied; the reminder waits for the next tick.
+        runGameThreadUntil(() -> partyFinder.getListings().size() == 2);
+        // Listing 8 closes, as the socket reports, before the reminder is shown.
+        partyFinder.handlePartyFinderUpdate("UPDATED", closed(listing(8L, OTHER_MEMBER, member(OTHER_MEMBER))));
+        runGameThreadFor(100);
+
+        assertEquals(1, shown.size(), shown.toString());
+        assertTrue(shown.getFirst().contains("Open Sequoia parties (1):"), shown.getFirst());
+        assertTrue(shown.getFirst().contains("| Nine"), shown.getFirst());
+        assertFalse(shown.getFirst().contains("Eight"), "no JOIN button for a party that closed");
+    }
+
+    @Test
+    void aSecondInviteAllWhileTheFirstIsGoingOutInvitesNobodyTwice() {
+        PartyFinderManager partyFinder = offline();
+        names = uuid -> CompletableFuture.completedFuture(Map.of(KICK_TARGET, "First", OTHER_MEMBER, "Second").get(uuid));
+        partyFinder.applyJoined(listing(7L, LEADER, member(LEADER), member(KICK_TARGET), member(OTHER_MEMBER)));
+
+        CompletableFuture<InviteAllResult> first = partyFinder.game().inviteAllCurrentMembers();
+        gameThread.runDue();
+        gameThread.runDue();
+        // Clicked again, or /seq p invite-all, during the half second before the second invite.
+        CompletableFuture<InviteAllResult> second = partyFinder.game().inviteAllCurrentMembers();
+        gameThread.runDue();
+        gameThread.runDue();
+        assertEquals(List.of("party invite First"), sent);
+        assertEquals(new InviteAllResult(false, false, 0, 0, "party invites are already going out."), second.join());
+
+        clockMs += 500;
+        gameThread.runDue();
+        assertEquals(List.of("party invite First", "party invite Second"), sent);
+        assertTrue(first.join().success());
+
+        partyFinder.game().inviteAllCurrentMembers();
+        gameThread.runDue();
+        gameThread.runDue();
+        assertEquals(List.of("party invite First", "party invite Second", "party invite First"), sent,
+                "once it finished, another may start");
+    }
+
+    @Test
+    void inviteAllSkipsAMemberWhoJoinedTheWynnPartyBeforeTheirTurn() {
+        PartyFinderManager partyFinder = offline();
+        names = uuid -> CompletableFuture.completedFuture(Map.of(KICK_TARGET, "First", OTHER_MEMBER, "Second").get(uuid));
+        partyFinder.applyJoined(listing(7L, LEADER, member(LEADER), member(KICK_TARGET), member(OTHER_MEMBER)));
+
+        CompletableFuture<InviteAllResult> invited = partyFinder.game().inviteAllCurrentMembers();
+        gameThread.runDue();
+        gameThread.runDue();
+        wynnParty.add("Second");
+        clockMs += 500;
+        gameThread.runDue();
+
+        assertEquals(List.of("party invite First"), sent);
+        assertEquals(new InviteAllResult(true, true, 1, 1, "sent 1 party invite. Skipped 1."), invited.join());
+    }
+
+    @Test
+    void inviteAllInvitesAMemberWhoLeftTheWynnPartyWhileTheNamesWereLookedUp() {
+        PartyFinderManager partyFinder = offline();
+        CompletableFuture<String> firstName = new CompletableFuture<>();
+        names = uuid -> KICK_TARGET.equals(uuid) ? firstName : CompletableFuture.completedFuture(null);
+        partyFinder.applyJoined(listing(7L, LEADER, member(LEADER), member(KICK_TARGET)));
+        wynnParty.add("First");
+
+        partyFinder.game().inviteAllCurrentMembers();
+        wynnParty.remove("First");
+        firstName.complete("First");
+        gameThread.runDue();
+        gameThread.runDue();
+
+        assertEquals(List.of("party invite First"), sent);
+    }
+
     /** A backend with no listings and one raid, holding the create {@code route}'s reply until the test answers. */
     private CompletableFuture<String> linkedCreateBackend(String route) {
         backend.answer("GET /party-finder/listings", "[]");
@@ -817,6 +1034,17 @@ class PartyFinderManagerTest {
                 List.of(members),
                 List.<ReservedSlot>of(),
                 Instant.EPOCH);
+    }
+
+    private static Listing reservingOne(Listing listing) {
+        return new Listing(listing.id(), listing.activities(), null, listing.leaderUUID(), listing.region(),
+                listing.status(), null, null, listing.members(),
+                List.of(new ReservedSlot(null, PartyRole.DPS, Instant.EPOCH)), listing.createdAt());
+    }
+
+    private static Listing closed(Listing listing) {
+        return new Listing(listing.id(), listing.activities(), null, listing.leaderUUID(), listing.region(),
+                PartyStatus.CLOSED, null, null, listing.members(), listing.reservedSlots(), listing.createdAt());
     }
 
     private static Listing inviteOnly(Listing listing) {

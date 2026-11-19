@@ -44,6 +44,7 @@ import lombok.Getter;
  */
 public class PartyFinderManager {
 
+    private static final long NAME_LOOKUP_TIMEOUT_MS = 3_000L;
     private static final Gson GSON = new GsonBuilder()
             .registerTypeAdapter(
                     Instant.class, (JsonDeserializer<Instant>) (json, type, ctx) -> Instant.parse(json.getAsString()))
@@ -160,16 +161,31 @@ public class PartyFinderManager {
         return ticket.generation() == resetGeneration;
     }
 
+    /** Whether {@code ticket}'s session lasts, and the player is still on the server connection it was read on. */
+    boolean isCurrent(Ticket ticket) {
+        return holds(ticket) && ticket.connection() == player.connection();
+    }
+
     /**
      * Runs {@code action} on the game thread, unless this party finder's session has ended, or the
      * player has moved to another server connection, since {@code ticket} was read.
      */
     void forSamePlayer(Ticket ticket, Runnable action) {
         gameThread.execute(() -> {
-            if (holds(ticket) && ticket.connection() == player.connection()) {
+            if (isCurrent(ticket)) {
                 action.run();
             }
         });
+    }
+
+    /**
+     * {@code uuid}'s name, or null once three seconds pass on the game thread without it. The name
+     * cache hands every caller the same lookup, so the wait ends on a copy, never on that lookup.
+     */
+    CompletableFuture<String> nameSoon(String uuid) {
+        CompletableFuture<String> name = player.nameOf(uuid).copy();
+        gameThread.after(NAME_LOOKUP_TIMEOUT_MS, () -> name.complete(null));
+        return name;
     }
 
     /**
@@ -202,7 +218,7 @@ public class PartyFinderManager {
         CompletableFuture<R> applied = new CompletableFuture<>();
         inFlight.add(applied);
         // Checked once it is in flight: a reset from here on settles it.
-        if (!holds(ticket) || ticket.connection() != player.connection()) {
+        if (!isCurrent(ticket)) {
             inFlight.remove(applied);
             applied.completeExceptionally(new SupersededByReset());
             return applied;

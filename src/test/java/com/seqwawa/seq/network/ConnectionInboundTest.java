@@ -617,4 +617,14 @@ class ConnectionInboundTest {
         assertTrue(ConnectionManager.isConnected());
         assertEquals(List.of(), harness.told);
     }
+
+    @Test
+    void aReceivedInviteIsLoggedWithoutItsToken() {
+        String logged = ConnectionManager.forLog("{\"type\":\"party_finder_invite\",\"listing_id\":7,"
+                + "\"invite_token\":\"se\\\"cret\",\"inviter_uuid\":\"x\",\"listing\":{\"inviteToken\":\"other\"}}");
+
+        assertFalse(logged.contains("cret"), "nor any of a token with a quote in it: " + logged);
+        assertFalse(logged.contains("other"), logged);
+        assertTrue(logged.contains("\"listing_id\":7") && logged.contains("\"inviter_uuid\":\"x\""), logged);
+    }
 }

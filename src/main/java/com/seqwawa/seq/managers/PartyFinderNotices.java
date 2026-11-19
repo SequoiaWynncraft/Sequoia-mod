@@ -8,15 +8,12 @@ import com.seqwawa.seq.model.Member;
 import com.seqwawa.seq.model.PartyJoinPolicy;
 import com.seqwawa.seq.model.PartyRole;
 import com.seqwawa.seq.model.PartyStatus;
-import com.seqwawa.seq.network.ConnectionManager;
-import com.seqwawa.seq.utils.PlayerNameCache;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -33,7 +30,6 @@ import net.minecraft.network.chat.MutableComponent;
  */
 final class PartyFinderNotices {
 
-    private static final long NAME_LOOKUP_TIMEOUT_SECONDS = 3L;
     private static final String SEQ_INVITE_ALL_COMMAND = "/seq p invite-all";
 
     private final PartyFinderManager partyFinder;
@@ -73,7 +69,8 @@ final class PartyFinderNotices {
                 return;
             }
             String joinCommand = "/seq p join " + listingId + " token " + quoteForCommand(inviteToken);
-            SeqClient.LOGGER.info("[PartyFinderWS] Showing invite listingId={} joinCommand={}", listingId, joinCommand);
+            // Not the command: its token lets whoever holds it join.
+            SeqClient.LOGGER.info("[PartyFinderWS] Showing invite listingId={}", listingId);
             player.show(
                     line(message),
                     Component.empty()
@@ -270,9 +267,8 @@ final class PartyFinderNotices {
      */
     private void withName(String uuid, Consumer<String> show) {
         PartyFinderManager.Ticket ticket = partyFinder.ticket();
-        player.nameOf(uuid)
-                .completeOnTimeout(null, NAME_LOOKUP_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-                .whenComplete((name, error) -> partyFinder.forSamePlayer(ticket, () -> show.accept(error == null ? name : null)));
+        partyFinder.nameSoon(uuid).whenComplete((name, error) ->
+                partyFinder.forSamePlayer(ticket, () -> show.accept(error == null ? name : null)));
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -296,6 +292,11 @@ final class PartyFinderNotices {
         }
 
         nextOpenPartyAnnouncementAtMs = now + intervalMs;
+        remindOfOpenParties();
+    }
+
+    /** Refreshes the listings, then reminds the player of the open ones as they are when the reminder shows. */
+    void remindOfOpenParties() {
         openPartyAnnouncementRefreshInFlight = true;
         PartyFinderManager.Ticket ticket = partyFinder.ticket();
         partyFinder.actions().refreshListingsForAnnouncements(ticket).whenComplete((refreshedListings, error) -> {
@@ -303,19 +304,19 @@ final class PartyFinderNotices {
             if (error != null) {
                 SeqClient.LOGGER.warn("[PartyFinderWS] Open party reminder refresh failed", error);
             } else if (refreshedListings != null && !refreshedListings.isEmpty()) {
-                partyFinder.forSamePlayer(ticket, () -> announceOpenParties(refreshedListings));
+                // A listing may close, or fill, before this runs: what was fetched is not read again.
+                partyFinder.forSamePlayer(ticket, this::announceOpenParties);
             }
         });
     }
 
-    private void announceOpenParties(List<Listing> refreshedListings) {
+    private void announceOpenParties() {
         String myUUID = player.uuid();
         if (myUUID == null || !shouldRunOpenPartyAnnouncements()) {
             return;
         }
         OpenPartyAnnouncementSummary summary = buildOpenPartyAnnouncementSummary(
-                selectOpenPartyAnnouncementCandidates(refreshedListings, myUUID),
-                PartyFinderNotices::resolveReminderLeaderName);
+                selectOpenPartyAnnouncementCandidates(partyFinder.getListings(), myUUID), this::reminderLeaderName);
         if (summary.isEmpty()) {
             return;
         }
@@ -332,11 +333,7 @@ final class PartyFinderNotices {
     }
 
     private boolean shouldRunOpenPartyAnnouncements() {
-        return SeqClient.getAnnounceOpenPartiesSetting() != null
-                && SeqClient.getAnnounceOpenPartiesIntervalMinutesSetting() != null
-                && SeqClient.getAnnounceOpenPartiesSetting().getValue()
-                && ConnectionManager.isConnected()
-                && !partyFinder.isInParty();
+        return player.wantsOpenPartyReminders() && !partyFinder.isInParty();
     }
 
     static List<Listing> selectOpenPartyAnnouncementCandidates(List<Listing> source, String myUUID) {
@@ -374,8 +371,8 @@ final class PartyFinderNotices {
                 .toList());
     }
 
-    private static String resolveReminderLeaderName(String leaderUUID) {
-        String resolved = PlayerNameCache.resolve(leaderUUID);
+    private String reminderLeaderName(String leaderUUID) {
+        String resolved = player.knownName(leaderUUID);
         return resolved == null || resolved.isBlank() ? "Unknown" : resolved;
     }
 
