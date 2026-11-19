@@ -76,8 +76,11 @@ public final class PartyFinderActions {
 
     CompletableFuture<List<Listing>> refreshListingsForAnnouncements(Ticket ticket) {
         return fetchListings(ticket).exceptionally(error -> {
-            SeqClient.LOGGER.warn("[PartyFinderWS] Failed to refresh listings for open-party reminders: {}",
-                    PartyFinderErrors.message(error, "Failed to load listings"), error);
+            String message = PartyFinderErrors.message(error, "Failed to load listings");
+            if (message != null) {
+                SeqClient.LOGGER.warn("[PartyFinderWS] Failed to refresh listings for open-party reminders: {}",
+                        message, error);
+            }
             return null;
         });
     }
@@ -394,8 +397,10 @@ public final class PartyFinderActions {
 
     private <T> T loadFailed(Throwable error, String what) {
         String message = PartyFinderErrors.message(error, what);
-        SeqClient.LOGGER.error("{}: {}", what, message, error);
-        partyFinder.pushUiError(message);
+        if (message != null) {
+            SeqClient.LOGGER.error("{}: {}", what, message, error);
+            partyFinder.pushUiError(message);
+        }
         return null;
     }
 
