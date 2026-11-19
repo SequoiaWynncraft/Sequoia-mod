@@ -93,16 +93,16 @@ sets. `release:promote` also needs `MODRINTH_TOKEN`.
 
 ## Continuous integration
 
-The Build workflow runs on pull requests, on pushes to `main` and from Release:
+The Build workflow runs on pull requests, on pushes to `main`, from Release, weekly and by hand:
 
 | Job | Runs |
 | --- | --- |
 | `guest` | `test:scripts`, `native:guest --sources-only`, then `native:guest` unless a guest built from the same inputs is cached |
-| `cached helpers` | On Linux, restores each platform's helper from the cache a run on its own platform saved after building and verifying it, and passes it on |
-| One job per platform | `native:build` on that platform's runner, for each helper `cached helpers` did not find; for all six on a tag |
+| `cached helpers` | On Linux, restores each platform's helper from the cache a run on its own platform saved after building and verifying it, and passes it on; also decides whether the change needs macOS tested |
+| One job per platform | `native:build` on that platform's runner, for each helper `cached helpers` did not find |
 | `pack` | `native:guest --sources-only` on the guest job's sources and `native:pack --require-all`, once for every later job |
 | `build` | `native:notices`, `build` and `native:verify-jar` |
-| `java PLATFORM` | `test:platform` on Windows x64 and macOS Arm, plus the other platforms except Linux x64 for tags and manual runs |
+| `java PLATFORM` | `test:platform` on Windows x64; on macOS Arm too when the change touches the updater, the image previews, `native/`, the build or its JDK; on Windows and Linux Arm too for tags; on every platform but Linux x64 weekly and by hand |
 
 The CodeQL workflow scans every language on pull requests, on pushes to `main` and weekly. Its Java
 extraction runs Gradle on the JDK in `mise.toml`, so the repository uses this workflow instead of
@@ -112,8 +112,14 @@ The guest job caches the upstream archives with the guest and hands them to `pac
 their pins, notices and FFmpeg signature again before building the source archive from them.
 Each job installs only the tools it uses. Pull requests restore the tool and Gradle caches but
 never save them. Guest and helper caches a pull request saves stay within that pull request. Tag
-builds compile the guest and helpers without their caches, and the Release and Promote release
-jobs install their tools without a cache.
+builds compile the guest again but take each helper from the cache `main` saved after building and
+verifying it on its own platform, and the Release and Promote release jobs install their tools
+without a cache.
+
+GitHub's macOS runners can queue for minutes or not be placed at all, so nothing waits on them
+unless the change is about macOS: a helper whose inputs changed, or the code the macOS lane tests.
+A release never runs on macOS. The weekly run tests every platform, so a macOS break the path rules
+miss still shows up within a week; run Build by hand to test one sooner.
 
 ## Release a version
 
