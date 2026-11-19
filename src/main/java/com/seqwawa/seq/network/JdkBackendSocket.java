@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.LongSupplier;
 
@@ -46,8 +47,10 @@ final class JdkBackendSocket implements BackendSocket {
     private String closeReason;
     /** Each text frame waits for the one before it: the JDK takes one at a time. */
     private CompletableFuture<?> sending = CompletableFuture.completedFuture(null);
-    /** The last ping's number. Each ping carries its own, and only a pong carrying one of them answers. */
+    /** The last ping's number; each ping carries its own. */
     private volatile long pinged;
+    /** When each ping no pong has answered went out, kept until the reply deadline passes: a pong answers one, once. */
+    private final Map<Long, Long> unanswered = new ConcurrentHashMap<>();
     /** When the backend last answered a ping, or the socket opened. */
     private volatile long answeredAt;
 
@@ -106,14 +109,16 @@ final class JdkBackendSocket implements BackendSocket {
     public void close(int code, String reason) {
         WebSocket socket;
         synchronized (this) {
-            if (closing) {
+            socket = webSocket;
+            // Once the JDK has read the backend's close, or failed, that came first: its report, waiting for this lock, says so.
+            if (closing || socket != null && socket.isInputClosed()) {
+                open = false;
                 return;
             }
             closing = true;
             open = false;
             closeCode = code;
             closeReason = reason;
-            socket = webSocket;
             if (socket == null) {
                 // Still connecting: it ends now, and a socket that opens anyway is cut off at once.
                 end(code, reason, false, null);
@@ -182,12 +187,15 @@ final class JdkBackendSocket implements BackendSocket {
             if (isClosing()) {
                 return;
             }
-            if (clockMs.getAsLong() - answeredAt > replyDeadline.toMillis()) {
+            long now = clockMs.getAsLong();
+            if (now - answeredAt > replyDeadline.toMillis()) {
                 socket.abort();
                 end(ABNORMAL_CLOSE, "The backend stopped answering", false, null);
                 return;
             }
-            socket.sendPing(ByteBuffer.allocate(Long.BYTES).putLong(0, ++pinged)).exceptionally(failure -> {
+            unanswered.values().removeIf(sentAt -> now - sentAt > replyDeadline.toMillis());
+            unanswered.put(++pinged, now);
+            socket.sendPing(ByteBuffer.allocate(Long.BYTES).putLong(0, pinged)).exceptionally(failure -> {
                 fail(failure);
                 return null;
             });
@@ -242,12 +250,9 @@ final class JdkBackendSocket implements BackendSocket {
 
         @Override
         public CompletionStage<?> onPong(WebSocket socket, ByteBuffer message) {
-            // Only a pong carrying one of our pings' data answers it (RFC 6455 section 5.5.3); one may come unasked.
-            if (message.remaining() == Long.BYTES) {
-                long ping = message.getLong(message.position());
-                if (ping > 0 && ping <= pinged) {
-                    answeredAt = clockMs.getAsLong();
-                }
+            // Only a pong carrying an unanswered ping's data answers it (RFC 6455 section 5.5.3); one may come unasked, or again.
+            if (message.remaining() == Long.BYTES && unanswered.remove(message.getLong(message.position())) != null) {
+                answeredAt = clockMs.getAsLong();
             }
             socket.request(1);
             return null;

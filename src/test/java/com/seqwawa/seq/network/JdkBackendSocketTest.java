@@ -20,6 +20,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.Locale;
@@ -29,6 +30,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -105,6 +107,36 @@ class JdkBackendSocketTest {
         assertTrue(socket.isClosing());
         assertFalse(socket.send("{\"type\":\"guild_chat\"}"), "nothing goes once closed");
         events.assertQuiet();
+    }
+
+    @Test
+    void aCloseOfThisSidesAfterTheJdkReadTheBackendsLeavesItTheBackends() throws Exception {
+        openSocket(Duration.ofSeconds(30), Duration.ofSeconds(5));
+
+        // Holding the socket's lock keeps the JDK's report of the backend's close waiting for it, so this
+        // side's close lands between the JDK reading the backend's and the socket reporting it, every run.
+        synchronized (socket) {
+            server.sendClose(1008, "party_finder_banned");
+            awaitCloseReportWaitingForTheLock();
+            socket.close(4001, "Re-authenticating");
+            assertFalse(socket.isOpen());
+        }
+
+        assertEquals("close:1008:party_finder_banned:true:false", events.next(), "still the backend's own close");
+        assertEquals("close:1008:", server.read(), "the JDK answers the backend's close; this side's never goes out");
+        events.assertQuiet();
+    }
+
+    /** Waits until a thread reporting a close to the socket is blocked on its lock, which the caller holds. */
+    private static void awaitCloseReportWaitingForTheLock() throws InterruptedException {
+        String reporter = JdkBackendSocket.class.getName() + "$Events";
+        long giveUpAt = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (Thread.getAllStackTraces().entrySet().stream().noneMatch(thread ->
+                thread.getKey().getState() == Thread.State.BLOCKED && Arrays.stream(thread.getValue()).anyMatch(frame ->
+                        frame.getClassName().equals(reporter) && frame.getMethodName().equals("onClose")))) {
+            assertTrue(System.nanoTime() < giveUpAt, "the JDK never reported the backend's close");
+            Thread.sleep(5);
+        }
     }
 
     @Test
@@ -257,6 +289,63 @@ class JdkBackendSocketTest {
 
         assertEquals("close:1006:The backend stopped answering:false:false", events.next());
         assertFalse(socket.isOpen());
+    }
+
+    @Test
+    void copiesOfAPongAnswerItsPingOnce() throws Exception {
+        openSocket(QUICK, Duration.ofMillis(700), Duration.ofSeconds(5));
+        assertEquals("ping", server.read());
+        byte[] first = server.lastPing;
+        // The first ping is answered; every ping after it gets that same pong again.
+        Thread echoes = new Thread(() -> {
+            try {
+                while (true) {
+                    server.sendPong(first);
+                    server.read();
+                }
+            } catch (IOException ended) {
+                // The socket was given up.
+            }
+        });
+        echoes.setDaemon(true);
+        echoes.start();
+
+        assertEquals("close:1006:The backend stopped answering:false:false", events.next());
+        assertFalse(socket.isOpen());
+    }
+
+    @Test
+    void aPongForAPingPastTheReplyDeadlineAnswersNothing() throws Exception {
+        // This clock moves only when the test moves it, each time between two pings, 400 ms apart.
+        AtomicLong now = new AtomicLong();
+        server = new TinyServer();
+        socket = new JdkBackendSocket(server.uri(), events, Duration.ofMillis(400), Duration.ofMillis(1_000),
+                Duration.ofSeconds(5), now::get);
+        socket.connect(Map.of());
+        server.accept(101);
+        assertEquals("open", events.next());
+
+        assertEquals("ping", server.read());
+        byte[] first = server.lastPing;
+        now.set(900);
+        assertEquals("ping", server.read());
+        server.sendPong(server.lastPing);
+        awaitFramesHandled();
+        // The first ping's deadline passes before the next ping, so its pong, coming after, answers nothing.
+        now.set(1_500);
+        assertEquals("ping", server.read());
+        server.sendPong(first);
+        awaitFramesHandled();
+        now.set(2_000);
+
+        assertEquals("close:1006:The backend stopped answering:false:false", events.next(),
+                "the last answer came at 900, more than the deadline ago");
+    }
+
+    /** Returns once the JDK has handled every frame the server sent so far: it answers a ping after them. */
+    private void awaitFramesHandled() throws IOException {
+        server.sendPing();
+        assertEquals("pong", server.read());
     }
 
     @Test
