@@ -141,7 +141,8 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
     private UiBounds roleDropdown = new UiBounds(0, 0, 0, 0);
 
     // ── Modal state ──
-    private boolean modalOpen = false;
+    /** What the create/update modal is open for, or null while it is closed. */
+    private PartyModalFor modalFor;
     private boolean inviteModalOpen = false;
     private TextField inviteUsername = new TextField();
     private final Set<String> modalSelectedRaids = new LinkedHashSet<>();
@@ -229,6 +230,26 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
         /** What a click on the drawn open/close button does: what it showed, while it still would; else nothing. */
         static OpenClose openCloseClicked(LeaderControls drawn, Listing current, boolean lead) {
             return drawn != null && drawn.equals(of(current, lead)) ? drawn.openClose() : null;
+        }
+    }
+
+    /** What the create/update modal was opened for: to update listing {@code listingId}, or to create one (null). */
+    record PartyModalFor(Long listingId) {
+        static final PartyModalFor CREATE = new PartyModalFor(null);
+
+        /** What it may do for a player on {@code current}: create while they are in no party, update one they lead. */
+        static PartyModalFor of(Listing current, boolean lead) {
+            if (current == null) return CREATE;
+            return lead ? new PartyModalFor(current.id()) : null;
+        }
+
+        /** {@code opened} while it may still do what it was opened for; else none (null), and the modal closes. */
+        static PartyModalFor still(PartyModalFor opened, Listing current, boolean lead) {
+            return opened != null && opened.equals(of(current, lead)) ? opened : null;
+        }
+
+        boolean updates() {
+            return listingId != null;
         }
     }
 
@@ -356,6 +377,7 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
         HeaderControlsLayout headerLayout = computeHeaderControlsLayout(panelX, panelWidth, fontName);
         drawnHeader = headerLayout;
         drawnLeaderControls = LeaderControls.of(party().getCurrentListing(), party().isPartyLeader());
+        modalFor = PartyModalFor.still(modalFor, party().getCurrentListing(), party().isPartyLeader());
         float headerHeight = headerLayout.height();
 
         canvas.fillRect(panelX, 0, panelWidth, screenHeight, color(BACKGROUND_BODY));
@@ -387,12 +409,12 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
                 filterButton.centerY(), "Filter +", UiCanvas.HorizontalAlign.CENTER);
 
         // Role dropdown overlay
-        if (roleDropdownOpen && !modalOpen && !inviteModalOpen && !filterScreenOpen) {
+        if (roleDropdownOpen && modalFor == null && !inviteModalOpen && !filterScreenOpen) {
             renderRoleDropdownMenu(canvas);
         }
 
         // Modal overlay
-        if (modalOpen) {
+        if (modalFor != null) {
             renderModal(canvas, fontName, panelX, panelWidth, screenHeight);
         }
 
@@ -1273,7 +1295,7 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
     }
 
     private String createLabel() {
-        return party().isPartyLeader() ? "Update party" : "Create party";
+        return modalFor.updates() ? "Update party" : "Create party";
     }
 
     private void renderModal(UiCanvas canvas, String fontName, float panelX, float panelWidth, float screenHeight) {
@@ -1289,7 +1311,7 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
         canvas.strokeRect(modalX, modalY, MODAL_WIDTH, PARTY_MODAL_HEIGHT, 1, color(ACCENT_SECONDARY));
 
         // Title
-        String modalTitle = party().isPartyLeader() ? "Update Party" : "Create Party";
+        String modalTitle = modalFor.updates() ? "Update Party" : "Create Party";
         drawText(canvas, fontName, MODAL_TITLE_SIZE, color(TEXT_PRIMARY), modalX + MODAL_WIDTH / 2f, modalY + 18,
                 modalTitle, UiCanvas.HorizontalAlign.CENTER);
 
@@ -1802,8 +1824,10 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
         if (inviteModalOpen) {
             return handleInviteModalClick(at, inviteModal(panelX, panelWidth, screenHeight));
         }
-        if (modalOpen) {
-            return handleModalClick(at, partyModal(panelX, panelWidth, screenHeight));
+        if (modalFor != null) {
+            // A modal whose party has changed since the frame drew it closes, and the click does nothing.
+            modalFor = PartyModalFor.still(modalFor, party().getCurrentListing(), party().isPartyLeader());
+            return modalFor == null || handleModalClick(at, partyModal(panelX, panelWidth, screenHeight));
         }
 
         if (roleDropdownOpen) {
@@ -1940,8 +1964,11 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
         return bounds != null && bounds.contains(at);
     }
 
+    /** Opens the modal to update the player's listing, or create one, while that is what they may do. */
     private void openModal(boolean managing) {
-        modalOpen = true;
+        PartyModalFor opened = PartyModalFor.of(party().getCurrentListing(), party().isPartyLeader());
+        if (opened == null || opened.updates() != managing) return;
+        modalFor = opened;
         inviteModalOpen = false;
         reservedSlotsFocused = false;
         if (!managing) {
@@ -1997,7 +2024,7 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
 
     private void openInviteModal() {
         inviteModalOpen = true;
-        modalOpen = false;
+        modalFor = null;
         filterScreenOpen = false;
         roleDropdownOpen = false;
         inviteUsername = new TextField();
@@ -2076,7 +2103,7 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
     private boolean handleModalClick(UiPointer at, PartyModal modal) {
         // Click outside modal closes it
         if (!modal.box().contains(at)) {
-            modalOpen = false;
+            modalFor = null;
             reservedSlotsFocused = false;
             return true;
         }
@@ -2142,7 +2169,7 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
     }
 
     private void submitPartyFromModal() {
-        boolean updatingParty = party().getJoinedPartyIndex() >= 0;
+        boolean updatingParty = modalFor.updates();
         Set<String> selectedRaids = new LinkedHashSet<>(modalSelectedRaids);
         if (updatingParty && selectedRaids.isEmpty()) {
             selectedRaids.addAll(getCurrentListingRaidTags());
@@ -2161,13 +2188,13 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
         commitReservedSlotsInput();
         List<String> activityNames = new ArrayList<>(selectedRaids);
         if (updatingParty) {
-            party().actions().updateParty(
+            party().actions().updateParty(modalFor.listingId(),
                     activityNames, selectedRole, modalReservedSlots, modalSelectedRegion, modalJoinPolicy);
         } else {
             party().actions().createParty(
                     activityNames, selectedRole, modalReservedSlots, modalSelectedRegion, modalJoinPolicy);
         }
-        modalOpen = false;
+        modalFor = null;
         reservedSlotsFocused = false;
         scroll.reset();
     }
@@ -2241,7 +2268,7 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
-        if (!modalOpen && !inviteModalOpen && !filterScreenOpen) {
+        if (modalFor == null && !inviteModalOpen && !filterScreenOpen) {
             scroll.scrollBy(-(float) scrollY * SCROLL_SPEED);
         }
         return true;
@@ -2278,14 +2305,14 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
             }
             return true;
         }
-        if (modalOpen) {
+        if (modalFor != null) {
             int keyCode = keyEvent.key();
             if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
                 if (reservedSlotsFocused) {
                     commitReservedSlotsInput();
                     reservedSlotsFocused = false;
                 } else {
-                    modalOpen = false;
+                    modalFor = null;
                 }
                 return true;
             }
@@ -2339,7 +2366,7 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
             }
             return true;
         }
-        if (modalOpen) {
+        if (modalFor != null) {
             if (reservedSlotsFocused
                     && typedText != null
                     && typedText.length() == 1

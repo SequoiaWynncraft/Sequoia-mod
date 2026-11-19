@@ -7,6 +7,7 @@ import com.seqwawa.seq.model.PartyCloseReason;
 import com.seqwawa.seq.model.PartyStatus;
 import com.seqwawa.seq.ui.PartyFinderScreen.OpenClose;
 import com.seqwawa.seq.ui.PartyFinderScreen.LeaderControls;
+import com.seqwawa.seq.ui.PartyFinderScreen.PartyModalFor;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -111,6 +112,26 @@ class PartyFinderHeaderLayoutTest {
         assertNull(LeaderControls.clicked(null, listing(7L, PartyStatus.OPEN, null), true), "nothing drawn yet");
         assertEquals(7L, LeaderControls.clicked(drawn, listing(7L, PartyStatus.CLOSED, null), true).listingId(),
                 "closed since, it is still the listing they act on");
+    }
+
+    @Test
+    void theManagePartyModalUpdatesTheListingItWasOpenedForOrCloses() {
+        var managing = PartyModalFor.of(listing(7L, PartyStatus.OPEN, null), true);
+        assertTrue(managing.updates(), "opened as Update party");
+        assertEquals(managing, PartyModalFor.still(managing, listing(7L, PartyStatus.CLOSED, null), true),
+                "the same listing, changed since, is still the one it updates");
+
+        // The listing was disbanded after the frame that drew Update party.
+        assertNull(PartyModalFor.still(managing, null, false), "it closes rather than create a party with its settings");
+        assertNull(PartyModalFor.still(managing, listing(8L, PartyStatus.OPEN, null), true), "another listing");
+        assertNull(PartyModalFor.still(managing, listing(7L, PartyStatus.OPEN, null), false), "no longer the leader");
+
+        var creating = PartyModalFor.of(null, false);
+        assertFalse(creating.updates(), "opened as Create party");
+        assertEquals(creating, PartyModalFor.still(creating, null, false));
+        assertNull(PartyModalFor.still(creating, listing(8L, PartyStatus.OPEN, null), true),
+                "leading a party since, it closes rather than update that party with these settings");
+        assertNull(PartyModalFor.still(creating, listing(8L, PartyStatus.OPEN, null), false), "in a party since");
     }
 
     private static Listing listing(long id, PartyStatus status, PartyCloseReason closeReason) {

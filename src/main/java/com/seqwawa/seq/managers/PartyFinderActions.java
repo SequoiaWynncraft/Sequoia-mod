@@ -170,11 +170,11 @@ public final class PartyFinderActions {
                 policy, reservedSlots), partyFinder::applyJoined, "Unable to create party", "Failed to create party");
     }
 
-    /** Updates the player's listing from the modal, then sets its reserved slots. */
-    public void updateParty(
+    /** Updates {@code listingId}, while it is the player's listing, from the modal, then sets its reserved slots. */
+    public void updateParty(long listingId,
             List<String> activityNames, String role, int reservedSlots, PartyRegion region, PartyJoinPolicy joinPolicy) {
         Listing current = partyFinder.getCurrentListing();
-        if (current == null) {
+        if (current == null || current.id() != listingId) {
             partyFinder.pushUiError("Unable to update party: no active listing.");
             return;
         }
