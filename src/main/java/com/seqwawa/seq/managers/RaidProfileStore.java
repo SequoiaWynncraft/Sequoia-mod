@@ -21,6 +21,7 @@ import com.seqwawa.seq.model.GuildMemberPresence;
 import com.seqwawa.seq.network.ApiClient;
 import com.seqwawa.seq.network.BuildConfig;
 import com.seqwawa.seq.network.ConnectionManager;
+import com.seqwawa.seq.session.SessionManager;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -39,6 +40,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
+import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 
 /**
@@ -118,6 +120,8 @@ public final class RaidProfileStore {
     private volatile boolean unclaimedSetupDismissal;
     /** The Minecraft account playing, by UUID, or null before the game knows. */
     private final Supplier<String> account;
+    /** The current session's id, so a save's answer is shown only to the session that sent it. */
+    private final LongSupplier session;
     private volatile boolean loaded;
     /** Whether a fetch has worked since the game started. */
     private volatile boolean fetchedOnce;
@@ -132,7 +136,8 @@ public final class RaidProfileStore {
                 ClientThread.executor(),
                 Background.disk(),
                 RaidProfileStore::localUuid,
-                profile -> ApiClient.getInstance().putMyRaidProfile(profile));
+                profile -> ApiClient.getInstance().putMyRaidProfile(profile),
+                () -> SessionManager.getInstance().current().id());
     }
 
     /**
@@ -151,7 +156,7 @@ public final class RaidProfileStore {
             BooleanSupplier separateBackend) {
         // A test completes its fetches on its own thread, which stands in for the game's.
         this(localPath, cachePath, fetch, separateBackend, Runnable::run, Runnable::run, RaidProfileStore::localUuid,
-                profile -> ApiClient.getInstance().putMyRaidProfile(profile));
+                profile -> ApiClient.getInstance().putMyRaidProfile(profile), () -> 0L);
     }
 
     RaidProfileStore(
@@ -162,8 +167,10 @@ public final class RaidProfileStore {
             Executor gameThread,
             Executor disk,
             Supplier<String> account,
-            Function<RaidTeamProfile, CompletableFuture<RaidProfilesResponse.Profile>> save) {
+            Function<RaidTeamProfile, CompletableFuture<RaidProfilesResponse.Profile>> save,
+            LongSupplier session) {
         this.account = account;
+        this.session = session;
         this.localPath = localPath;
         this.cachePath = cachePath;
         this.fetch = fetch;
@@ -436,6 +443,8 @@ public final class RaidProfileStore {
         RaidTeamProfile toSave = profile == null ? RaidTeamProfile.empty() : profile;
         // Whose setup it answers: the account playing now, not whoever plays when the answer lands.
         String savedBy = accountKey();
+        // Only the session that sent it hears how it went: a later one's panel shows its own state.
+        long savedIn = session.getAsLong();
         // The answer is handled on the game thread, where the store's state lives.
         return save.apply(toSave)
                 .thenApplyAsync(saved -> {
@@ -444,19 +453,24 @@ public final class RaidProfileStore {
                     // The response is authoritative, including a username that may be a
                     // rename ahead of the token.
                     applyProfileUpdate(saved);
-                    // Pull the authoritative copy in the background; the entry above keeps
-                    // the panel responsive meanwhile.
-                    refresh();
-                    lastError = null;
+                    if (session.getAsLong() == savedIn) {
+                        // Pull the authoritative copy in the background; the entry above keeps
+                        // the panel responsive meanwhile.
+                        refresh();
+                        lastError = null;
+                    }
                     return true;
                 }, gameThread)
                 .exceptionallyAsync(throwable -> {
-                    lastError = RaidProfileApiError.describe(throwable, "Could not save your profile.");
+                    String shown = RaidProfileApiError.describe(throwable, "Could not save your profile.");
+                    if (session.getAsLong() == savedIn) {
+                        lastError = shown;
+                    }
                     SeqClient.LOGGER.warn(
                             "[RaidProfiles] PUT {}/raid-profiles/me failed: {} | shown: {}",
                             BuildConfig.RAID_PROFILES_API_URL,
                             RaidProfileApiError.describeForLog(throwable),
-                            lastError);
+                            shown);
                     return false;
                 }, gameThread);
     }

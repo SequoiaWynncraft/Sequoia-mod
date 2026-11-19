@@ -136,6 +136,11 @@ public class ConnectionManager {
      * In between the socket already reads as closed, but only that close decides what comes next.
      */
     private volatile boolean closeQueued;
+    /**
+     * Set once the backend refused this socket's token. Frames it delivered after the refusal speak
+     * for the session that refusal ended and are dropped; its close still decides what comes next.
+     */
+    private volatile boolean rejected;
     /** A Connect the player asked for while {@link #closeQueued}: it runs on a new socket once the close is handled. */
     private volatile boolean connectOnceClosed;
     private volatile boolean versionRejectionShown;
@@ -447,8 +452,8 @@ public class ConnectionManager {
             SeqClient.LOGGER.debug("[WebSocket] Ignoring message from a superseded websocket connection");
             return;
         }
-        if (endedOnPurpose) {
-            SeqClient.LOGGER.debug("[WebSocket] Ignoring message from a connection that was ended");
+        if (endedOnPurpose || rejected) {
+            SeqClient.LOGGER.debug("[WebSocket] Ignoring message from a connection that was ended or refused");
             return;
         }
         SeqClient.LOGGER.debug("[WebSocket] onMessage raw={} chars", message != null ? message.length() : -1);
@@ -2071,7 +2076,7 @@ public class ConnectionManager {
                     discordNameDelivery(discordUser, handshakeAccount,
                             () -> instance == this && environment.tokens().holdsToken(handshakeToken),
                             SeqClient.getConfigManager()::setDiscordUsername).run();
-                    if (discordUser != null) {
+                    if (hasDiscordUsername(discordUser)) {
                         notifyConnectionStatus("Connected as " + discordUser);
                     }
                     sendPrepared("get_connected", null);
@@ -2642,6 +2647,7 @@ public class ConnectionManager {
      * reconnects as any other does, signing in afresh if the session was invalidated.
      */
     private void closeToReauthenticate() {
+        rejected = true;
         if (isOpen()) {
             closeFromClient(CLOSE_TO_REAUTHENTICATE, "Re-authenticating");
         }
@@ -2879,10 +2885,14 @@ public class ConnectionManager {
     /**
      * Keeps the Discord name a sign-in reply links, or that it links none, for {@code account}, the one
      * the socket signed in for, and only while {@code signInCurrent}: a reply that lands after a switch changes no name.
+     * A reply that leaves the name out ({@code null}) keeps the one saved.
      */
     static Runnable discordNameDelivery(String discordUsername, UUID account, BooleanSupplier signInCurrent,
             java.util.function.BiConsumer<UUID, String> store) {
         return () -> {
+            if (discordUsername == null) {
+                return;
+            }
             if (account == null || !signInCurrent.getAsBoolean()) {
                 SeqClient.LOGGER.debug("[WebSocket] Ignoring the Discord name of a sign-in that has ended");
                 return;
@@ -2891,14 +2901,17 @@ public class ConnectionManager {
         };
     }
 
-    /** The Discord name a sign-in reply links to the account, or null when it names none: absent and blank alike. */
+    /**
+     * The Discord name a sign-in reply links to the account: "" when it links none, as the backend
+     * says with null, or null when the reply leaves the name out, which says nothing about it.
+     */
     static String discordUsernameIn(JsonObject reply) {
         JsonElement name = reply == null ? null : reply.get("discord_username");
-        if (name == null || !name.isJsonPrimitive()) {
+        if (name == null || !(name.isJsonPrimitive() || name.isJsonNull())) {
             return null;
         }
-        String value = name.getAsString();
-        return hasDiscordUsername(value) ? value : null;
+        String value = name.isJsonNull() ? null : name.getAsString();
+        return hasDiscordUsername(value) ? value : "";
     }
 
     // ── Message records ──

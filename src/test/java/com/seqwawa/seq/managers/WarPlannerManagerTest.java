@@ -85,6 +85,23 @@ class WarPlannerManagerTest {
     }
 
     @Test
+    void aPlannerWhoseSessionEndedRefusesToRefresh() {
+        FakeGateway gateway = new FakeGateway();
+        var signedIn = new java.util.concurrent.atomic.AtomicBoolean(true);
+        WarPlannerManager manager = new WarPlannerManager(gateway, Clock.fixed(NOW, ZoneOffset.UTC), signedIn::get);
+        authorize(manager);
+        // The backend rejected the session's token: the session ended and stopped its planner.
+        signedIn.set(false);
+        manager.reset();
+
+        CompletableFuture<WarPlannerManager.ActionResult> result = manager.refreshNow();
+
+        assertEquals(0, gateway.calls, "nothing asks with the next session's token");
+        assertFalse(result.join().success());
+        assertFalse(manager.isAuthorized());
+    }
+
+    @Test
     void incompatibleAccessRefreshRevokesCachedAuthorizationAndSnapshot() {
         FakeGateway gateway = new FakeGateway();
         MutableClock clock = new MutableClock(NOW);

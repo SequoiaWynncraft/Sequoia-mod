@@ -92,15 +92,28 @@ class ConnectionLifecycleTest {
     }
 
     @Test
-    void signingInWithoutADiscordNameForgetsTheOneStored() {
+    void signingInWithNoDiscordLinkForgetsTheOneStored() {
         harness.config.setDiscordUsername(ConnectionHarness.PROFILE, "someone-else");
+        harness.connectAutomatically();
+        harness.open();
+
+        // How the backend says the account has no Discord link.
+        harness.receive("{\"type\":\"authenticated\",\"discord_username\":null}");
+
+        assertNull(harness.config.getDiscordUsername(ConnectionHarness.PROFILE));
+        assertFalse(harness.connection().isDiscordLinked());
+    }
+
+    @Test
+    void aSignInReplyThatLeavesTheDiscordNameOutKeepsTheOneStored() {
+        harness.config.setDiscordUsername(ConnectionHarness.PROFILE, "sequoian");
         harness.connectAutomatically();
         harness.open();
 
         harness.receive("{\"type\":\"authenticated\"}");
 
-        assertNull(harness.config.getDiscordUsername(ConnectionHarness.PROFILE));
-        assertFalse(harness.connection().isDiscordLinked());
+        assertEquals("sequoian", harness.config.getDiscordUsername(ConnectionHarness.PROFILE));
+        assertTrue(harness.connection().isDiscordLinked());
     }
 
     @Test

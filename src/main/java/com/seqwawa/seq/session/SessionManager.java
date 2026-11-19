@@ -33,7 +33,14 @@ public final class SessionManager {
             String resumeLeafAfter) {
         this.auth = auth;
         this.gameThread = gameThread;
-        this.steps = steps;
+        // So one failing step, a session's own stops included, leaves the rest and the next session to run.
+        this.steps = (name, step) -> {
+            try {
+                steps.accept(name, step);
+            } catch (RuntimeException e) {
+                SeqClient.LOGGER.warn("[Seq] Session step {} failed", name, e);
+            }
+        };
         this.current = newSession(resumeLeafAfter);
         // A board that found no session can read Leaf now, without waiting out its minute.
         auth.whenSignedIn(sessionId -> {

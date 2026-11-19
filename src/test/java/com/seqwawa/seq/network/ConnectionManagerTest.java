@@ -379,7 +379,7 @@ class ConnectionManagerTest {
         Map<UUID, String> stored = new java.util.HashMap<>();
         var signInCurrent = new AtomicBoolean(true);
         Runnable named = ConnectionManager.discordNameDelivery("discord", account, signInCurrent::get, stored::put);
-        Runnable none = ConnectionManager.discordNameDelivery(null, account, signInCurrent::get, stored::put);
+        Runnable none = ConnectionManager.discordNameDelivery("", account, signInCurrent::get, stored::put);
 
         // The switch ended the socket's sign-in before the game thread ran either.
         signInCurrent.set(false);
@@ -390,12 +390,16 @@ class ConnectionManagerTest {
     }
 
     @Test
-    void aSignInReplyWithABlankDiscordNameNamesNoneLikeOneWithout() {
+    void aSignInReplyLinksANameOrNoneAndOneThatLeavesItOutSaysNothing() {
         assertEquals("SequoiaUser", ConnectionManager.discordUsernameIn(
                 JsonParser.parseString("{\"discord_username\":\"SequoiaUser\"}").getAsJsonObject()));
-        for (String reply : List.of("{}", "{\"discord_username\":\"\"}", "{\"discord_username\":\"  \"}",
-                "{\"discord_username\":null}", "{\"discord_username\":{}}")) {
-            assertNull(ConnectionManager.discordUsernameIn(JsonParser.parseString(reply).getAsJsonObject()), reply);
+        // The backend sends null for an account with no Discord link.
+        for (String none : List.of("{\"discord_username\":null}", "{\"discord_username\":\"\"}",
+                "{\"discord_username\":\"  \"}")) {
+            assertEquals("", ConnectionManager.discordUsernameIn(JsonParser.parseString(none).getAsJsonObject()), none);
+        }
+        for (String silent : List.of("{}", "{\"discord_username\":{}}")) {
+            assertNull(ConnectionManager.discordUsernameIn(JsonParser.parseString(silent).getAsJsonObject()), silent);
         }
     }
 

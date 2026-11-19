@@ -116,9 +116,13 @@ public final class Session {
                 WarTerritoryQueueManager::reset);
     }
 
-    /** Queues {@code popup} in this session's own popups, on the game thread, so a late one never reaches the next account. */
+    /** Queues {@code popup} in this session's own popups, on the game thread, unless the session has ended by then. */
     void show(UnlockPopup popup) {
-        gameThread.execute(() -> popups().enqueue(popup));
+        gameThread.execute(() -> {
+            if (!ended) {
+                popups().enqueue(popup);
+            }
+        });
     }
 
     /** The last Leaf event this session saw, for the same player's next session to resume after. */

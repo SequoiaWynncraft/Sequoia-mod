@@ -190,13 +190,17 @@ public final class GuildStorageTracker implements NotificationAccessor {
     }
 
     public void reset() {
-        flushReadyRewardBursts(true);
-        currentSnapshot = null;
-        lastPublishedSnapshot = null;
-        lastPublishedSnapshotAtMs = 0L;
-        lastObservedSnapshotAtMs = 0L;
-        clearPendingSnapshot();
-        pendingRewardBursts.clear();
+        try {
+            // Best effort: a socket that closed a moment ago throws, and the account's storage goes all the same.
+            flushReadyRewardBursts(true);
+        } finally {
+            currentSnapshot = null;
+            lastPublishedSnapshot = null;
+            lastPublishedSnapshotAtMs = 0L;
+            lastObservedSnapshotAtMs = 0L;
+            clearPendingSnapshot();
+            pendingRewardBursts.clear();
+        }
     }
 
     void applyObservedSnapshot(StorageSnapshot snapshot) {

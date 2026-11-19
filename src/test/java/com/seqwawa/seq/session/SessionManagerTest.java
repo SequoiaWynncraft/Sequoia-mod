@@ -162,6 +162,28 @@ class SessionManagerTest {
     }
 
     @Test
+    void aStepThatThrowsLeavesTheRestOfTheEndAndTheNextSessionToRun() {
+        // The previous account's socket closed just before its reward flush, and one of its parts fails to stop.
+        SessionManager failing = new SessionManager(auth, ticks, (name, step) -> {
+            steps.accept(name, step);
+            if (name.equals("resetGuildStorage") || name.equals("leafQuests stopped")) {
+                throw new IllegalStateException(name + " failed");
+            }
+        }, null);
+        Session previous = failing.current();
+        previous.leafQuests();
+        previous.raidProfiles();
+
+        failing.end(new EndReason.AccountSwitch(false));
+
+        assertTrue(calls.containsAll(List.of("resetConnectionForAccountChange", "clearSession", "raidProfiles stopped",
+                "resetWarTracking")), calls.toString());
+        assertTrue(previous.isEnded());
+        assertNotSame(previous, failing.current());
+        assertNull(failing.current().signedIn(), "the next account's session is the one current");
+    }
+
+    @Test
     void theFirstAccountSeenStartsNothing() {
         assertFalse(sessions.checkAccount(OPERATOR, "Operator"));
         assertFalse(sessions.checkAccount(OPERATOR, "Operator"));
@@ -310,6 +332,7 @@ class SessionManagerTest {
         ticks.runDue();
 
         assertTrue(sessions.current().popups().isIdle(), "the new account's queue never sees it");
+        assertTrue(previous.popups().isIdle(), "nor does the ended session's own");
         assertNotSame(previous.popups(), sessions.current().popups());
     }
 

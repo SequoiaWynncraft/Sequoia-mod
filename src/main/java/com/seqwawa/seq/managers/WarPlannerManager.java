@@ -15,7 +15,7 @@ import com.seqwawa.seq.model.war.WarPlannerSnapshot.RosterMember;
 import com.seqwawa.seq.network.ApiClient;
 import com.seqwawa.seq.network.ApiClient.ApiException;
 import com.seqwawa.seq.network.WynncraftServerPolicy;
-import com.seqwawa.seq.network.auth.MinecraftAuthService;
+import com.seqwawa.seq.network.auth.NotSignedInException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -115,10 +115,10 @@ public final class WarPlannerManager {
     }
 
     public WarPlannerManager(Gateway gateway, Clock clock) {
-        this(gateway, clock, WarPlannerManager::hasSessionToken);
+        this(gateway, clock, () -> true);
     }
 
-    private WarPlannerManager(Gateway gateway, Clock clock, BooleanSupplier signedIn) {
+    WarPlannerManager(Gateway gateway, Clock clock, BooleanSupplier signedIn) {
         this.gateway = Objects.requireNonNull(gateway, "gateway");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.signedIn = Objects.requireNonNull(signedIn, "signedIn");
@@ -180,12 +180,6 @@ public final class WarPlannerManager {
         tick(WynncraftServerPolicy.isCurrentServerAllowed(), signedIn.getAsBoolean());
     }
 
-    /** Whether the session has a backend token; logout and session invalidation end it. */
-    static boolean hasSessionToken() {
-        var signedIn = MinecraftAuthService.getInstance().getCurrentSession();
-        return signedIn != null && signedIn.hasToken();
-    }
-
     public synchronized void tick(boolean contextAllowed, boolean hasToken) {
         if (!contextAllowed || !hasToken) {
             reset();
@@ -198,6 +192,10 @@ public final class WarPlannerManager {
     }
 
     public synchronized CompletableFuture<ActionResult> refreshNow() {
+        if (!signedIn.getAsBoolean()) {
+            // Its session ended, or has no token yet: the request would go out with whoever is signed in now.
+            return CompletableFuture.completedFuture(new ActionResult(false, new NotSignedInException().getMessage()));
+        }
         if (inFlight != null) {
             if (accessRequestInFlight) {
                 if (queuedRefresh == null) {

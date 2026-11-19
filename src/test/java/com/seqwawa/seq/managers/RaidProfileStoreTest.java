@@ -445,7 +445,8 @@ class RaidProfileStoreTest {
                 Runnable::run,
                 Runnable::run,
                 playing::get,
-                profile -> new CompletableFuture<>());
+                profile -> new CompletableFuture<>(),
+                () -> 1L);
     }
 
     @Test
@@ -519,7 +520,8 @@ class RaidProfileStoreTest {
                 Runnable::run,
                 Runnable::run,
                 playing::get,
-                profile -> answer);
+                profile -> answer,
+                () -> 1L);
         store.load();
         store.dismissSetup();
         playing.set(MAIN_ACCOUNT);
@@ -531,6 +533,33 @@ class RaidProfileStoreTest {
 
         assertTrue(saved.join());
         assertFalse(store.needsSetup(), "the alt skipped setup, and the main account's save does not undo that");
+    }
+
+    @Test
+    void aSaveThatFailsAfterItsSessionEndedLeavesTheNextSessionsPanelAlone(@TempDir Path directory) {
+        var session = new java.util.concurrent.atomic.AtomicLong(1);
+        var answer = new CompletableFuture<RaidProfilesResponse.Profile>();
+        RaidProfileStore store = new RaidProfileStore(
+                directory.resolve("raid-profile.json"),
+                directory.resolve("cache/raid-profiles.json"),
+                () -> CompletableFuture.completedFuture(
+                        RaidProfileStore.parseProfilesResponse(BACKEND_PAYLOAD).orElse(null)),
+                () -> false,
+                Runnable::run,
+                Runnable::run,
+                () -> MAIN_ACCOUNT,
+                profile -> answer,
+                session::get);
+        store.load();
+
+        CompletableFuture<Boolean> saved = store.saveSelfProfile(RaidTeamProfile.empty());
+        // The player switches account and the next session's panel loads; then the old save's retry is refused.
+        session.set(2);
+        store.refresh().join();
+        answer.completeExceptionally(new com.seqwawa.seq.network.auth.NotSignedInException());
+
+        assertFalse(saved.join());
+        assertNull(store.lastError(), "the next session's panel shows its own state");
     }
 
     @Test

@@ -196,6 +196,22 @@ class ConnectionThreadingTest {
     }
 
     @Test
+    void aListingQueuedBehindTheBackendsRefusalOfTheTokenIsDropped() {
+        List<Integer> listings = new ArrayList<>();
+        ConnectionManager.onPartyFinderUpdate(update -> listings.add(update.listingJson().get("id").getAsInt()));
+        FakeBackendSocket socket = harness.connectAsMember();
+
+        // Both reach the game thread together; the refusal ends the session and clears Party Finder.
+        socket.receive("{\"type\":\"error\",\"code\":\"token_expired\",\"message\":\"Token expired\"}");
+        socket.receive(partyFinderUpdate(7));
+        harness.settle();
+
+        assertEquals(List.of(), listings);
+        harness.echoClientClose();
+        assertTrue(ConnectionManager.hasReconnectTask(), "its close still reconnects");
+    }
+
+    @Test
     void framesBeforeABackendCloseStillRunInOrderBeforeIt() {
         List<Integer> listings = new ArrayList<>();
         ConnectionManager.onPartyFinderUpdate(update -> listings.add(update.listingJson().get("id").getAsInt()));

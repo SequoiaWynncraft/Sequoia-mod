@@ -67,7 +67,8 @@ sign-in, the Leaf event stream and its popups, and the war planner and queue.
 one way: `end(reason)`, for an account switch, /seq logout, Clear session or a rejected token.
 
 - **Ending stops what it owned.** An answer that arrives later lands in an object nobody reads,
-  and the ended session's token refuses without signing in.
+  and the ended session's token refuses without signing in. A step that throws is logged and the
+  rest still run, so the next session always starts.
 - **Ask your own session.** Work that belongs to a session takes its token from `Session.token`,
   not the auth service, and hands results to its own session's objects. `getInstance()` answers
   with whichever session is current by the time it is called.
