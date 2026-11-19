@@ -16,7 +16,6 @@ import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.ZonePlacementDraft;
 import com.seqwawa.seq.model.war.WarTeamType;
 import com.sun.net.httpserver.HttpServer;
-import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
@@ -45,7 +44,7 @@ class ApiClientTest {
 
     @Test
     void anAnswerWhoseBodyStallsAfterItsHeadersFailsOnceTheRequestTimesOut() throws Exception {
-        HttpServer server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         CountDownLatch release = new CountDownLatch(1);
         server.setExecutor(Executors.newCachedThreadPool(runnable -> {
             Thread thread = new Thread(runnable, "stalling-backend");

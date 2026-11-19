@@ -7,7 +7,6 @@ import com.seqwawa.seq.network.TestApiClients;
 import com.seqwawa.seq.session.Session;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
-import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -35,7 +34,8 @@ final class FakePartyFinderBackend implements AutoCloseable {
     private final HttpServer server;
 
     FakePartyFinderBackend() throws IOException {
-        server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        // The address the clients below are given: the loopback address may be ::1.
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         // A held reply must not keep the next request waiting.
         server.setExecutor(Executors.newCachedThreadPool(runnable -> {
             Thread thread = new Thread(runnable, "fake-party-finder-backend");
