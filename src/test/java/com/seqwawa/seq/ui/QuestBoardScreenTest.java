@@ -1,7 +1,9 @@
 package com.seqwawa.seq.ui;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.seqwawa.seq.managers.LeafQuestService.State;
 import com.seqwawa.seq.model.LeafAccount;
@@ -27,7 +29,7 @@ class QuestBoardScreenTest {
     private static Quest quest(String slot, Objective objective, long progress, long target, Instant expiresAt,
             Instant completedAt) {
         return new Quest(slot + ":1", slot, "A quest", objective, progress, target, null, new Reward(300, 150),
-                NOW.minusSeconds(3600), expiresAt, completedAt);
+                NOW.minusSeconds(3600), expiresAt, completedAt, null);
     }
 
     @Test
@@ -128,7 +130,7 @@ class QuestBoardScreenTest {
         Quest either = new Quest("daily:1", "daily", "Complete 3 NOL raids or 9 wars", new Objective("wars", null), 4, 9,
                 List.of(new Goal("raids", "nol", "Complete 3 NOL raids", 1, 3),
                         new Goal("wars", null, "Take part in 9 wars", 4, 9)),
-                new Reward(300, 150), NOW.minusSeconds(3600), null, null);
+                new Reward(300, 150), NOW.minusSeconds(3600), null, null, null);
 
         assertEquals("1 / 3 raids, 4 / 9 wars", QuestBoardScreen.progressLabel(either));
     }
@@ -181,5 +183,33 @@ class QuestBoardScreenTest {
         assertEquals("12.5k", QuestBoardScreen.shortCount(12_480));
         assertEquals("250k", QuestBoardScreen.shortCount(250_000));
         assertEquals("1.5M", QuestBoardScreen.shortCount(1_500_000));
+    }
+
+    @Test
+    void narrationSaysWhatARerollCosts() {
+        Quest free = new Quest("daily:1", "daily", "A quest", null, 0, 2, null, new Reward(300, 150), null, null, null, 0L);
+        Quest paid = new Quest("weekly:1", "weekly", "A quest", null, 0, 2, null, new Reward(800, 400), null, null, null,
+                1500L);
+
+        assertEquals(", reroll free", QuestBoardScreen.rerollLabel(free));
+        assertEquals(", reroll for 1,500 Leaf", QuestBoardScreen.rerollLabel(paid));
+        assertEquals("", QuestBoardScreen.rerollLabel(quest("timed", null, 0, 2, null, null)));
+    }
+
+    @Test
+    void aPressCountsOnTheRerollButtonOnlyWhereTheBoardShowsIt() {
+        QuestBoardScreen.Panel panel = new QuestBoardScreen.Panel(100, 40, 400, 200);
+        QuestBoardScreen.Card card = new QuestBoardScreen.Card("daily", "Daily", "", null, "", 0, 0);
+        QuestBoardScreen.Spot spot = new QuestBoardScreen.Spot(card, 100, 60, 140);
+        UiBounds button = QuestCard.rerollBounds(100, 60, 140);
+
+        assertTrue(QuestBoardScreen.rerollHit(panel, spot, new UiPointer(button.centerX(), button.centerY())));
+        assertTrue(QuestBoardScreen.rerollHit(panel, spot, new UiPointer(button.right() + 1, button.y() - 1)),
+                "a pixel's slack all round");
+        assertFalse(QuestBoardScreen.rerollHit(panel, spot, new UiPointer(button.x() - 4, button.centerY())));
+        QuestBoardScreen.Spot scrolledAway = new QuestBoardScreen.Spot(card, 100, 20, 140);
+        UiBounds hidden = QuestCard.rerollBounds(100, 20, 140);
+        assertFalse(QuestBoardScreen.rerollHit(panel, scrolledAway, new UiPointer(hidden.centerX(), hidden.centerY())),
+                "scrolled above the board, under the header");
     }
 }

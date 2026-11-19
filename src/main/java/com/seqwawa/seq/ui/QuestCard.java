@@ -27,6 +27,10 @@ import java.util.function.Function;
  * each goal's picture over its own bar, with "or" between the pictures, so both
  * counts show at once. Once it is done it is one bar again.
  *
+ * <p>A daily or weekly Leaf lets the member swap has a reroll button in its top right
+ * corner. While it is pointed at, pressed or waiting on Leaf, the line under the name
+ * says what a reroll costs in place of the clock.
+ *
  * <p>Measured in art pixels two UI pixels wide; 80 tall.
  */
 final class QuestCard {
@@ -41,7 +45,52 @@ final class QuestCard {
     /** Art pixels between the two goals' bars. */
     static final int GOAL_GAP = 3;
 
+    /** Art pixels: the reroll button's side. */
+    static final int REROLL = 11;
+    /** The reroll arrow, a ring with its head at the top right, one string per row of art pixels. */
+    static final String[] REROLL_ARROW = {
+            "..###.#",
+            ".#...##",
+            "#...###",
+            "#......",
+            "#.....#",
+            ".#...#.",
+            "..###..",
+    };
+
+    /** How a card's reroll button looks this frame. */
+    enum RerollLook {
+        IDLE,
+        HOVERED,
+        /** Pressed once: the next press rerolls. */
+        ARMED,
+        /** Waiting on Leaf. */
+        PENDING
+    }
+
     private QuestCard() {}
+
+    /** The reroll button of a card drawn at ({@code x}, {@code y}): in its top right corner, level with the name. */
+    static UiBounds rerollBounds(float x, float y, float width) {
+        return new UiBounds(x + width - (4 + REROLL) * P, y + 3 * P, REROLL * P, REROLL * P);
+    }
+
+    /**
+     * What the line under the name says while the reroll button is in use: words, then
+     * the Leaf it costs with the Leaf after it, or no amount (-1) for a free reroll.
+     * Null when the line keeps its clock.
+     */
+    record RerollLine(String words, long leaf) {}
+
+    static RerollLine rerollLine(RerollLook look, long cost) {
+        if (look == null) return null;
+        return switch (look) {
+            case HOVERED -> cost > 0 ? new RerollLine("Reroll:", cost) : new RerollLine("Reroll: free", -1);
+            case ARMED -> cost > 0 ? new RerollLine("Click again:", cost) : new RerollLine("Click again: free", -1);
+            case PENDING -> new RerollLine("Rerolling...", -1);
+            case IDLE -> null;
+        };
+    }
 
     /** The 16-pixel picture for an objective: the raid's art, the portal for any raid, the tower, or the star. */
     static String tileIcon(Objective objective) {
@@ -149,8 +198,18 @@ final class QuestCard {
         return UnlockPopup.slotName(slot);
     }
 
-    /** Draws one card with its top left at ({@code x}, {@code y}), {@code width} UI pixels wide. */
+    /** Draws one card with its top left at ({@code x}, {@code y}), {@code width} UI pixels wide, without a reroll button. */
     static void render(UiCanvas canvas, QuestBoardScreen.Card card, float x, float y, float width) {
+        render(canvas, card, x, y, width, null, null);
+    }
+
+    /**
+     * Draws one card with its top left at ({@code x}, {@code y}), {@code width} UI pixels
+     * wide: its reroll button as {@code reroll} looks, none when null, and {@code notice}
+     * in place of its clock when there is one.
+     */
+    static void render(UiCanvas canvas, QuestBoardScreen.Card card, float x, float y, float width, RerollLook reroll,
+            String notice) {
         float p = P;
         float w = width;
         float h = HEIGHT * p;
@@ -175,11 +234,20 @@ final class QuestCard {
             canvas.fillRect(px, py, PIP * p, PIP * p, i < card.banked() ? accent : PixelArt.mix(accent, color(CONTROL_INPUT), 0.8f));
             if (i < card.banked()) canvas.fillRect(px, py, PIP * p, p, PixelArt.mix(accent, Color.WHITE, 0.5f));
         }
-        // When the next daily comes, or when the weekly or timed quest ends.
-        PixelArt.text(canvas, PixelArt.fit(card.timer(), inner, 10), cx, y + 17 * p, 10, color(TEXT_MUTED),
-                HorizontalAlign.CENTER);
-
         Quest quest = card.quest();
+        // When the next daily comes, or when the weekly or timed quest ends; or what a reroll costs, or why one failed.
+        RerollLine line = quest == null || quest.rerollLeaf() == null ? null : rerollLine(reroll, quest.rerollLeaf());
+        if (notice != null) {
+            PixelArt.text(canvas, PixelArt.fit(notice, inner, 10), cx, y + 17 * p, 10, color(CONTROL_WARNING),
+                    HorizontalAlign.CENTER);
+        } else if (line != null) {
+            rerollLineText(canvas, line, cx, y + 17 * p, inner, reroll == RerollLook.ARMED ? accent : color(TEXT_SECONDARY));
+        } else {
+            PixelArt.text(canvas, PixelArt.fit(card.timer(), inner, 10), cx, y + 17 * p, 10, color(TEXT_MUTED),
+                    HorizontalAlign.CENTER);
+        }
+        if (reroll != null && quest != null) rerollButton(canvas, rerollBounds(x, y, w), reroll, accent);
+
         if (quest == null) {
             List<String> lines = wrap(card.emptyLine(), inner, text -> PixelArt.measure(text, 10));
             float firstY = y + (40 - (lines.size() - 1) * 3) * p;
@@ -240,6 +308,46 @@ final class QuestCard {
             return;
         }
         bar(canvas, goals.getFirst(), barX, barY, barW, barH, accent);
+    }
+
+    /** The line under the name while the reroll button is in use: the words, then the Leaf, centred together. */
+    private static void rerollLineText(UiCanvas canvas, RerollLine line, float cx, float y, float room, Color ink) {
+        if (line.leaf() < 0) {
+            PixelArt.text(canvas, PixelArt.fit(line.words(), room, 10), cx, y, 10, ink, HorizontalAlign.CENTER);
+            return;
+        }
+        String amount = QuestBoardScreen.formatCount(line.leaf());
+        float gap = 3 * P;
+        float wordsWidth = PixelArt.measure(line.words(), 10);
+        float amountWidth = PixelArt.leafAmountWidth(amount, 10, P);
+        float left = PixelArt.snap(cx - (wordsWidth + gap + amountWidth) / 2, P);
+        PixelArt.text(canvas, line.words(), left, y, 10, ink, HorizontalAlign.LEFT);
+        PixelArt.leafAmount(canvas, amount, left + wordsWidth + gap, y, 10, 1f, P);
+    }
+
+    /** The reroll button: a small framed tile with the arrow, lit while pointed at and filled once pressed. */
+    private static void rerollButton(UiCanvas canvas, UiBounds bounds, RerollLook look, Color accent) {
+        float p = P;
+        boolean lit = look == RerollLook.HOVERED || look == RerollLook.ARMED;
+        Color fill = look == RerollLook.ARMED ? PixelArt.mix(accent, color(CONTROL_INPUT), 0.55f) : color(CONTROL_INPUT);
+        canvas.fillRect(bounds.x() + p, bounds.y() + p, bounds.width() - 2 * p, bounds.height() - 2 * p, fill);
+        PixelArt.pixelBorder(canvas, bounds.x(), bounds.y(), bounds.width(), bounds.height(), p,
+                lit ? accent : PixelArt.mix(accent, color(CONTROL_INPUT), 0.5f));
+        Color ink = switch (look) {
+            case PENDING -> color(TEXT_MUTED);
+            case ARMED -> color(TEXT_PRIMARY);
+            case HOVERED -> PixelArt.mix(accent, Color.WHITE, 0.35f);
+            case IDLE -> color(TEXT_SECONDARY);
+        };
+        float glyphX = bounds.x() + 2 * p;
+        float glyphY = bounds.y() + 2 * p;
+        for (int row = 0; row < REROLL_ARROW.length; row++) {
+            for (int column = 0; column < REROLL_ARROW[row].length(); column++) {
+                if (REROLL_ARROW[row].charAt(column) == '#') {
+                    canvas.fillRect(glyphX + column * p, glyphY + row * p, p, p, ink);
+                }
+            }
+        }
     }
 
     private static void tile(UiCanvas canvas, String icon, float centreX, float y, Color accent) {

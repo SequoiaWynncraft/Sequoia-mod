@@ -454,6 +454,32 @@ public class ApiClient {
                 token -> sendAsync(newRequestWithToken(leafBaseUrl, "/v1/me/events", token).GET().build(), LeafEvents.class));
     }
 
+    /**
+     * Swaps the quest {@code questId}, such as {@code daily:4}, for another, paying what
+     * Leaf asks. Leaf refuses with 409 and a code when the quest changed since it was
+     * read or the balance is short; see {@link #leafErrorCode}.
+     */
+    public CompletableFuture<LeafQuests.Rerolled> rerollLeafQuest(String questId,
+            Function<Boolean, CompletableFuture<String>> tokenFor) {
+        String path = "/v1/me/quests/" + URLEncoder.encode(questId, StandardCharsets.UTF_8) + "/reroll";
+        return callWithTokenRetry(tokenFor, token -> sendAsync(
+                newRequestWithToken(leafBaseUrl, path, token).POST(HttpRequest.BodyPublishers.noBody()).build(),
+                LeafQuests.Rerolled.class));
+    }
+
+    /** The {@code code} of a Leaf error answer, such as {@code insufficient_leaf}, or null for any other failure. */
+    public static String leafErrorCode(Throwable throwable) {
+        if (!(unwrap(throwable) instanceof ApiException api) || api.getResponseBody() == null) return null;
+        try {
+            JsonElement body = JsonParser.parseString(api.getResponseBody());
+            if (!body.isJsonObject() || !body.getAsJsonObject().has("code")) return null;
+            JsonElement code = body.getAsJsonObject().get("code");
+            return code.isJsonPrimitive() ? code.getAsString() : null;
+        } catch (RuntimeException notJson) {
+            return null;
+        }
+    }
+
     /** Whether Leaf refused because the player is not a current Sequoia member. */
     public static boolean isNotLeafMember(Throwable throwable) {
         return unwrap(throwable) instanceof ApiException api

@@ -17,6 +17,10 @@ public record LeafAccount(long leaf, long xp, Level level) {
             @SerializedName("xp_into_level") long xpIntoLevel,
             @SerializedName("xp_for_next_level") long xpForNextLevel) {}
 
+    public LeafAccount withLeaf(long balance) {
+        return new LeafAccount(balance, xp, level);
+    }
+
     public Level levelOrFirst() {
         return level == null ? EMPTY.level() : level;
     }
