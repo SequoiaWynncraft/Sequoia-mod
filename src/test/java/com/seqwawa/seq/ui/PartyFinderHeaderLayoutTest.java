@@ -6,7 +6,7 @@ import com.seqwawa.seq.model.Listing;
 import com.seqwawa.seq.model.PartyCloseReason;
 import com.seqwawa.seq.model.PartyStatus;
 import com.seqwawa.seq.ui.PartyFinderScreen.OpenClose;
-import com.seqwawa.seq.ui.PartyFinderScreen.OpenCloseButton;
+import com.seqwawa.seq.ui.PartyFinderScreen.LeaderControls;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -80,22 +80,37 @@ class PartyFinderHeaderLayoutTest {
 
     @Test
     void theOpenCloseButtonRunsWhatItShowedOrNothing() {
-        var drawn = OpenCloseButton.of(listing(7L, PartyStatus.OPEN, null), true);
-        assertEquals(OpenClose.CLOSE, drawn.operation(), "drawn as Close party");
+        var drawn = LeaderControls.of(listing(7L, PartyStatus.OPEN, null), true);
+        assertEquals(OpenClose.CLOSE, drawn.openClose(), "drawn as Close party");
 
         // The backend closed the listing after the frame that drew Close party.
-        assertNull(OpenCloseButton.clicked(drawn, listing(7L, PartyStatus.CLOSED, null), true),
+        assertNull(LeaderControls.openCloseClicked(drawn, listing(7L, PartyStatus.CLOSED, null), true),
                 "the click does not open the party it showed as open");
-        assertNull(OpenCloseButton.clicked(drawn, listing(8L, PartyStatus.OPEN, null), true), "another listing");
-        assertNull(OpenCloseButton.clicked(drawn, listing(7L, PartyStatus.OPEN, null), false), "no longer the leader");
-        assertNull(OpenCloseButton.clicked(drawn, null, false), "the listing has gone");
-        assertNull(OpenCloseButton.clicked(null, listing(7L, PartyStatus.OPEN, null), true), "nothing drawn yet");
-        assertEquals(OpenClose.CLOSE, OpenCloseButton.clicked(drawn, listing(7L, PartyStatus.OPEN, null), true));
+        assertNull(LeaderControls.openCloseClicked(drawn, listing(8L, PartyStatus.OPEN, null), true), "another listing");
+        assertNull(LeaderControls.openCloseClicked(drawn, listing(7L, PartyStatus.OPEN, null), false),
+                "no longer the leader");
+        assertNull(LeaderControls.openCloseClicked(drawn, null, false), "the listing has gone");
+        assertNull(LeaderControls.openCloseClicked(null, listing(7L, PartyStatus.OPEN, null), true), "nothing drawn yet");
+        assertEquals(OpenClose.CLOSE, LeaderControls.openCloseClicked(drawn, listing(7L, PartyStatus.OPEN, null), true));
 
-        var autoClosed = OpenCloseButton.of(listing(7L, PartyStatus.CLOSED, PartyCloseReason.AUTO_CAPACITY), true);
-        assertEquals(OpenClose.AUTO_CLOSED, autoClosed.operation());
-        assertNull(OpenCloseButton.clicked(autoClosed, listing(7L, PartyStatus.CLOSED, null), true),
+        var autoClosed = LeaderControls.of(listing(7L, PartyStatus.CLOSED, PartyCloseReason.AUTO_CAPACITY), true);
+        assertEquals(OpenClose.AUTO_CLOSED, autoClosed.openClose());
+        assertNull(LeaderControls.openCloseClicked(autoClosed, listing(7L, PartyStatus.CLOSED, null), true),
                 "closed by the leader since, it is not reopened from the Auto-closed button");
+    }
+
+    @Test
+    void theLeadersOtherButtonsActOnTheListingTheyWereDrawnForOrNothing() {
+        var drawn = LeaderControls.of(listing(7L, PartyStatus.OPEN, null), true);
+
+        // Backend updates replaced the listing with another the player also leads, after the frame that drew it.
+        assertNull(LeaderControls.clicked(drawn, listing(8L, PartyStatus.OPEN, null), true),
+                "Delist party does not disband the listing that replaced the one it was drawn for");
+        assertNull(LeaderControls.clicked(drawn, listing(7L, PartyStatus.OPEN, null), false), "no longer the leader");
+        assertNull(LeaderControls.clicked(drawn, null, false), "the listing has gone");
+        assertNull(LeaderControls.clicked(null, listing(7L, PartyStatus.OPEN, null), true), "nothing drawn yet");
+        assertEquals(7L, LeaderControls.clicked(drawn, listing(7L, PartyStatus.CLOSED, null), true).listingId(),
+                "closed since, it is still the listing they act on");
     }
 
     private static Listing listing(long id, PartyStatus status, PartyCloseReason closeReason) {

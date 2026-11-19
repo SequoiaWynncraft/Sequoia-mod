@@ -166,8 +166,8 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
     private List<Card> renderedCards = List.of();
     /** The header as the last frame drew it: clicks are hit-tested against what the player saw, not a promotion since. */
     private HeaderControlsLayout drawnHeader;
-    /** The header's open/close button as the last frame drew it, or null: a click does what it showed, or nothing. */
-    private OpenCloseButton drawnOpenClose;
+    /** The leader's header buttons as the last frame drew them, or null: a click acts on what they showed, or nothing. */
+    private LeaderControls drawnLeaderControls;
 
     /** A filter chip as drawn: turned {@code degrees} about its centre while it swings. */
     record TagChip(String tag, UiBounds bounds, float degrees) {
@@ -210,19 +210,25 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
         }
     }
 
-    /** The open/close button as drawn: on which listing, doing what. */
-    record OpenCloseButton(long listingId, OpenClose operation) {
-        /** The button the player sees on {@code listing} while they {@code lead} it; else none. */
-        static OpenCloseButton of(Listing listing, boolean lead) {
-            return lead && listing != null ? new OpenCloseButton(listing.id(), OpenClose.of(listing)) : null;
+    /** The leader's header buttons as drawn: for which listing, and what its open/close button does. */
+    record LeaderControls(long listingId, OpenClose openClose) {
+        /** The buttons the player sees on {@code listing} while they {@code lead} it; else none. */
+        static LeaderControls of(Listing listing, boolean lead) {
+            return lead && listing != null ? new LeaderControls(listing.id(), OpenClose.of(listing)) : null;
         }
 
         /**
-         * What a click on {@code drawn} does once {@code current} is the player's listing: what it showed, while
-         * it is the same listing, they still lead it and it still shows that; else nothing (null).
+         * What a click on {@code drawn} acts on once {@code current} is the player's listing: the listing they were
+         * drawn for, while it is the same one and they still lead it; else nothing (null).
          */
-        static OpenClose clicked(OpenCloseButton drawn, Listing current, boolean lead) {
-            return drawn != null && drawn.equals(of(current, lead)) ? drawn.operation() : null;
+        static LeaderControls clicked(LeaderControls drawn, Listing current, boolean lead) {
+            LeaderControls now = of(current, lead);
+            return drawn != null && now != null && now.listingId() == drawn.listingId() ? drawn : null;
+        }
+
+        /** What a click on the drawn open/close button does: what it showed, while it still would; else nothing. */
+        static OpenClose openCloseClicked(LeaderControls drawn, Listing current, boolean lead) {
+            return drawn != null && drawn.equals(of(current, lead)) ? drawn.openClose() : null;
         }
     }
 
@@ -349,7 +355,7 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
         float panelWidth = screenWidth - SIDEBAR_WIDTH;
         HeaderControlsLayout headerLayout = computeHeaderControlsLayout(panelX, panelWidth, fontName);
         drawnHeader = headerLayout;
-        drawnOpenClose = OpenCloseButton.of(party().getCurrentListing(), party().isPartyLeader());
+        drawnLeaderControls = LeaderControls.of(party().getCurrentListing(), party().isPartyLeader());
         float headerHeight = headerLayout.height();
 
         canvas.fillRect(panelX, 0, panelWidth, screenHeight, color(BACKGROUND_BODY));
@@ -1822,39 +1828,44 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
         search.blur();
 
         if (party().isPartyLeader()) {
+            // The leader's buttons act on the listing drawn, while the player still leads it, or do nothing.
+            Listing current = party().getCurrentListing();
+            LeaderControls leader = LeaderControls.clicked(drawnLeaderControls, current, true);
             if (contains(headerLayout.manageButton(), at)) {
-                openModal(true);
+                if (leader != null) openModal(true);
                 return true;
             }
             if (contains(headerLayout.inviteButton(), at)) {
-                openInviteModal();
+                if (leader != null) openInviteModal();
                 return true;
             }
             if (contains(headerLayout.openCloseButton(), at)) {
-                OpenClose clicked = OpenCloseButton.clicked(
-                        drawnOpenClose, party().getCurrentListing(), party().isPartyLeader());
+                OpenClose clicked = LeaderControls.openCloseClicked(drawnLeaderControls, current, true);
                 if (clicked == OpenClose.AUTO_CLOSED) {
                     showStatusBanner("Party is auto-closed at capacity and will reopen when a slot frees.");
                 } else if (clicked == OpenClose.OPEN) {
-                    party().actions().reopenParty(drawnOpenClose.listingId());
+                    party().actions().reopenParty(drawnLeaderControls.listingId());
                 } else if (clicked == OpenClose.CLOSE) {
-                    party().actions().closeParty(drawnOpenClose.listingId());
+                    party().actions().closeParty(drawnLeaderControls.listingId());
                 }
                 return true;
             }
             if (contains(headerLayout.delistButton(), at)) {
-                party().actions().delistParty();
+                if (leader != null) party().actions().delistParty(leader.listingId());
                 return true;
             }
+            // Invite all and Scan party read the player's listing as they start, just checked to be the one drawn.
             if (contains(headerLayout.inviteAllButton(), at)) {
-                showStatusBanner("Preparing party invites...");
-                party().reply(party().game().inviteAllCurrentMembers(), (result, error) -> {
-                    if (result != null) showStatusBanner(result.message());
-                });
+                if (leader != null) {
+                    showStatusBanner("Preparing party invites...");
+                    party().reply(party().game().inviteAllCurrentMembers(), (result, error) -> {
+                        if (result != null) showStatusBanner(result.message());
+                    });
+                }
                 return true;
             }
             if (contains(headerLayout.scanButton(), at)) {
-                showStatusBanner(party().game().scanCurrentWynnParty().message());
+                if (leader != null) showStatusBanner(party().game().scanCurrentWynnParty().message());
                 return true;
             }
         } else if (contains(headerLayout.newPartyButton(), at)) {

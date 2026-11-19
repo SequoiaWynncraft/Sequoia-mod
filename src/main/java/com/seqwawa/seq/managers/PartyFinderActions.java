@@ -236,13 +236,10 @@ public final class PartyFinderActions {
                 "Unable to reopen party", "Failed to reopen party");
     }
 
-    /** Disbands the player's listing. */
-    public void delistParty() {
-        Listing current = partyFinder.getCurrentListing();
-        if (current != null) {
-            listingAction(api -> api.disbandListing(current.id()), ignored -> partyFinder.applyDisbanded(current.id()),
-                    "Unable to delist party", "Failed to disband party");
-        }
+    /** Disbands {@code listingId}, the player's listing as the screen drew it. */
+    public void delistParty(long listingId) {
+        listingAction(api -> api.disbandListing(listingId), ignored -> partyFinder.applyDisbanded(listingId),
+                "Unable to delist party", "Failed to disband party");
     }
 
     /** Changes the player's role to a display-name role. */
