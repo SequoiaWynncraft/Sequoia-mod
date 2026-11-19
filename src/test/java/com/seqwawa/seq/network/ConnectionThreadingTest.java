@@ -232,6 +232,21 @@ class ConnectionThreadingTest {
     }
 
     @Test
+    void aPartyFinderErrorCarriesTheServerConnectionItArrivedOn() {
+        FakeBackendSocket socket = harness.connectAsMember();
+        Object arrivedOn = harness.game.serverConnection;
+        socket.receive("{\"type\":\"error\",\"code\":\"invalid_request\",\"message\":\"Listing is full\"}");
+
+        // The same account reconnects to Wynncraft before the game thread hands it on.
+        harness.game.serverConnection = new Object();
+        harness.settle();
+
+        assertEquals(List.of("Listing is full"), harness.game.partyFinderErrors);
+        assertTrue(harness.game.partyFinderErrorConnections.getFirst() == arrivedOn,
+                "its banner is for the connection it arrived on");
+    }
+
+    @Test
     void aListingQueuedBehindTheBackendsRefusalOfTheTokenIsDropped() {
         List<Integer> listings = new ArrayList<>();
         ConnectionManager.listen(ConnectionManager.Inbound.PARTY_FINDER_UPDATE, update -> listings.add(update.listingJson().get("id").getAsInt()));

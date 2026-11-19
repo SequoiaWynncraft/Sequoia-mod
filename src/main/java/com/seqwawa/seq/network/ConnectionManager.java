@@ -2172,7 +2172,7 @@ public final class ConnectionManager {
                                 : null,
                         json.has("minutes_remaining") ? json.get("minutes_remaining").getAsLong() : 0L,
                         receivedConnection));
-                case "error" -> handleBackendError(receiving, json);
+                case "error" -> handleBackendError(receiving, json, receivedConnection);
                 default -> SeqClient.LOGGER.warn("[WebSocket] Unhandled incoming message type={}", type);
             }
         } catch (Exception e) {
@@ -2219,7 +2219,7 @@ public final class ConnectionManager {
         sendLocalPartyClassUpdate();
     }
 
-    private void handleBackendError(Attempt receiving, JsonObject json) {
+    private void handleBackendError(Attempt receiving, JsonObject json, Object receivedConnection) {
         String error = extractBackendErrorMessage(json);
         String backendCode = extractBackendErrorCode(json);
         String capability = extractCapability(json);
@@ -2273,7 +2273,7 @@ public final class ConnectionManager {
             }
             case PARTY_FINDER -> {
                 if (forPlayingAccount(receiving)) {
-                    env.game().showPartyFinderError(error);
+                    env.game().showPartyFinderError(error, receivedConnection);
                 }
             }
             case CAPABILITY_DENIED -> {

@@ -73,7 +73,7 @@ public class PartyFinderManager {
     private volatile long resetGeneration;
     /** Requests still waiting for their reply, which the session's end settles. */
     private final Set<CompletableFuture<?>> inFlight = ConcurrentHashMap.newKeySet();
-    private volatile String latestPartyError;
+    private volatile Banner latestPartyError;
 
     /** Where what the player sees or sends is handed to the game thread; a test passes its own queue. */
     final TickQueue gameThread;
@@ -96,6 +96,9 @@ public class PartyFinderManager {
 
     /** What an action began under: this party finder's session, and the server connection the player was on. */
     record Ticket(long generation, Object connection) {}
+
+    /** A message for the screen's banner, and the server connection it is for. */
+    private record Banner(String message, Object connection) {}
 
     record IssuedInviteKey(long listingId, String normalizedUsername) {}
 
@@ -316,15 +319,21 @@ public class PartyFinderManager {
 
     /** Shows {@code message} on the screen's banner. A request dropped with its session has none. */
     public void pushUiError(String message) {
-        if (message != null && !message.isBlank()) {
-            latestPartyError = message;
+        pushUiError(message, player.connection());
+    }
+
+    /** As {@link #pushUiError(String)}, for what was heard on the server connection {@code heardOn}: shown only on that one. */
+    public void pushUiError(String message, Object heardOn) {
+        if (message != null && !message.isBlank() && stillOn(heardOn)) {
+            latestPartyError = new Banner(message, heardOn);
         }
     }
 
+    /** The banner to show, once; none once the player has moved to another server connection since it was pushed. */
     public String consumeLatestPartyError() {
-        String message = latestPartyError;
+        Banner banner = latestPartyError;
         latestPartyError = null;
-        return message;
+        return banner != null && stillOn(banner.connection()) ? banner.message() : null;
     }
 
     // ══════════════════════════════════════════════════════════════

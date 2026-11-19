@@ -659,6 +659,24 @@ class PartyFinderManagerTest {
     }
 
     @Test
+    void aBannerIsShownOnlyOnTheServerConnectionItWasFor() {
+        PartyFinderManager partyFinder = offline();
+        Object before = connection;
+        // A backend error heard on the old connection is handed on after the player reconnected.
+        connection = new Object();
+        partyFinder.pushUiError("Listing is full", before);
+        assertNull(partyFinder.consumeLatestPartyError(), "an error heard on the old connection is not shown on the new one");
+
+        // A banner still waiting for the screen when the player reconnects.
+        partyFinder.pushUiError("Listing is full");
+        connection = new Object();
+        assertNull(partyFinder.consumeLatestPartyError(), "nor is a banner left from the old one");
+
+        partyFinder.pushUiError("Listing is full", connection);
+        assertEquals("Listing is full", partyFinder.consumeLatestPartyError());
+    }
+
+    @Test
     void aCreateCommandWhoseListingsReadOutlivesItsServerConnectionCreatesNothing() throws Exception {
         PartyFinderManager partyFinder = sessionPartyFinder();
         String route = "POST /party-finder/listings";
