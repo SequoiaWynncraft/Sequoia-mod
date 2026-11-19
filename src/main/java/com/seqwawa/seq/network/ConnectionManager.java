@@ -101,6 +101,8 @@ public class ConnectionManager {
     /** The token this socket signed in with, and the account it signed in for; a Treasury-only socket has neither. */
     private volatile String handshakeToken;
     private volatile UUID handshakeAccount;
+    /** The sign-in its token came from, which a renewal of the token keeps. */
+    private volatile long handshakeSession;
     private final TreasurySessionAuthenticator treasurySessionAuthenticator;
     // WebSocket instances are replaced on reconnect; pending events belong to the account session.
     private static final GuildWarOutboundQueue pendingGuildWarEvents = new GuildWarOutboundQueue();
@@ -790,6 +792,7 @@ public class ConnectionManager {
             return;
         }
         long connectionAttempt = beginConnectionAttempt();
+        long signIn = environment.tokens().sessionId();
         environment.tokens()
                 .ensureValidToken(forceTokenRefresh)
                 .whenComplete((token, throwable) -> environment.scheduler().execute(() -> {
@@ -837,6 +840,7 @@ public class ConnectionManager {
                         }
                         handshakeToken = token;
                         handshakeAccount = environment.game().profileId();
+                        handshakeSession = signIn;
                         socket.connect(buildHandshakeHeaders(token));
                     } catch (Exception exception) {
                         connectInProgress = false;
@@ -2074,7 +2078,7 @@ public class ConnectionManager {
                     autoReconnect = true;
                     String discordUser = discordUsernameIn(json);
                     discordNameDelivery(discordUser, handshakeAccount,
-                            () -> instance == this && environment.tokens().holdsToken(handshakeToken),
+                            () -> instance == this && environment.tokens().sessionId() == handshakeSession,
                             SeqClient.getConfigManager()::setDiscordUsername).run();
                     if (discordUser != null) {
                         notifyConnectionStatus("Connected as " + discordUser);

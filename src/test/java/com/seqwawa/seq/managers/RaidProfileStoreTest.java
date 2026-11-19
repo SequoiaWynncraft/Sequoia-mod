@@ -608,6 +608,29 @@ class RaidProfileStoreTest {
     }
 
     @Test
+    void anErrorAnEndedSessionStoredIsNotTheNextSessionsToShow(@TempDir Path directory) {
+        var session = new java.util.concurrent.atomic.AtomicLong(1);
+        List<CompletableFuture<RaidProfilesResponse>> fetches = new ArrayList<>();
+        RaidProfileStore store = storeIn(directory, session, () -> {
+            fetches.add(new CompletableFuture<>());
+            return fetches.getLast();
+        }, profile -> new CompletableFuture<>());
+        store.load();
+
+        store.refresh();
+        fetches.get(0).completeExceptionally(new com.seqwawa.seq.network.auth.NotSignedInException());
+        assertNotNull(store.lastError());
+
+        // The player switches account; setup opens while session 2's own fetch is still running.
+        session.set(2);
+        store.refresh();
+        assertNull(store.lastError(), "session 1's error is not session 2's");
+
+        fetches.get(1).completeExceptionally(new com.seqwawa.seq.network.auth.NotSignedInException());
+        assertNotNull(store.lastError(), "session 2's own error shows");
+    }
+
+    @Test
     void friendsStaySharedBetweenAccounts(@TempDir Path directory) {
         var playing = new java.util.concurrent.atomic.AtomicReference<>(MAIN_ACCOUNT);
         RaidProfileStore store = storeFor(directory, playing);

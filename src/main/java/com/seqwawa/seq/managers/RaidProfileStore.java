@@ -126,6 +126,8 @@ public final class RaidProfileStore {
     /** Whether a fetch has worked since the game started. */
     private volatile boolean fetchedOnce;
     private volatile String lastError;
+    /** The session {@link #lastError} was stored in: a later session doesn't see it. */
+    private volatile long errorIn;
     /** The session the last fetch started in: once it has ended, its answer leaves {@link #lastError} alone. Game thread only. */
     private long fetchedIn;
 
@@ -295,7 +297,7 @@ public final class RaidProfileStore {
     }
 
     public String lastError() {
-        return lastError;
+        return isCurrentSession(errorIn) ? lastError : null;
     }
 
     /** Fetches only when the loaded copy is old enough to be worth replacing. Game thread only. */
@@ -366,6 +368,7 @@ public final class RaidProfileStore {
     private void fetchFailed(Throwable failure) {
         String shown = RaidProfileApiError.describe(failure, "Could not load the guild's raid profiles.");
         if (isCurrentSession(fetchedIn)) {
+            errorIn = fetchedIn;
             lastError = shown;
         }
         SeqClient.LOGGER.warn(
@@ -490,6 +493,7 @@ public final class RaidProfileStore {
                 .exceptionallyAsync(throwable -> {
                     String shown = RaidProfileApiError.describe(throwable, "Could not save your profile.");
                     if (isCurrentSession(savedIn)) {
+                        errorIn = savedIn;
                         lastError = shown;
                     }
                     SeqClient.LOGGER.warn(

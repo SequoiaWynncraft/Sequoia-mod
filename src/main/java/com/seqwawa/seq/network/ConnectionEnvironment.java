@@ -109,8 +109,8 @@ record ConnectionEnvironment(
         /** The Minecraft name the current sign-in speaks for, or null while signed out. */
         String signedInUsername();
 
-        /** Whether the current sign-in still holds {@code token}. */
-        boolean holdsToken(String token);
+        /** Which sign-in is current: a token renewal keeps it, and it moves on whenever a session ends. */
+        long sessionId();
     }
 
     /** The parts of the game the connection reads from, or reports to. */
@@ -231,8 +231,8 @@ record ConnectionEnvironment(
         }
 
         @Override
-        public boolean holdsToken(String token) {
-            return SeqClient.getAuthService().holdsToken(token);
+        public long sessionId() {
+            return SeqClient.getAuthService().sessionGeneration();
         }
     }
 

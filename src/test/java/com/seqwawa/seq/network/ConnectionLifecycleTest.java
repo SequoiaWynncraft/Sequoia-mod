@@ -104,6 +104,32 @@ class ConnectionLifecycleTest {
     }
 
     @Test
+    void aTokenRenewedBeforeTheSignInReplyStillUpdatesTheDiscordName() {
+        harness.config.setDiscordUsername(ConnectionHarness.PROFILE, "someone-else");
+        harness.connectAutomatically();
+        harness.open();
+
+        // An HTTP request renews the bearer after the handshake: the same sign-in, with a new token.
+        harness.tokens.token = "renewed-token";
+        harness.tokens.ensureValidToken(true);
+        harness.receive("{\"type\":\"authenticated\"}");
+
+        assertNull(harness.config.getDiscordUsername(ConnectionHarness.PROFILE), "the stale name still goes");
+    }
+
+    @Test
+    void aSignInReplyThatLandsInTheNextSessionUpdatesNoDiscordName() {
+        harness.connectAutomatically();
+        harness.open();
+
+        // An account switch that carries the token over: the same token, but the next session.
+        harness.tokens.session++;
+        harness.signIn();
+
+        assertNull(harness.config.getDiscordUsername(ConnectionHarness.PROFILE));
+    }
+
+    @Test
     void signingInSendsThePartyClassWhenTheGameKnowsIt() {
         harness.game.classType = WynnClassType.MAGE;
         harness.connectAutomatically();
