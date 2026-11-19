@@ -5,6 +5,7 @@ import static com.seqwawa.seq.ui.theme.UiColor.*;
 import static com.seqwawa.seq.utils.rendering.UiCanvas.HorizontalAlign.LEFT;
 import static com.seqwawa.seq.utils.rendering.UiCanvas.HorizontalAlign.RIGHT;
 
+import com.seqwawa.seq.client.Clocks;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.managers.LeafQuestService;
 import com.seqwawa.seq.managers.LeafQuestService.Snapshot;
@@ -36,8 +37,8 @@ import org.jetbrains.annotations.NotNull;
 
 /**
  * The member's Leaf quests: one card each for the daily, the weekly and the
- * endless quest, with progress, reward and how long is left. Opened with
- * {@code /seq quests} or from the sidebar.
+ * timed quest, with progress, reward and how long is left, and a button to reroll
+ * the daily or weekly. Opened with {@code /seq quests} or from the sidebar.
  */
 public final class QuestBoardScreen extends SequoiaPanelScreen {
 
@@ -61,6 +62,7 @@ public final class QuestBoardScreen extends SequoiaPanelScreen {
     private State state = State.LOADING;
     private Snapshot shown = Snapshot.EMPTY;
     private boolean stale;
+    private final QuestRerolls rerolls = new QuestRerolls();
 
     public QuestBoardScreen(Screen parent) {
         super(Component.literal("Sequoia Quests"), parent, SequoiaSidebarNavigation.Destination.QUESTS);
@@ -111,26 +113,58 @@ public final class QuestBoardScreen extends SequoiaPanelScreen {
         }
 
         Instant now = Instant.now();
-        List<Card> cards = cards(shown.quests(), now);
+        long clock = Clocks.monotonicMillis();
         List<RecentLeaf.Row> recent = RecentLeaf.rows(shown.recent(), RecentLeaf.SHOWN);
         // On the art-pixel grid, so every frame's edge lands on a whole art pixel.
-        float contentWidth = PixelArt.snap(Math.max(0, panel.width() - 6) - QuestCard.P / 2, QuestCard.P);
+        float contentWidth = contentWidth(panel);
         // The header, the quest cards under it, and the latest Leaf under them, each a card's gap apart.
-        float cardsTop = headerHeight(shown.account(), contentWidth) + CARD_GAP;
-        float recentTop = cardsTop + cardsHeight(contentWidth, cards.size()) + CARD_GAP;
+        List<Spot> spots = spots(panel, now);
+        float recentTop = cardsTop(contentWidth) + cardsHeight(contentWidth, spots.size()) + CARD_GAP;
         scroll.setMax(recentTop + RecentLeaf.height(recent.size()) - panel.height());
         canvas.save();
         canvas.scissor(panel.x(), panel.y(), panel.width(), panel.height());
         float top = panel.y() - scroll.offset();
         LeafHeader.render(canvas, shown.account(), stale, panel.x(), top, contentWidth);
-        List<Placement> placements = placements(contentWidth, cards.size(), cardsTop);
-        for (int i = 0; i < cards.size(); i++) {
-            Placement placement = placements.get(i);
-            QuestCard.render(canvas, cards.get(i), panel.x() + placement.x(), top + placement.y(), placement.width());
+        for (Spot spot : spots) {
+            Quest quest = spot.card().quest();
+            QuestCard.RerollLook look = rerolls.look(quest, rerollHit(panel, spot, pointer), service().rerolling(), clock);
+            QuestCard.render(canvas, spot.card(), spot.x(), spot.y(), spot.width(), look,
+                    rerolls.notice(spot.card().slot(), clock));
         }
         RecentLeaf.render(canvas, recent, shown.recentFailed(), now, panel.x(), top + recentTop, contentWidth);
         canvas.restore();
         scroll.draw(canvas, new UiBounds(panel.right() - 3, panel.y(), 3, panel.height()));
+    }
+
+    /** One card where it is drawn this frame, in UI pixels from the screen's top left. */
+    record Spot(Card card, float x, float y, float width) {}
+
+    private static float contentWidth(Panel panel) {
+        return PixelArt.snap(Math.max(0, panel.width() - 6) - QuestCard.P / 2, QuestCard.P);
+    }
+
+    private float cardsTop(float contentWidth) {
+        return headerHeight(shown.account(), contentWidth) + CARD_GAP;
+    }
+
+    /** The cards and where they are drawn, scrolled as the board is. */
+    private List<Spot> spots(Panel panel, Instant now) {
+        List<Card> cards = cards(shown.quests(), now);
+        float contentWidth = contentWidth(panel);
+        List<Placement> placements = placements(contentWidth, cards.size(), cardsTop(contentWidth));
+        float top = panel.y() - scroll.offset();
+        List<Spot> spots = new ArrayList<>(cards.size());
+        for (int i = 0; i < cards.size(); i++) {
+            Placement placement = placements.get(i);
+            spots.add(new Spot(cards.get(i), panel.x() + placement.x(), top + placement.y(), placement.width()));
+        }
+        return List.copyOf(spots);
+    }
+
+    /** Whether {@code at} is on a card's reroll button, where the board shows it: a pixel's slack all round. */
+    static boolean rerollHit(Panel panel, Spot spot, UiPointer at) {
+        boolean onBoard = at.x() >= panel.x() && at.x() < panel.right() && at.y() >= panel.y() && at.y() < panel.bottom();
+        return onBoard && QuestCard.rerollBounds(spot.x(), spot.y(), spot.width()).inset(-QuestCard.P, -QuestCard.P).contains(at);
     }
 
     private static float headerHeight(LeafAccount account, float width) {
@@ -141,6 +175,8 @@ public final class QuestBoardScreen extends SequoiaPanelScreen {
 
     /** "950", "1.2k", "12.5k", "250k", "1.5M": short enough for a narrow card. */
     static String shortCount(long count) {
+        // A correction can leave a member in debt; their balance shortens like any other.
+        if (count < 0) return "-" + shortCount(count == Long.MIN_VALUE ? Long.MAX_VALUE : -count);
         if (count < 1_000) return Long.toString(count);
         if (count < 1_000_000) return trimmed(count / 1_000.0) + "k";
         return trimmed(count / 1_000_000.0) + "M";
@@ -275,6 +311,12 @@ public final class QuestBoardScreen extends SequoiaPanelScreen {
         return reward == null ? "" : "+" + formatCount(reward.leaf()) + " Leaf, +" + formatCount(reward.xp()) + " XP";
     }
 
+    /** ", reroll free" or ", reroll for 100 Leaf" for a quest that can be swapped; nothing otherwise. */
+    static String rerollLabel(Quest quest) {
+        if (quest == null || !quest.rerollable()) return "";
+        return quest.rerollLeaf() == 0 ? ", reroll free" : ", reroll for " + formatCount(quest.rerollLeaf()) + " Leaf";
+    }
+
     static String statusLine(State state) {
         return switch (state) {
             case LOADING -> "Loading your quests...";
@@ -343,7 +385,27 @@ public final class QuestBoardScreen extends SequoiaPanelScreen {
         if (click.button() == 0 && clickSidebar(UiPointer.at(click))) {
             return true;
         }
+        if (click.button() == 0 && state == State.READY && clickReroll(UiPointer.at(click))) {
+            return true;
+        }
         return super.mouseClicked(click, outsideScreen);
+    }
+
+    /** A press on a reroll button: the first arms it, a second soon after asks Leaf to swap the quest. */
+    private boolean clickReroll(UiPointer at) {
+        Panel panel = panel(MinecraftUiRenderer.screenWidth(), MinecraftUiRenderer.screenHeight());
+        for (Spot spot : spots(panel, Instant.now())) {
+            Quest quest = spot.card().quest();
+            if (quest == null || !quest.rerollable() || !rerollHit(panel, spot, at)) continue;
+            if (rerolls.press(quest, service().rerolling(), Clocks.monotonicMillis())) {
+                service().reroll(quest).thenAccept(outcome -> {
+                    rerolls.finished(quest, outcome, Clocks.monotonicMillis());
+                    triggerImmediateNarration(true);
+                });
+            }
+            return true;
+        }
+        return false;
     }
 
     /** Scrolls the board by {@code amount} UI pixels, down for positive, as far as the board goes. */
@@ -371,15 +433,19 @@ public final class QuestBoardScreen extends SequoiaPanelScreen {
         narration.append(formatCount(shown.account().leaf())).append(" Leaf, ")
                 .append(levelLine(shown.account().levelOrFirst())).append(". ");
         if (stale) narration.append(STALE_LINE).append(". ");
+        long clock = Clocks.monotonicMillis();
         for (Card card : cards(shown.quests(), Instant.now())) {
             narration.append(card.heading()).append(", ").append(card.timer()).append(": ");
+            String notice = rerolls.notice(card.slot(), clock);
+            if (notice != null) narration.append(notice).append(". ");
             if (card.quest() == null) {
                 narration.append(card.emptyLine()).append(". ");
                 continue;
             }
             narration.append(card.quest().title()).append(", ").append(progressLabel(card.quest()))
                     .append(card.quest().completed() ? ", done" : "")
-                    .append(", ").append(rewardLabel(card.quest().reward())).append(". ");
+                    .append(", ").append(rewardLabel(card.quest().reward()))
+                    .append(rerollLabel(card.quest())).append(". ");
         }
         return Component.literal(narration.toString());
     }

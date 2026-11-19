@@ -97,4 +97,25 @@ class QuestCardTest {
         assertEquals(List.of("Antidis..."), QuestCard.wrap("Antidisestablishment", 60, TEXT));
         assertEquals(List.of("Do", "Antidis..."), QuestCard.wrap("Do Antidisestablishment", 60, TEXT));
     }
+
+    @Test
+    void theRerollLineSaysWhatARerollCostsAndAsksForASecondPress() {
+        assertEquals(new QuestCard.RerollLine("Reroll: free", -1), QuestCard.rerollLine(QuestCard.RerollLook.HOVERED, 0));
+        assertEquals(new QuestCard.RerollLine("Reroll:", 100), QuestCard.rerollLine(QuestCard.RerollLook.HOVERED, 100));
+        assertEquals(new QuestCard.RerollLine("Click again: free", -1), QuestCard.rerollLine(QuestCard.RerollLook.ARMED, 0));
+        assertEquals(new QuestCard.RerollLine("Click again:", 100), QuestCard.rerollLine(QuestCard.RerollLook.ARMED, 100));
+        assertEquals(new QuestCard.RerollLine("Rerolling...", -1), QuestCard.rerollLine(QuestCard.RerollLook.PENDING, 100));
+        assertNull(QuestCard.rerollLine(QuestCard.RerollLook.IDLE, 100), "an idle button leaves the clock");
+        assertNull(QuestCard.rerollLine(null, 100));
+    }
+
+    @Test
+    void theRerollButtonSitsInTheTopRightCornerOnWholeArtPixels() {
+        UiBounds button = QuestCard.rerollBounds(100, 50, 140);
+
+        assertEquals(new UiBounds(100 + 140 - 15 * 2, 50 + 3 * 2, 22, 22), button);
+        assertTrue(button.right() <= 240 - 4 * 2, "inside the card's frame");
+        assertEquals(QuestCard.REROLL - 4, QuestCard.REROLL_ARROW.length, "the arrow leaves a two-pixel margin all round");
+        for (String row : QuestCard.REROLL_ARROW) assertEquals(QuestCard.REROLL_ARROW.length, row.length());
+    }
 }

@@ -26,6 +26,7 @@
 ## Protocol references
 
 - [Game WebSocket fixtures](game-websocket-contract.md)
+- [Leaf API contract](leaf-api-contract.md)
 - [Minecraft session proof](minecraft-session-proof.md)
 - [Player identity](player-identity-standard.md)
 - [Raid profiles](raid-profiles-protocol.md)

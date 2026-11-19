@@ -47,10 +47,10 @@ final class RecentLeaf {
     record Row(Kind kind, String icon, String tier, String title, String label, long leaf, long level, Instant at) {}
 
     /** The newest {@code limit} events the list knows how to show, newest first. */
-    static List<Row> rows(List<LeafEvents.Event> events, int limit) {
+    static List<Row> rows(LeafEvents events, int limit) {
         List<Row> rows = new ArrayList<>();
         if (events == null) return rows;
-        for (LeafEvents.Event event : events) {
+        for (LeafEvents.Event event : events.newestFirst()) {
             if (rows.size() >= limit) break;
             Row row = row(event);
             if (row != null) rows.add(row);
@@ -86,7 +86,7 @@ final class RecentLeaf {
                         UnlockPopup.slotName(slot) + " quest", reward == null ? 0 : number(reward, "leaf"), 0, at);
             }
             case "achievement_paid" -> {
-                String tier = text(data, "tier") == null ? null : text(data, "tier").toLowerCase(Locale.ROOT);
+                String tier = UnlockPopup.milestoneTier(data);
                 String label = orElse(text(data, "label"), "Milestone");
                 long threshold = number(data, "threshold");
                 String ladder = UnlockPopup.ladderPhrase(text(data, "ladder"));

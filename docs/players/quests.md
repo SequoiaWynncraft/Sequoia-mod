@@ -1,7 +1,7 @@
 # Quests and Leaf
 
 Leaf is Sequoia's guild currency. Members earn it, and XP, from guild activity. XP adds up to a Sequoia level.
-Leaf can't be spent yet.
+For now Leaf is spent only on quest rerolls.
 
 ## Earning Leaf
 
@@ -28,6 +28,17 @@ Under it are three quests:
 - **Timed.** A new one opens every four hours, at 00:00, 04:00, 08:00 UTC and so on, and stays open for two hours. Everyone in the guild gets the same one, and it pays more than a daily. Between windows the card says when the next one opens.
 
 Each card shows what to do, the Leaf and XP it pays, and how far along you are.
+
+## Rerolling a quest
+
+Don't fancy your daily or weekly? Swap it for a different one with the **↻** button in the card's top right corner.
+Point at it to see what it costs: each slot's first reroll of the day (UTC) is free, and each one after costs 100 Leaf.
+Click it once to arm it, then again within a few seconds to reroll.
+
+The new quest starts from nothing, and the old quest's progress is lost.
+Raids and wars from before the reroll that Leaf hasn't counted yet don't count toward the new one, so reroll after Leaf has caught up.
+A rerolled daily keeps your banked dailies as they were, and a rerolled weekly still ends on Monday.
+Finished quests and the timed quest, which the whole guild shares, can't be rerolled.
 
 Most quests can be finished by raiding or by warring, such as **Complete 3 NOL raids or 9 wars**.
 The card shows both, each picture over its own bar, and whichever you finish first completes the quest.

@@ -78,4 +78,16 @@ class SseParserTest {
         assertEquals("The Nameless Anomaly", shown.getFirst().detail());
         assertTrue(shown.getFirst().leaf() == 330);
     }
+
+    @Test
+    void everyEventRefreshesTheBoardEvenOneWithNoPopup() {
+        List<UnlockPopup> shown = new ArrayList<>();
+        int[] changes = {0};
+
+        LeafEventStream.deliver(new SseParser.Event("10", "quest_rerolled",
+                "{\"id\":10,\"type\":\"quest_rerolled\",\"data\":{\"leaf\":100}}"), shown::add, () -> changes[0]++);
+
+        assertEquals(0, shown.size(), "a reroll has no popup");
+        assertEquals(1, changes[0], "but what the board shows changed");
+    }
 }

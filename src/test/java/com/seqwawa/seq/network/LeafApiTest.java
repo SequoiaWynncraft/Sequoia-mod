@@ -27,7 +27,7 @@ class LeafApiTest {
                   {"type":"raids","raid":"nol","title":"Complete 3 NOL raids","progress":1,"target":3},
                   {"type":"wars","raid":null,"title":"Take part in 9 wars","progress":4,"target":9}],
                 "reward":{"leaf":300,"xp":150},"started_at":"2026-11-17T00:00:00.000Z",
-                "expires_at":null,"completed_at":null},
+                "expires_at":null,"completed_at":null,"reroll_leaf":100},
                {"id":"weekly:2","slot":"weekly","title":"Earn 6,000 season rating",
                 "objective":{"type":"season_rating","raid":null},"progress":6000,"target":6000,
                 "reward":{"leaf":800,"xp":400},"started_at":"2026-11-16T00:00:00.000Z",
@@ -61,6 +61,45 @@ class LeafApiTest {
         assertNull(quests.quest(LeafQuests.TIMED));
         assertNull(GSON.fromJson("{\"daily\":{\"charges\":0,\"charge_cap\":3},\"quests\":[]}", LeafQuests.class)
                 .timed(), "an older Leaf sends no timed block");
+    }
+
+    @Test
+    void readsWhatRerollingEachQuestCosts() {
+        LeafQuests quests = GSON.fromJson(QUESTS, LeafQuests.class);
+
+        assertEquals(100L, quests.quest(LeafQuests.DAILY).rerollLeaf());
+        assertTrue(quests.quest(LeafQuests.DAILY).rerollable());
+        assertNull(quests.quest(LeafQuests.WEEKLY).rerollLeaf(), "a Leaf from before rerolls sends none");
+        assertFalse(quests.quest(LeafQuests.WEEKLY).rerollable());
+    }
+
+    @Test
+    void readsLeafsAnswerToAReroll() {
+        LeafQuests.Rerolled rerolled = GSON.fromJson("""
+                {"leaf":1150,"spent":100,
+                 "quest":{"id":"daily:5","slot":"daily","title":"Complete 2 raids or 6 wars",
+                  "objective":{"type":"raids","raid":null},"progress":0,"target":2,
+                  "reward":{"leaf":200,"xp":100},"started_at":"2026-11-19T15:00:00.000Z",
+                  "expires_at":null,"completed_at":null,"reroll_leaf":100}}
+                """, LeafQuests.Rerolled.class);
+
+        assertEquals(1150, rerolled.leaf());
+        assertEquals(100, rerolled.spent());
+        assertEquals("daily:5", rerolled.quest().id());
+        assertEquals(100L, rerolled.quest().rerollLeaf());
+    }
+
+    @Test
+    void readsTheCodeOfALeafRefusal() {
+        ApiClient.ApiException poor = new ApiClient.ApiException(409,
+                "{\"code\":\"insufficient_leaf\",\"message\":\"You don't have enough Leaf to reroll it\"}");
+
+        assertEquals("insufficient_leaf", ApiClient.leafErrorCode(poor));
+        assertEquals("insufficient_leaf", ApiClient.leafErrorCode(new CompletionException(poor)));
+        assertNull(ApiClient.leafErrorCode(new ApiClient.ApiException(502, "<html>Bad gateway</html>")));
+        assertNull(ApiClient.leafErrorCode(new ApiClient.ApiException(500, "[1,2]")));
+        assertNull(ApiClient.leafErrorCode(new java.io.IOException("connection reset")));
+        assertNull(ApiClient.leafErrorCode(null));
     }
 
     @Test

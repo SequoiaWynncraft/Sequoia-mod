@@ -1,0 +1,661 @@
+{
+  "POST /v1/me/quests/{id}/reroll": {
+    "request": {
+      "method": "POST",
+      "path": "/v1/me/quests/weekly:1/reroll",
+      "body": {
+        "leaf": 0
+      }
+    },
+    "status": 200,
+    "body": {
+      "leaf": 3846,
+      "spent": 0,
+      "quest": {
+        "id": "weekly:2",
+        "slot": "weekly",
+        "title": "Complete 12 TCC raids or 60 wars",
+        "objective": {
+          "type": "raids",
+          "raid": "tcc"
+        },
+        "progress": 0,
+        "target": 12,
+        "goals": [
+          {
+            "type": "raids",
+            "raid": "tcc",
+            "title": "Complete 12 TCC raids",
+            "progress": 0,
+            "target": 12
+          },
+          {
+            "type": "wars",
+            "raid": null,
+            "title": "Take part in 60 wars",
+            "progress": 0,
+            "target": 60
+          }
+        ],
+        "reward": {
+          "leaf": 800,
+          "xp": 400
+        },
+        "started_at": "2026-11-25T12:40:00.000Z",
+        "expires_at": "2026-11-30T00:00:00.000Z",
+        "completed_at": null,
+        "reroll_leaf": 100
+      }
+    }
+  },
+  "POST /v1/me/quests/{id}/reroll, the cost changed": {
+    "request": {
+      "method": "POST",
+      "path": "/v1/me/quests/weekly:2/reroll",
+      "body": {
+        "leaf": 0
+      }
+    },
+    "status": 409,
+    "body": {
+      "code": "cost_changed",
+      "message": "Rerolling it costs something else now. Refresh your quests"
+    }
+  },
+  "POST /v1/me/quests/{id}/reroll, the same quest again": {
+    "request": {
+      "method": "POST",
+      "path": "/v1/me/quests/weekly:1/reroll",
+      "body": {
+        "leaf": 100
+      }
+    },
+    "status": 409,
+    "body": {
+      "code": "not_current",
+      "message": "That quest is no longer in its slot. Refresh your quests"
+    }
+  },
+  "GET /v1/me": {
+    "request": {
+      "method": "GET",
+      "path": "/v1/me"
+    },
+    "status": 200,
+    "body": {
+      "player": {
+        "id": "10000000-0000-0000-0000-000000000001",
+        "username": "Alice"
+      },
+      "leaf": 3846,
+      "xp": 3221,
+      "level": {
+        "number": 3,
+        "xp_into_level": 971,
+        "xp_for_next_level": 1500
+      }
+    }
+  },
+  "GET /v1/me/quests": {
+    "request": {
+      "method": "GET",
+      "path": "/v1/me/quests"
+    },
+    "status": 200,
+    "body": {
+      "daily": {
+        "charges": 0,
+        "charge_cap": 3,
+        "next_charge_at": "2026-11-26T00:00:00.000Z"
+      },
+      "timed": {
+        "ends_at": "2026-11-25T14:00:00.000Z",
+        "next_at": "2026-11-25T16:00:00.000Z"
+      },
+      "quests": [
+        {
+          "id": "weekly:2",
+          "slot": "weekly",
+          "title": "Complete 12 TCC raids or 60 wars",
+          "objective": {
+            "type": "raids",
+            "raid": "tcc"
+          },
+          "progress": 0,
+          "target": 12,
+          "goals": [
+            {
+              "type": "raids",
+              "raid": "tcc",
+              "title": "Complete 12 TCC raids",
+              "progress": 0,
+              "target": 12
+            },
+            {
+              "type": "wars",
+              "raid": null,
+              "title": "Take part in 60 wars",
+              "progress": 0,
+              "target": 60
+            }
+          ],
+          "reward": {
+            "leaf": 800,
+            "xp": 400
+          },
+          "started_at": "2026-11-25T12:40:00.000Z",
+          "expires_at": "2026-11-30T00:00:00.000Z",
+          "completed_at": null,
+          "reroll_leaf": 100
+        },
+        {
+          "id": "timed:1",
+          "slot": "timed",
+          "title": "Complete 2 TNA raids or 6 wars",
+          "objective": {
+            "type": "raids",
+            "raid": "tna"
+          },
+          "progress": 2,
+          "target": 2,
+          "goals": [
+            {
+              "type": "raids",
+              "raid": "tna",
+              "title": "Complete 2 TNA raids",
+              "progress": 2,
+              "target": 2
+            },
+            {
+              "type": "wars",
+              "raid": null,
+              "title": "Take part in 6 wars",
+              "progress": 0,
+              "target": 6
+            }
+          ],
+          "reward": {
+            "leaf": 500,
+            "xp": 250
+          },
+          "started_at": "2026-11-25T12:00:00.000Z",
+          "expires_at": "2026-11-25T14:00:00.000Z",
+          "completed_at": "2026-11-25T12:34:20.000Z",
+          "reroll_leaf": null
+        }
+      ],
+      "recently_completed": [
+        {
+          "id": "daily:1",
+          "slot": "daily",
+          "title": "Complete 3 TNA raids or 9 wars",
+          "objective": {
+            "type": "raids",
+            "raid": "tna"
+          },
+          "progress": 3,
+          "target": 3,
+          "goals": [
+            {
+              "type": "raids",
+              "raid": "tna",
+              "title": "Complete 3 TNA raids",
+              "progress": 3,
+              "target": 3
+            },
+            {
+              "type": "wars",
+              "raid": null,
+              "title": "Take part in 9 wars",
+              "progress": 0,
+              "target": 9
+            }
+          ],
+          "reward": {
+            "leaf": 300,
+            "xp": 150
+          },
+          "started_at": "2026-11-25T00:00:00.000Z",
+          "expires_at": null,
+          "completed_at": "2026-11-25T12:34:40.000Z"
+        },
+        {
+          "id": "timed:1",
+          "slot": "timed",
+          "title": "Complete 2 TNA raids or 6 wars",
+          "objective": {
+            "type": "raids",
+            "raid": "tna"
+          },
+          "progress": 2,
+          "target": 2,
+          "goals": [
+            {
+              "type": "raids",
+              "raid": "tna",
+              "title": "Complete 2 TNA raids",
+              "progress": 2,
+              "target": 2
+            },
+            {
+              "type": "wars",
+              "raid": null,
+              "title": "Take part in 6 wars",
+              "progress": 0,
+              "target": 6
+            }
+          ],
+          "reward": {
+            "leaf": 500,
+            "xp": 250
+          },
+          "started_at": "2026-11-25T12:00:00.000Z",
+          "expires_at": "2026-11-25T14:00:00.000Z",
+          "completed_at": "2026-11-25T12:34:20.000Z"
+        }
+      ]
+    }
+  },
+  "GET /v1/me/events": {
+    "request": {
+      "method": "GET",
+      "path": "/v1/me/events"
+    },
+    "status": 200,
+    "body": {
+      "events": [
+        {
+          "id": 1,
+          "type": "leaf_earned",
+          "created_at": "2026-11-25T12:40:00.000Z",
+          "data": {
+            "source": "raid",
+            "leaf": 110,
+            "xp": 110,
+            "detail": "Nest of the Grootslangs",
+            "occurred_at": "2026-11-25T12:31:00.000Z"
+          }
+        },
+        {
+          "id": 2,
+          "type": "leaf_earned",
+          "created_at": "2026-11-25T12:40:00.000Z",
+          "data": {
+            "source": "raid",
+            "leaf": 110,
+            "xp": 110,
+            "detail": "Nest of the Grootslangs",
+            "occurred_at": "2026-11-25T12:31:20.000Z"
+          }
+        },
+        {
+          "id": 3,
+          "type": "leaf_earned",
+          "created_at": "2026-11-25T12:40:00.000Z",
+          "data": {
+            "source": "raid",
+            "leaf": 110,
+            "xp": 110,
+            "detail": "Nest of the Grootslangs",
+            "occurred_at": "2026-11-25T12:31:40.000Z"
+          }
+        },
+        {
+          "id": 4,
+          "type": "leaf_earned",
+          "created_at": "2026-11-25T12:40:00.000Z",
+          "data": {
+            "source": "raid",
+            "leaf": 110,
+            "xp": 110,
+            "detail": "Orphion's Nexus of Light",
+            "occurred_at": "2026-11-25T12:32:00.000Z"
+          }
+        },
+        {
+          "id": 5,
+          "type": "leaf_earned",
+          "created_at": "2026-11-25T12:40:00.000Z",
+          "data": {
+            "source": "raid",
+            "leaf": 110,
+            "xp": 110,
+            "detail": "Orphion's Nexus of Light",
+            "occurred_at": "2026-11-25T12:32:20.000Z"
+          }
+        },
+        {
+          "id": 6,
+          "type": "leaf_earned",
+          "created_at": "2026-11-25T12:40:00.000Z",
+          "data": {
+            "source": "raid",
+            "leaf": 110,
+            "xp": 110,
+            "detail": "Orphion's Nexus of Light",
+            "occurred_at": "2026-11-25T12:32:40.000Z"
+          }
+        },
+        {
+          "id": 7,
+          "type": "leaf_earned",
+          "created_at": "2026-11-25T12:40:00.000Z",
+          "data": {
+            "source": "raid",
+            "leaf": 110,
+            "xp": 110,
+            "detail": "The Canyon Colossus",
+            "occurred_at": "2026-11-25T12:33:00.000Z"
+          }
+        },
+        {
+          "id": 8,
+          "type": "leaf_earned",
+          "created_at": "2026-11-25T12:40:00.000Z",
+          "data": {
+            "source": "raid",
+            "leaf": 110,
+            "xp": 110,
+            "detail": "The Canyon Colossus",
+            "occurred_at": "2026-11-25T12:33:20.000Z"
+          }
+        },
+        {
+          "id": 9,
+          "type": "leaf_earned",
+          "created_at": "2026-11-25T12:40:00.000Z",
+          "data": {
+            "source": "raid",
+            "leaf": 110,
+            "xp": 110,
+            "detail": "The Canyon Colossus",
+            "occurred_at": "2026-11-25T12:33:40.000Z"
+          }
+        },
+        {
+          "id": 10,
+          "type": "leaf_earned",
+          "created_at": "2026-11-25T12:40:00.000Z",
+          "data": {
+            "source": "raid",
+            "leaf": 110,
+            "xp": 110,
+            "detail": "The Nameless Anomaly",
+            "occurred_at": "2026-11-25T12:34:00.000Z"
+          }
+        },
+        {
+          "id": 11,
+          "type": "leaf_earned",
+          "created_at": "2026-11-25T12:40:00.000Z",
+          "data": {
+            "source": "raid",
+            "leaf": 110,
+            "xp": 110,
+            "detail": "The Nameless Anomaly",
+            "occurred_at": "2026-11-25T12:34:20.000Z"
+          }
+        },
+        {
+          "id": 12,
+          "type": "quest_completed",
+          "created_at": "2026-11-25T12:40:00.000Z",
+          "data": {
+            "quest": {
+              "id": "timed:1",
+              "slot": "timed",
+              "title": "Complete 2 TNA raids or 6 wars",
+              "objective": {
+                "type": "raids",
+                "raid": "tna"
+              },
+              "progress": 2,
+              "target": 2,
+              "goals": [
+                {
+                  "type": "raids",
+                  "raid": "tna",
+                  "title": "Complete 2 TNA raids",
+                  "progress": 2,
+                  "target": 2
+                },
+                {
+                  "type": "wars",
+                  "raid": null,
+                  "title": "Take part in 6 wars",
+                  "progress": 0,
+                  "target": 6
+                }
+              ],
+              "reward": {
+                "leaf": 500,
+                "xp": 250
+              },
+              "started_at": "2026-11-25T12:00:00.000Z",
+              "expires_at": "2026-11-25T14:00:00.000Z",
+              "completed_at": "2026-11-25T12:34:20.000Z"
+            }
+          }
+        },
+        {
+          "id": 13,
+          "type": "leaf_earned",
+          "created_at": "2026-11-25T12:40:00.000Z",
+          "data": {
+            "source": "raid",
+            "leaf": 110,
+            "xp": 110,
+            "detail": "The Nameless Anomaly",
+            "occurred_at": "2026-11-25T12:34:40.000Z"
+          }
+        },
+        {
+          "id": 14,
+          "type": "quest_completed",
+          "created_at": "2026-11-25T12:40:00.000Z",
+          "data": {
+            "quest": {
+              "id": "daily:1",
+              "slot": "daily",
+              "title": "Complete 3 TNA raids or 9 wars",
+              "objective": {
+                "type": "raids",
+                "raid": "tna"
+              },
+              "progress": 3,
+              "target": 3,
+              "goals": [
+                {
+                  "type": "raids",
+                  "raid": "tna",
+                  "title": "Complete 3 TNA raids",
+                  "progress": 3,
+                  "target": 3
+                },
+                {
+                  "type": "wars",
+                  "raid": null,
+                  "title": "Take part in 9 wars",
+                  "progress": 0,
+                  "target": 9
+                }
+              ],
+              "reward": {
+                "leaf": 300,
+                "xp": 150
+              },
+              "started_at": "2026-11-25T00:00:00.000Z",
+              "expires_at": null,
+              "completed_at": "2026-11-25T12:34:40.000Z"
+            }
+          }
+        },
+        {
+          "id": 15,
+          "type": "leaf_earned",
+          "created_at": "2026-11-25T12:40:00.000Z",
+          "data": {
+            "source": "raid",
+            "leaf": 110,
+            "xp": 110,
+            "detail": "The Wartorn Palace",
+            "occurred_at": "2026-11-25T12:35:00.000Z"
+          }
+        },
+        {
+          "id": 16,
+          "type": "leaf_earned",
+          "created_at": "2026-11-25T12:40:00.000Z",
+          "data": {
+            "source": "raid",
+            "leaf": 110,
+            "xp": 110,
+            "detail": "The Wartorn Palace",
+            "occurred_at": "2026-11-25T12:35:20.000Z"
+          }
+        },
+        {
+          "id": 17,
+          "type": "leaf_earned",
+          "created_at": "2026-11-25T12:40:00.000Z",
+          "data": {
+            "source": "raid",
+            "leaf": 110,
+            "xp": 110,
+            "detail": "The Wartorn Palace",
+            "occurred_at": "2026-11-25T12:35:40.000Z"
+          }
+        },
+        {
+          "id": 18,
+          "type": "leaf_earned",
+          "created_at": "2026-11-25T12:40:00.000Z",
+          "data": {
+            "source": "war",
+            "leaf": 146,
+            "xp": 146,
+            "detail": "Detlas",
+            "occurred_at": "2026-11-25T12:37:00.000Z",
+            "in_claim": true
+          }
+        },
+        {
+          "id": 19,
+          "type": "leaf_earned",
+          "created_at": "2026-11-25T12:40:00.000Z",
+          "data": {
+            "source": "war",
+            "leaf": 25,
+            "xp": 25,
+            "detail": "Ragni",
+            "occurred_at": "2026-11-25T12:37:20.000Z",
+            "in_claim": false
+          }
+        },
+        {
+          "id": 20,
+          "type": "level_up",
+          "created_at": "2026-11-25T12:40:00.000Z",
+          "data": {
+            "level": 2,
+            "leaf": 100
+          }
+        },
+        {
+          "id": 21,
+          "type": "achievement_paid",
+          "created_at": "2026-11-25T12:40:00.000Z",
+          "data": {
+            "award_id": "10000000-0000-0000-0000-000000000001:raid:TNA:gold",
+            "ladder": "raid:TNA",
+            "milestone": "gold",
+            "tier": "gold",
+            "threshold": 100,
+            "label": "Gold",
+            "leaf": 1000,
+            "xp": 1000,
+            "earned_at": "2026-11-25T12:34:00.000Z"
+          }
+        },
+        {
+          "id": 22,
+          "type": "level_up",
+          "created_at": "2026-11-25T12:40:00.000Z",
+          "data": {
+            "level": 3,
+            "leaf": 125
+          }
+        },
+        {
+          "id": 23,
+          "type": "quest_rerolled",
+          "created_at": "2026-11-25T12:40:00.000Z",
+          "data": {
+            "replaced": {
+              "id": "weekly:1",
+              "slot": "weekly",
+              "title": "Earn 2,000 season rating",
+              "objective": {
+                "type": "season_rating",
+                "raid": null
+              },
+              "progress": 1770,
+              "target": 2000,
+              "goals": [
+                {
+                  "type": "season_rating",
+                  "raid": null,
+                  "title": "Earn 2,000 season rating",
+                  "progress": 1770,
+                  "target": 2000
+                }
+              ],
+              "reward": {
+                "leaf": 800,
+                "xp": 400
+              },
+              "started_at": "2026-11-23T00:00:00.000Z",
+              "expires_at": "2026-11-25T12:40:00.000Z",
+              "completed_at": null
+            },
+            "quest": {
+              "id": "weekly:2",
+              "slot": "weekly",
+              "title": "Complete 12 TCC raids or 60 wars",
+              "objective": {
+                "type": "raids",
+                "raid": "tcc"
+              },
+              "progress": 0,
+              "target": 12,
+              "goals": [
+                {
+                  "type": "raids",
+                  "raid": "tcc",
+                  "title": "Complete 12 TCC raids",
+                  "progress": 0,
+                  "target": 12
+                },
+                {
+                  "type": "wars",
+                  "raid": null,
+                  "title": "Take part in 60 wars",
+                  "progress": 0,
+                  "target": 60
+                }
+              ],
+              "reward": {
+                "leaf": 800,
+                "xp": 400
+              },
+              "started_at": "2026-11-25T12:40:00.000Z",
+              "expires_at": "2026-11-30T00:00:00.000Z",
+              "completed_at": null
+            },
+            "leaf": 0
+          }
+        }
+      ]
+    }
+  }
+}

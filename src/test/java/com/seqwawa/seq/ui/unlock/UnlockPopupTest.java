@@ -148,4 +148,15 @@ class UnlockPopupTest {
         assertNull(from("leaf_spent", "{\"leaf\":100}"));
         assertNull(from("quest_completed", "{}"));
     }
+
+    @Test
+    void aMilestoneWithoutATierIsDrawnAsTheMilestoneLeafPaidFor() {
+        UnlockPopup mythril = from("achievement_paid",
+                "{\"ladder\":\"raid:TNA\",\"milestone\":\"mythril\",\"tier\":null,\"threshold\":5000,\"leaf\":20000}");
+
+        assertEquals(Kind.CEREMONY, mythril.kind());
+        assertEquals("mythril", UnlockPopup.milestoneTier(JsonParser.parseString("{\"milestone\":\"Mythril\"}").getAsJsonObject()));
+        assertEquals("gold", UnlockPopup.milestoneTier(
+                JsonParser.parseString("{\"milestone\":\"mythril\",\"tier\":\"Gold\"}").getAsJsonObject()), "the tier wins");
+    }
 }

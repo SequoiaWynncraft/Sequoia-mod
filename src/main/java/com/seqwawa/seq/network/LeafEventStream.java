@@ -156,16 +156,21 @@ public final class LeafEventStream {
                 SseParser.Event event = parser.accept(iterator.next());
                 // A line read as the stream stops is the next session's to show.
                 if (!advanceCursor(Thread.currentThread(), parser.lastEventId())) return;
-                if (event != null) {
-                    dispatch(event, popup -> {
-                        leafChanged.run();
-                        show.accept(popup);
-                    });
-                }
+                if (event != null) deliver(event, show, leafChanged);
             }
         } finally {
             open = null;
         }
+    }
+
+    /**
+     * Hands on one event: every event means Leaf changed something the board shows,
+     * so {@code changed} hears of each, popup or not (a reroll made elsewhere has none);
+     * {@code show} gets the popups.
+     */
+    static void deliver(SseParser.Event event, Consumer<UnlockPopup> show, Runnable changed) {
+        changed.run();
+        dispatch(event, show);
     }
 
     /** Turns one event into a popup, skipping what it cannot show. */

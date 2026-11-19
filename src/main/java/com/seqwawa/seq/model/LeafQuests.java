@@ -68,6 +68,8 @@ public record LeafQuests(
      * @param objective what the goal nearest to being met asks for; with {@code progress}
      *     and {@code target}, what clients with room for one bar show
      * @param goals every way to finish it; absent from Leaf before either-or quests
+     * @param rerollLeaf what swapping it for another quest costs now, 0 when it is free, or null
+     *     when it can't be swapped: a timed or finished quest, or a Leaf from before rerolls
      */
     public record Quest(
             String id,
@@ -80,10 +82,15 @@ public record LeafQuests(
             Reward reward,
             @SerializedName("started_at") Instant startedAt,
             @SerializedName("expires_at") Instant expiresAt,
-            @SerializedName("completed_at") Instant completedAt) {
+            @SerializedName("completed_at") Instant completedAt,
+            @SerializedName("reroll_leaf") Long rerollLeaf) {
 
         public boolean completed() {
             return completedAt != null;
+        }
+
+        public boolean rerollable() {
+            return rerollLeaf != null && rerollLeaf >= 0 && !completed() && id != null;
         }
 
         /** Every way to finish it, in Leaf's order: its goals, or the one objective an older Leaf sends. */
@@ -93,6 +100,32 @@ public record LeafQuests(
             return List.of(new Goal(objective == null ? null : objective.type(),
                     objective == null ? null : objective.raid(), title, progress, target));
         }
+    }
+
+    /**
+     * What Leaf answers a reroll with.
+     *
+     * @param leaf the balance after it
+     * @param spent what it cost, 0 for a free one
+     * @param quest the quest that took the old one's place
+     */
+    public record Rerolled(long leaf, long spent, Quest quest) {}
+
+    /** These quests with {@code quest} in its slot, in place of the one there. */
+    public LeafQuests withQuest(Quest quest) {
+        List<Quest> current = quests == null ? List.of() : quests;
+        List<Quest> changed = new java.util.ArrayList<>(current.size() + 1);
+        boolean placed = false;
+        for (Quest each : current) {
+            if (each != null && quest.slot().equals(each.slot())) {
+                changed.add(quest);
+                placed = true;
+            } else {
+                changed.add(each);
+            }
+        }
+        if (!placed) changed.add(quest);
+        return new LeafQuests(daily, timed, List.copyOf(changed), recentlyCompleted);
     }
 
     /** The quest in a slot, or null when the slot is empty right now. */

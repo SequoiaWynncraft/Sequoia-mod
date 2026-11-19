@@ -449,7 +449,7 @@ public final class UnlockPreview {
                                 new LeafQuests.Goal("wars", null, "Take part in 6 wars", 2, 6))),
                 List.of());
         Instant at = Instant.now();
-        List<LeafEvents.Event> recent = List.of(
+        LeafEvents recent = LeafEvents.of(List.of(
                 event(6, "leaf_earned", at.minus(Duration.ofMinutes(12)),
                         "{\"source\":\"raid\",\"leaf\":330,\"xp\":330,\"detail\":\"The Nameless Anomaly\"}"),
                 event(5, "leaf_earned", at.minus(Duration.ofMinutes(41)),
@@ -460,7 +460,7 @@ public final class UnlockPreview {
                                 + "\"label\":\"Gold\",\"leaf\":1000,\"xp\":1000}"),
                 event(2, "level_up", at.minus(Duration.ofHours(3)), "{\"level\":7,\"leaf\":225}"),
                 event(1, "leaf_earned", at.minus(Duration.ofHours(5)),
-                        "{\"source\":\"war\",\"leaf\":26,\"xp\":26,\"detail\":\"Ragni\",\"in_claim\":false}"));
+                        "{\"source\":\"war\",\"leaf\":26,\"xp\":26,\"detail\":\"Ragni\",\"in_claim\":false}")));
         return new LeafQuestService.Snapshot(new LeafAccount(12_480, 13_120, new LeafAccount.Level(7, 640, 2_500)), quests,
                 recent);
     }
@@ -477,7 +477,10 @@ public final class UnlockPreview {
             + "{\"type\":\"wars\",\"raid\":null,\"title\":\"Take part in 9 wars\",\"progress\":9,\"target\":9}],"
             + "\"reward\":{\"leaf\":300,\"xp\":150}}}";
 
-    /** A quest as Leaf sends it: its goals, and the one nearest to being met as its objective. */
+    /**
+     * A quest as Leaf sends it: its goals, and the one nearest to being met as its objective.
+     * The daily's reroll is free, the weekly's costs 100 Leaf, and the timed quest has none.
+     */
     private static LeafQuests.Quest quest(String slot, String title, long leaf, long xp, Instant expiresAt,
             LeafQuests.Goal... goals) {
         Instant now = Instant.now();
@@ -487,7 +490,11 @@ public final class UnlockPreview {
         }
         return new LeafQuests.Quest(slot + ":1", slot, title, new LeafQuests.Objective(leading.type(), leading.raid()),
                 leading.progress(), leading.target(), List.of(goals), new LeafQuests.Reward(leaf, xp),
-                now.minus(Duration.ofHours(3)), expiresAt, null);
+                now.minus(Duration.ofHours(3)), expiresAt, null, switch (slot) {
+                    case LeafQuests.DAILY -> 0L;
+                    case LeafQuests.WEEKLY -> 100L;
+                    default -> null;
+                });
     }
 
     /** One of each popup, made from the same JSON Leaf sends, so the preview also exercises the mapping. */
