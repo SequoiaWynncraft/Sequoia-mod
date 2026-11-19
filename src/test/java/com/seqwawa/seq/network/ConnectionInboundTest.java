@@ -383,9 +383,10 @@ class ConnectionInboundTest {
                 + "\"disband_at\":\"2026-11-18T12:10:00Z\",\"minutes_remaining\":5}");
         harness.receive("{\"type\":\"party_finder_stale_warning\",\"listing_id\":8}");
 
+        Object on = harness.game.serverConnection;
         assertEquals(List.of(
-                new ConnectionManager.PartyFinderStaleWarningMessage("idle", 7, Instant.parse("2026-11-18T12:10:00Z"), 5),
-                new ConnectionManager.PartyFinderStaleWarningMessage(null, 8, null, 0)), received);
+                new ConnectionManager.PartyFinderStaleWarningMessage("idle", 7, Instant.parse("2026-11-18T12:10:00Z"), 5, on),
+                new ConnectionManager.PartyFinderStaleWarningMessage(null, 8, null, 0, on)), received);
     }
 
     // ── Errors ──
