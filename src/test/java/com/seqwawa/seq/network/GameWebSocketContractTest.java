@@ -67,8 +67,8 @@ class GameWebSocketContractTest {
     void discordChatDispatchPreservesLegacyAndAdditiveFields(@TempDir Path config) throws Exception {
         AtomicReference<ConnectionManager.DiscordChatMessage> dispatched = new AtomicReference<>();
         try (var harness = new ConnectionHarness(config)) {
-            ConnectionManager.onDiscordChat(dispatched::set);
-            harness.connection();
+            ConnectionManager.listen(ConnectionManager.Inbound.DISCORD_CHAT, dispatched::set);
+            harness.connectAsMember();
             for (var element : fixture().getAsJsonObject("discord_chat").getAsJsonArray("cases")) {
                 JsonObject example = element.getAsJsonObject();
                 String id = example.get("id").getAsString();
@@ -91,8 +91,8 @@ class GameWebSocketContractTest {
     void invalidOrUnknownEnvelopesDoNotDispatchChatAndLeaveValidMessagesUsable(@TempDir Path config) throws Exception {
         AtomicReference<ConnectionManager.DiscordChatMessage> dispatched = new AtomicReference<>();
         try (var harness = new ConnectionHarness(config)) {
-            ConnectionManager.onDiscordChat(dispatched::set);
-            harness.connection();
+            ConnectionManager.listen(ConnectionManager.Inbound.DISCORD_CHAT, dispatched::set);
+            harness.connectAsMember();
             JsonObject fixture = fixture();
             for (var element : fixture.getAsJsonObject("rejected_envelopes").getAsJsonArray("cases")) {
                 JsonObject example = element.getAsJsonObject();

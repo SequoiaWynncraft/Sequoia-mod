@@ -194,6 +194,26 @@ class TreasuryOutManagerTest {
                 "cinfrascitizen", true, "2stx", "Solo", reason, context.feedback::add);
     }
 
+    @Test
+    void aReplyHandedToTheGameThreadInTheTimeoutsLastTickStillSettlesTheRequest() {
+        java.util.concurrent.atomic.AtomicLong now = new java.util.concurrent.atomic.AtomicLong(1_000);
+        com.seqwawa.seq.client.TickQueue gameThread = new com.seqwawa.seq.client.TickQueue(now::get);
+        List<String> feedback = new ArrayList<>();
+        // As the game wires it: the timeout runs on the game thread, in order with the socket's replies.
+        TreasuryOutManager manager = new TreasuryOutManager(() -> "request-1", request -> true,
+                (task, delay) -> gameThread.after(delay.toMillis(), task)::cancel);
+        manager.submit("cinfrascitizen", true, "2stx", "Solo", "season payout", feedback::add);
+
+        now.addAndGet(TreasuryOutManager.REQUEST_TIMEOUT.toMillis() - 10);
+        gameThread.execute(() -> manager.handleRecorded(new TreasuryOutRecordedMessage(
+                "treasury_out_recorded", "request-1", "Season 32", 7, "2stx", "Solo", "season payout", "2026-11-19")));
+        now.addAndGet(10);
+        gameThread.runDue();
+
+        assertTrue(feedback.getLast().startsWith("Treasury OUT recorded: 2stx"), feedback.getLast());
+        assertFalse(manager.isPending("request-1"));
+    }
+
     private static TestContext contextWithIds(String... ids) {
         AtomicInteger idCalls = new AtomicInteger();
         Supplier<String> factory = () -> ids[idCalls.getAndIncrement()];

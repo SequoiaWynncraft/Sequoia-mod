@@ -35,8 +35,8 @@ class ImageBridgeIntegrationTest {
     @BeforeEach
     void setUp() {
         harness = new ConnectionHarness(directory);
-        ConnectionManager.onDiscordChat(received::set);
-        harness.connection();
+        ConnectionManager.listen(ConnectionManager.Inbound.DISCORD_CHAT, received::set);
+        harness.connectAsMember();
         ImagePreviewSettings.setting().setValue(true);
         ImagePreviewSettings.mediaSetting().reset();
         BridgeMedia.clear();

@@ -10,7 +10,7 @@ import java.util.regex.Pattern;
  * reconnecting.
  * <p>
  * The backend closes with 1008 (policy violation) for several unrelated reasons, named
- * in the close reason. A handshake it refuses never opens: Java-WebSocket reports that
+ * in the close reason. A handshake it refuses never opens: the socket reports that
  * as a close whose reason carries the HTTP status.
  */
 final class BackendCloseClassifier {
@@ -31,7 +31,7 @@ final class BackendCloseClassifier {
 
     static final int POLICY_VIOLATION = 1008;
 
-    /** Java-WebSocket's close code and reason for a handshake answered with anything but 101. */
+    /** The close code, and reason, a socket reports for a handshake answered with anything but 101. */
     static final int HANDSHAKE_FAILED = 1002;
     private static final Pattern REFUSED_HANDSHAKE = Pattern.compile("^invalid status code received: (\\d{3})\\b");
 

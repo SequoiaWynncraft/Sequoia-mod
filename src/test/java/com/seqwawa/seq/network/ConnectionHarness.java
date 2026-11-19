@@ -50,6 +50,8 @@ final class ConnectionHarness implements AutoCloseable {
     final List<Runnable> heldProofs = new ArrayList<>();
     /** When set, Treasury session joins wait in {@link #heldProofs} instead of running at once. */
     boolean holdProofs;
+    /** When set, the next socket made throws this from connect, as a handshake that can't start does. */
+    RuntimeException nextConnectFailure;
     volatile WynncraftServerPolicy.Scope scope = WynncraftServerPolicy.Scope.MAIN;
 
     final ConfigManager config;
@@ -100,6 +102,8 @@ final class ConnectionHarness implements AutoCloseable {
                 tokens,
                 (uri, listener) -> {
                     FakeBackendSocket socket = new FakeBackendSocket(uri, listener);
+                    socket.connectFailure = nextConnectFailure;
+                    nextConnectFailure = null;
                     sockets.add(socket);
                     return socket;
                 },
@@ -159,6 +163,17 @@ final class ConnectionHarness implements AutoCloseable {
             throw new AssertionError("No socket was made");
         }
         return sockets.getLast();
+    }
+
+    /** What the latest socket sent; nothing when no socket was made. */
+    List<String> sentTypes() {
+        return sockets.isEmpty() ? List.of() : socket().sentTypes();
+    }
+
+    void clearSent() {
+        if (!sockets.isEmpty()) {
+            socket().clearSent();
+        }
     }
 
     FakeBackendSocket open() {
@@ -238,11 +253,16 @@ final class ConnectionHarness implements AutoCloseable {
         return socket;
     }
 
-    /** What a sign-out does to the connection: the player is signed out, then the socket closes. */
+    /** What a sign-out does to the connection: the player is signed out, then the session, and its socket, end. */
     void signOut() {
         tokens.signedOutByUser = true;
-        tokens.session++;
-        connection().disconnectForSessionEnd();
+        tokens.endSession();
+    }
+
+    /** What switching Minecraft account does: the previous account is forgotten, and its session ends. */
+    void switchAccount() {
+        ConnectionManager.resetForAccountChange();
+        tokens.endSession();
     }
 
     void closeFromBackend(int code, String reason) {
@@ -269,6 +289,15 @@ final class ConnectionHarness implements AutoCloseable {
         /** The current sign-in, which moves on when it ends. */
         long session;
         int allowSignIns;
+        private final java.util.Map<Long, List<Runnable>> sessionEnds = new java.util.HashMap<>();
+
+        /** Ends the current session, as the session manager does, and starts the next. */
+        void endSession() {
+            List<Runnable> ended = sessionEnds.getOrDefault(session, List.of());
+            sessionEnds.remove(session);
+            session++;
+            ended.forEach(Runnable::run);
+        }
 
         @Override
         public CompletableFuture<String> ensureValidToken(boolean forceRefresh) {
@@ -284,7 +313,7 @@ final class ConnectionHarness implements AutoCloseable {
         @Override
         public void invalidateSession(String token, AuthErrorCode code, String message) {
             invalidations.add(code);
-            session++;
+            endSession();
         }
 
         @Override
@@ -306,6 +335,15 @@ final class ConnectionHarness implements AutoCloseable {
         @Override
         public long sessionId() {
             return session;
+        }
+
+        @Override
+        public void whenSessionEnds(long sessionId, Runnable action) {
+            if (sessionId == session) {
+                sessionEnds.computeIfAbsent(sessionId, ignored -> new ArrayList<>()).add(action);
+            } else {
+                action.run();
+            }
         }
     }
 

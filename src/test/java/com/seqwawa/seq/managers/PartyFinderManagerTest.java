@@ -15,11 +15,9 @@ import com.seqwawa.seq.model.PartyRole;
 import com.seqwawa.seq.model.PartyStatus;
 import com.seqwawa.seq.model.ReservedSlot;
 import com.seqwawa.seq.model.WynnClassType;
-import com.seqwawa.seq.network.ConnectionManager;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 class PartyFinderManagerTest {
@@ -27,14 +25,6 @@ class PartyFinderManagerTest {
     private static final String LEADER = "00000000-0000-0000-0000-00000000000a";
     private static final String KICK_TARGET = "00000000-0000-0000-0000-00000000000b";
     private static final String OTHER_MEMBER = "00000000-0000-0000-0000-00000000000c";
-
-    @AfterEach
-    void unregisterWebsocketHandlers() {
-        // Constructing the manager registers its websocket handlers on ConnectionManager.
-        ConnectionManager.onPartyFinderUpdate(null);
-        ConnectionManager.onPartyFinderInvite(null);
-        ConnectionManager.onPartyFinderStaleWarning(null);
-    }
 
     @Test
     void resetForgetsThePreviousAccountsPartyInvitesAndCards() {
@@ -151,6 +141,34 @@ class PartyFinderManagerTest {
         assertTrue(PartyFinderManager.isSupersededByReset(failure));
         manager.pushUiError(null);
         assertNull(manager.consumeLatestPartyError(), "a dropped reply leaves no banner for the next account");
+    }
+
+    @Test
+    void anInviteWhoseSessionEndedWhileItsInviterWasLookedUpIsNeverShown() {
+        List<String> shown = new java.util.ArrayList<>();
+        PartyFinderManager manager = new PartyFinderManager() {
+            @Override
+            public void notify(String message) {
+                shown.add(message);
+            }
+        };
+        java.util.concurrent.CompletableFuture<String> name = new java.util.concurrent.CompletableFuture<>();
+        PartyFinderManager.inviterNames = uuid -> name;
+        try {
+            manager.handlePartyFinderInvite(7L, LEADER, null, null);
+            // The session ends, as an account switch does, before the name comes back.
+            manager.reset();
+            name.complete("Inviter");
+            assertEquals(List.of(), shown);
+
+            java.util.concurrent.CompletableFuture<String> next = new java.util.concurrent.CompletableFuture<>();
+            PartyFinderManager.inviterNames = uuid -> next;
+            manager.handlePartyFinderInvite(8L, LEADER, null, null);
+            next.complete("Inviter");
+            assertEquals(List.of("Party Finder invite from Inviter."), shown);
+        } finally {
+            PartyFinderManager.inviterNames = com.seqwawa.seq.utils.PlayerNameCache::resolveAsync;
+        }
     }
 
     @Test

@@ -56,6 +56,7 @@ import com.seqwawa.seq.network.auth.MinecraftAuthChallengeResponse;
 import com.seqwawa.seq.network.auth.MinecraftAuthCompleteRequest;
 import com.seqwawa.seq.network.auth.MinecraftAuthCompleteResponse;
 import com.seqwawa.seq.network.auth.MinecraftAuthService;
+import com.seqwawa.seq.session.Session;
 import com.seqwawa.seq.session.SessionManager;
 import com.seqwawa.seq.utils.WynnClassCache;
 
@@ -86,6 +87,8 @@ public class ApiClient {
     /** Where raid profiles live, which can differ from {@link #baseUrl}. See build.gradle. */
     private final String raidProfilesBaseUrl;
     private final String leafBaseUrl;
+    /** The session whose token requests carry, or null for whichever is current as each goes out. */
+    private final Session session;
 
     public static ApiClient getInstance() {
         if (instance == null) {
@@ -109,6 +112,31 @@ public class ApiClient {
         this.authBaseUrl = resolveAuthBaseUrl(BuildConfig.API_URL);
         this.raidProfilesBaseUrl = BuildConfig.RAID_PROFILES_API_URL;
         this.leafBaseUrl = BuildConfig.LEAF_API_URL;
+        this.session = null;
+    }
+
+    private ApiClient(ApiClient shared, Session session) {
+        this.executor = shared.executor;
+        this.httpClient = shared.httpClient;
+        this.gson = shared.gson;
+        this.baseUrl = shared.baseUrl;
+        this.authBaseUrl = shared.authBaseUrl;
+        this.raidProfilesBaseUrl = shared.raidProfilesBaseUrl;
+        this.leafBaseUrl = shared.leafBaseUrl;
+        this.session = session;
+    }
+
+    /**
+     * This client, sending {@code session}'s token: work a session owns never goes out with the
+     * next account's, and once the session ends it goes out with none.
+     */
+    public ApiClient forSession(Session session) {
+        return new ApiClient(this, session);
+    }
+
+    /** A valid token for the next request: the session's, which never signs in, or the current one's. */
+    private CompletableFuture<String> validToken() {
+        return session != null ? session.token(false) : SeqClient.getAuthService().ensureValidToken(false);
     }
 
     /** The Gson every response is read with: snake_case names come from annotations, times are ISO-8601. */
@@ -416,7 +444,7 @@ public class ApiClient {
 
     public CompletableFuture<GuildRaidProgress> getGuildRaidProgress() {
         return afterValidToken(
-                SeqClient.getAuthService().ensureValidToken(false),
+                validToken(),
                 () -> ChatManager.canAnnounceAchievements()
                         ? this.<GuildRaidProgress>post(ACHIEVEMENTS_PATH, null, GuildRaidProgress.class)
                                 .exceptionallyCompose(failure -> {
@@ -1109,9 +1137,9 @@ public class ApiClient {
         return newRequestWithToken(resolvedBaseUrl, path, includeAuthHeader ? signedInToken() : null);
     }
 
-    /** The current session's token, expired or not; a 401 asks for a fresh one. */
-    private static String signedInToken() {
-        var signedIn = MinecraftAuthService.getInstance().getCurrentSession();
+    /** The session's token, expired or not, or the current session's for a client tied to none. */
+    private String signedInToken() {
+        var signedIn = session != null ? session.signedIn() : MinecraftAuthService.getInstance().getCurrentSession();
         return signedIn == null ? null : signedIn.token();
     }
 

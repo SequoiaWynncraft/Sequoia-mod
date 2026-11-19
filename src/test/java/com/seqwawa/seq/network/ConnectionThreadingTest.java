@@ -163,7 +163,7 @@ class ConnectionThreadingTest {
         }
 
         assertEquals(1, seen.size());
-        assertEquals(1, harness.sockets.size());
+        assertEquals(List.of(), harness.sockets, "a socket is made per attempt, not per connection");
     }
 
     // ── Work queued before the connection changed ──
@@ -185,7 +185,7 @@ class ConnectionThreadingTest {
     @Test
     void aPartyFinderUpdateQueuedBeforeASignOutIsDropped() {
         List<Integer> listings = new ArrayList<>();
-        ConnectionManager.onPartyFinderUpdate(update -> listings.add(update.listingJson().get("id").getAsInt()));
+        ConnectionManager.listen(ConnectionManager.Inbound.PARTY_FINDER_UPDATE, update -> listings.add(update.listingJson().get("id").getAsInt()));
         FakeBackendSocket socket = harness.connectAsMember();
         socket.receive(partyFinderUpdate(7));
 
@@ -198,7 +198,7 @@ class ConnectionThreadingTest {
     @Test
     void aListingQueuedBehindTheBackendsRefusalOfTheTokenIsDropped() {
         List<Integer> listings = new ArrayList<>();
-        ConnectionManager.onPartyFinderUpdate(update -> listings.add(update.listingJson().get("id").getAsInt()));
+        ConnectionManager.listen(ConnectionManager.Inbound.PARTY_FINDER_UPDATE, update -> listings.add(update.listingJson().get("id").getAsInt()));
         FakeBackendSocket socket = harness.connectAsMember();
 
         // Both reach the game thread together; the refusal ends the session and clears Party Finder.
@@ -214,7 +214,7 @@ class ConnectionThreadingTest {
     @Test
     void framesBeforeABackendCloseStillRunInOrderBeforeIt() {
         List<Integer> listings = new ArrayList<>();
-        ConnectionManager.onPartyFinderUpdate(update -> listings.add(update.listingJson().get("id").getAsInt()));
+        ConnectionManager.listen(ConnectionManager.Inbound.PARTY_FINDER_UPDATE, update -> listings.add(update.listingJson().get("id").getAsInt()));
         FakeBackendSocket socket = harness.connectAsMember();
 
         socket.receive(partyFinderUpdate(7));

@@ -2,9 +2,11 @@ package com.seqwawa.seq.session;
 
 import com.seqwawa.seq.managers.GuildRaidProgressService;
 import com.seqwawa.seq.managers.LeafQuestService;
+import com.seqwawa.seq.managers.PartyFinderManager;
 import com.seqwawa.seq.managers.PrincessRaidStatsManager;
 import com.seqwawa.seq.managers.WarPlannerManager;
 import com.seqwawa.seq.managers.WarTerritoryQueueManager;
+import com.seqwawa.seq.network.ApiClient;
 import com.seqwawa.seq.network.LeafEventStream;
 import com.seqwawa.seq.network.auth.MinecraftAuthService;
 import com.seqwawa.seq.network.auth.NotSignedInException;
@@ -82,11 +84,11 @@ public final class Session {
     }
 
     public GuildRaidProgressService raidProgress() {
-        return own("raidProgress", GuildRaidProgressService::create, GuildRaidProgressService::reset);
+        return own("raidProgress", () -> GuildRaidProgressService.create(api()), GuildRaidProgressService::reset);
     }
 
     public PrincessRaidStatsManager princessStats() {
-        return own("princessStats", PrincessRaidStatsManager::new, PrincessRaidStatsManager::reset);
+        return own("princessStats", () -> new PrincessRaidStatsManager(api()), PrincessRaidStatsManager::reset);
     }
 
     /** Its token speaks for this account, so a save after the session ended would land on their profile. */
@@ -108,12 +110,22 @@ public final class Session {
     }
 
     public WarPlannerManager warPlanner() {
-        return own("warPlanner", () -> new WarPlannerManager(this::hasToken), WarPlannerManager::reset);
+        return own("warPlanner", () -> new WarPlannerManager(api(), this::hasToken), WarPlannerManager::reset);
+    }
+
+    /** The party finder: its listings, party and invites. Once the session ends, an invite it was still showing never does. */
+    public PartyFinderManager partyFinder() {
+        return own("partyFinder", PartyFinderManager::new, PartyFinderManager::reset);
     }
 
     public WarTerritoryQueueManager warQueue() {
-        return own("warQueue", () -> new WarTerritoryQueueManager(this::warPlanner, this::hasToken),
+        return own("warQueue", () -> new WarTerritoryQueueManager(api(), this::warPlanner, this::hasToken),
                 WarTerritoryQueueManager::reset);
+    }
+
+    /** The backend client for this session's own work: it carries this session's token, never the next one's. */
+    private ApiClient api() {
+        return ApiClient.getInstance().forSession(this);
     }
 
     /** Queues {@code popup} in this session's own popups, on the game thread, unless the session has ended by then. */
@@ -135,6 +147,18 @@ public final class Session {
         if (!ended) {
             endActions.add(action);
         }
+    }
+
+    /** Stops {@code name}, such as the session's connection, with {@code stop} when the session ends; at once if it has. */
+    public void whenEnded(String name, Runnable stop) {
+        Runnable step = () -> steps.accept(name + " stopped", stop);
+        synchronized (this) {
+            if (!ended) {
+                endActions.add(step);
+                return;
+            }
+        }
+        step.run();
     }
 
     /** Ends the session and stops what it owned. Game thread only. */

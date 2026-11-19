@@ -45,6 +45,8 @@ public class PartyFinderManager implements NotificationAccessor {
                     Instant.class, (JsonDeserializer<Instant>) (json, type, ctx) -> Instant.parse(json.getAsString()))
             .create();
     private static final long INVITE_NAME_LOOKUP_TIMEOUT_SECONDS = 3L;
+    /** Looks up who sent an invite; a test answers when it chooses. */
+    static Function<String, CompletableFuture<String>> inviterNames = PlayerNameCache::resolveAsync;
     private static final long INVITE_ALL_COMMAND_DELAY_MS = 500L;
     private static final String GAME_PARTY_CREATE_COMMAND = "party create";
     private static final String GAME_PARTY_INVITE_PREFIX = "party invite ";
@@ -124,42 +126,17 @@ public class PartyFinderManager implements NotificationAccessor {
 
     private record IssuedInvite(UUID targetUUID, String username, String inviteToken) {}
 
-    public PartyFinderManager() {
-        SeqClient.LOGGER.info("[PartyFinderWS] Registering party finder websocket handlers");
-        // Register for real-time WS updates
-        ConnectionManager.onPartyFinderUpdate(update -> {
-            SeqClient.LOGGER.info(
-                    "[PartyFinderWS] Received update callback action={} hasListingJson={}",
-                    update.action(),
-                    update.listingJson() != null);
-            Listing listing = GSON.fromJson(update.listingJson(), Listing.class);
-            handlePartyFinderUpdate(update.action(), listing);
-        });
-
-        ConnectionManager.onPartyFinderInvite(invite -> {
-            SeqClient.LOGGER.info(
-                    "[PartyFinderWS] Received invite callback listingId={} inviterUUID={} tokenPresent={} hasListingJson={}",
-                    invite.listingId(),
-                    invite.inviterUUID(),
-                    invite.inviteToken() != null && !invite.inviteToken().isBlank(),
-                    invite.listingJson() != null);
-            Listing listing = null;
-            if (invite.listingJson() != null) {
-                listing = GSON.fromJson(invite.listingJson(), Listing.class);
-            }
-            handlePartyFinderInvite(invite.listingId(), invite.inviterUUID(), invite.inviteToken(), listing);
-        });
-
-        ConnectionManager.onPartyFinderStaleWarning(warning -> {
-            SeqClient.LOGGER.info(
-                    "[PartyFinderWS] Received stale warning callback reason={} listingId={} disbandAt={} minutesRemaining={}",
-                    warning.reason(),
-                    warning.listingId(),
-                    warning.disbandAt(),
-                    warning.minutesRemaining());
-            handlePartyFinderStaleWarning(
-                    warning.reason(), warning.listingId(), warning.disbandAt(), warning.minutesRemaining());
-        });
+    /** Hands the backend's party finder messages to the current session's party finder, from now on. */
+    public static void listen() {
+        ConnectionManager.listen(ConnectionManager.Inbound.PARTY_FINDER_UPDATE, update -> SeqClient.getPartyFinderManager()
+                .handlePartyFinderUpdate(update.action(), GSON.fromJson(update.listingJson(), Listing.class)));
+        ConnectionManager.listen(ConnectionManager.Inbound.PARTY_FINDER_INVITE, invite -> SeqClient.getPartyFinderManager()
+                .handlePartyFinderInvite(invite.listingId(), invite.inviterUUID(), invite.inviteToken(),
+                        invite.listingJson() == null ? null : GSON.fromJson(invite.listingJson(), Listing.class)));
+        ConnectionManager.listen(ConnectionManager.Inbound.PARTY_FINDER_STALE_WARNING, warning -> SeqClient
+                .getPartyFinderManager()
+                .handlePartyFinderStaleWarning(
+                        warning.reason(), warning.listingId(), warning.disbandAt(), warning.minutesRemaining()));
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -918,9 +895,14 @@ public class PartyFinderManager implements NotificationAccessor {
             refreshCurrentListing();
         }
 
-        PlayerNameCache.resolveAsync(inviterUUID)
-                .completeOnTimeout(null, INVITE_NAME_LOOKUP_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        // Only while this party finder lasts: a reset, or its session's end, means the invite is someone else's to see.
+        sinceReset(() -> inviterNames.apply(inviterUUID)
+                        .completeOnTimeout(null, INVITE_NAME_LOOKUP_TIMEOUT_SECONDS, TimeUnit.SECONDS))
                 .whenComplete((resolvedName, error) -> {
+                    if (isSupersededByReset(error)) {
+                        SeqClient.LOGGER.info("[PartyFinderWS] Dropping invite for listing {}: the party finder was reset", listingId);
+                        return;
+                    }
                     String inviterName = formatInviterName(resolvedName);
                     SeqClient.LOGGER.info(
                             "[PartyFinderWS] Resolved inviter name='{}' for uuid={}", inviterName, inviterUUID);

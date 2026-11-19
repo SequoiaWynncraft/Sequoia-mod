@@ -6,11 +6,10 @@ import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import org.java_websocket.exceptions.WebsocketNotConnectedException;
 
 /**
- * A backend socket a test drives by hand. The client side behaves as Java-WebSocket's does:
- * it connects once, refuses to send unless open, and stops being open as soon as it starts
+ * A backend socket a test drives by hand. The client side behaves as {@link JdkBackendSocket}
+ * does: it connects once, sends nothing unless open, and stops being open as soon as it starts
  * to close. The backend side ({@link #open()}, {@link #receive}, the closes) fires the
  * listener on the test's thread, as the real socket fires it on its own.
  */
@@ -26,7 +25,7 @@ final class FakeBackendSocket implements BackendSocket {
     private int closes;
     private int closeCode;
     private String closeReason;
-    /** Thrown by {@link #connect}, as the library throws for a client that already connected once. */
+    /** Thrown by {@link #connect}, as the real socket throws for handshake headers it can't send. */
     RuntimeException connectFailure;
 
     FakeBackendSocket(URI uri, Listener listener) {
@@ -42,7 +41,7 @@ final class FakeBackendSocket implements BackendSocket {
             throw connectFailure;
         }
         if (++connects > 1) {
-            throw new IllegalStateException("WebSocketClient objects are not reuseable");
+            throw new IllegalStateException("A socket connects once");
         }
         this.headers = Map.copyOf(headers);
     }
@@ -67,16 +66,12 @@ final class FakeBackendSocket implements BackendSocket {
     boolean startClosingAfterNextClosingCheck;
 
     @Override
-    public void send(String text) {
+    public boolean send(String text) {
         if (!open) {
-            throw new WebsocketNotConnectedException();
+            return false;
         }
         frames.add(text);
-    }
-
-    @Override
-    public void close() {
-        close(1000, "");
+        return true;
     }
 
     @Override
@@ -98,7 +93,7 @@ final class FakeBackendSocket implements BackendSocket {
     /** The handshake succeeds. */
     void open() {
         open = true;
-        listener.onOpen(101, "Switching Protocols");
+        listener.onOpen();
     }
 
     void receive(String message) {
@@ -122,7 +117,7 @@ final class FakeBackendSocket implements BackendSocket {
         listener.onClose(code, reason, true);
     }
 
-    /** The backend answers the client's own close, which Java-WebSocket reports as remote. */
+    /** The backend answers the client's own close, which the socket reports as remote. */
     void echoClientClose() {
         if (closes == 0) {
             throw new IllegalStateException("The client never closed this socket");
@@ -137,8 +132,10 @@ final class FakeBackendSocket implements BackendSocket {
         listener.onClose(code, reason, false);
     }
 
-    /** Connecting fails, as an unreachable backend does: an error, then a close that never opened. */
+    /** Connecting fails, as an unreachable backend does: the socket is done, then reports an error and a close. */
     void failToConnect(String message) {
+        open = false;
+        closing = true;
         listener.onError(new java.net.ConnectException(message));
         listener.onClose(-1, message, false);
     }

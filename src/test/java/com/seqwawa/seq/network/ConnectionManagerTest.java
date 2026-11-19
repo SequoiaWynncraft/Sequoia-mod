@@ -33,7 +33,7 @@ class ConnectionManagerTest {
         var currentSession = new AtomicBoolean(true);
         var payload = JsonParser.parseString(
                 "{\"username\":\"Sender\",\"message\":\"hello\",\"should_be_displayed\":true}").getAsJsonObject();
-        ConnectionManager.onGuildChat(received::add);
+        ConnectionManager.listen(ConnectionManager.Inbound.GUILD_CHAT, received::add);
         try {
             Runnable delivery = ConnectionManager.guildChatDelivery(payload, currentSession::get, () -> {
                 throw new AssertionError("Expired sessions must be rejected before reading queue state");
@@ -43,7 +43,7 @@ class ConnectionManagerTest {
             delivery.run();
             assertTrue(received.isEmpty());
         } finally {
-            ConnectionManager.onGuildChat(null);
+            ConnectionManager.resetForTest();
         }
     }
 
@@ -53,7 +53,7 @@ class ConnectionManagerTest {
         var inQueue = new AtomicBoolean(false);
         var payload = JsonParser.parseString(
                 "{\"username\":\"Sender\",\"message\":\"hello\",\"should_be_displayed\":false}").getAsJsonObject();
-        ConnectionManager.onGuildChat(received::add);
+        ConnectionManager.listen(ConnectionManager.Inbound.GUILD_CHAT, received::add);
         try {
             Runnable delivery = ConnectionManager.guildChatDelivery(payload, () -> true, inQueue::get);
             assertTrue(received.isEmpty());
@@ -61,7 +61,7 @@ class ConnectionManagerTest {
             delivery.run();
             assertEquals(List.of(new ConnectionManager.GuildChatMessage("Sender", null, "hello")), received);
         } finally {
-            ConnectionManager.onGuildChat(null);
+            ConnectionManager.resetForTest();
         }
     }
 
@@ -91,7 +91,7 @@ class ConnectionManagerTest {
     @Test
     void queueDispatchIgnoresDisplayFlagButStillRequiresValidMessageFields() {
         var received = new java.util.ArrayList<ConnectionManager.GuildChatMessage>();
-        ConnectionManager.onGuildChat(received::add);
+        ConnectionManager.listen(ConnectionManager.Inbound.GUILD_CHAT, received::add);
         try {
             for (String flag : List.of("true", "false", "null", "\"true\"", "1", "{}", "[]")) {
                 String payload = "{\"username\":\"Sender\",\"message\":\"hello\",\"should_be_displayed\":" + flag + "}";
@@ -114,7 +114,7 @@ class ConnectionManagerTest {
             }
             assertTrue(received.isEmpty());
         } finally {
-            ConnectionManager.onGuildChat(null);
+            ConnectionManager.resetForTest();
         }
     }
 
@@ -132,7 +132,7 @@ class ConnectionManagerTest {
     @Test
     void guildChatOnlyDispatchesExplicitTrueAndValidStrings() {
         var received = new java.util.ArrayList<ConnectionManager.GuildChatMessage>();
-        ConnectionManager.onGuildChat(received::add);
+        ConnectionManager.listen(ConnectionManager.Inbound.GUILD_CHAT, received::add);
         try {
             for (String flag : List.of("false", "null", "\"true\"", "1", "{}", "[]")) {
                 dispatchGuildChat("{\"type\":\"guild_chat\",\"should_be_displayed\":" + flag + "}", false);
@@ -150,7 +150,7 @@ class ConnectionManagerTest {
                     new ConnectionManager.GuildChatMessage("Sender", null, "hello"),
                     new ConnectionManager.GuildChatMessage("Other", "Nick", "hi")), received);
         } finally {
-            ConnectionManager.onGuildChat(null);
+            ConnectionManager.resetForTest();
         }
     }
 
@@ -245,27 +245,11 @@ class ConnectionManagerTest {
     }
 
     @Test
-    void supersededAuthenticationCannotStartAWebsocket() {
-        assertTrue(ConnectionManager.shouldContinueAuthenticatedConnection(4, 4, true, true));
-        assertFalse(ConnectionManager.shouldContinueAuthenticatedConnection(4, 5, true, true));
-        assertFalse(ConnectionManager.shouldContinueAuthenticatedConnection(4, 4, false, true));
-        assertFalse(ConnectionManager.shouldContinueAuthenticatedConnection(4, 4, true, false));
-    }
-
-    @Test
     void treasuryOnlyConnectionIsSelectedOnlyForCinfrascitizen() {
         assertTrue(ConnectionManager.shouldUseTreasuryOnlyConnection("cinfrascitizen"));
         assertTrue(ConnectionManager.shouldUseTreasuryOnlyConnection("CinfrasCitizen"));
         assertFalse(ConnectionManager.shouldUseTreasuryOnlyConnection("reyzhia"));
         assertFalse(ConnectionManager.shouldUseTreasuryOnlyConnection(null));
-    }
-
-    @Test
-    void treasuryConnectionIsReadyOnlyAfterMinecraftSessionProof() {
-        assertFalse(ConnectionManager.treasuryConnectionReady(true, true, false));
-        assertFalse(ConnectionManager.treasuryConnectionReady(true, false, true));
-        assertFalse(ConnectionManager.treasuryConnectionReady(false, true, true));
-        assertTrue(ConnectionManager.treasuryConnectionReady(true, true, true));
     }
 
     @Test
@@ -344,14 +328,6 @@ class ConnectionManagerTest {
     }
 
     @Test
-    void liveWarTelemetryTreatsSocketCloseRaceAsFailedSend() {
-        assertFalse(ConnectionManager.tryLiveTelemetrySend(() -> {
-            throw new IllegalStateException("socket closed");
-        }));
-        assertTrue(ConnectionManager.tryLiveTelemetrySend(() -> true));
-    }
-
-    @Test
     void discordUsernamePresenceTreatsBlankValuesAsUnlinked() {
         assertTrue(ConnectionManager.hasDiscordUsername("SequoiaUser"));
         assertEquals(false, ConnectionManager.hasDiscordUsername(""));
@@ -424,24 +400,6 @@ class ConnectionManagerTest {
 
         assertFalse(ConnectionManager.hasReconnectTask());
         assertFalse(ConnectionManager.isConnected());
-    }
-
-    @Test
-    void automaticConnectStaysSuppressedAfterManualDisconnect() {
-        assertFalse(ConnectionManager.shouldAttemptAutomaticConnect(false, false, false, false, true));
-    }
-
-    @Test
-    void automaticConnectSkipsWhileReconnectAlreadyScheduled() {
-        assertFalse(ConnectionManager.shouldAttemptAutomaticConnect(false, false, false, true, false));
-    }
-
-    @Test
-    void automaticConnectRunsOnlyWhenSocketIsIdle() {
-        assertTrue(ConnectionManager.shouldAttemptAutomaticConnect(false, false, false, false, false));
-        assertFalse(ConnectionManager.shouldAttemptAutomaticConnect(true, false, false, false, false));
-        assertFalse(ConnectionManager.shouldAttemptAutomaticConnect(false, true, false, false, false));
-        assertFalse(ConnectionManager.shouldAttemptAutomaticConnect(false, false, true, false, false));
     }
 
     @Test
@@ -527,8 +485,8 @@ class ConnectionManagerTest {
     void dispatchesTreasuryOutRecordedWithItsRequestId(@TempDir Path config) {
         AtomicReference<TreasuryOutRecordedMessage> dispatched = new AtomicReference<>();
         try (var harness = new ConnectionHarness(config)) {
-            ConnectionManager.onTreasuryOutRecorded(dispatched::set);
-            harness.connection();
+            ConnectionManager.listen(ConnectionManager.Inbound.TREASURY_OUT_RECORDED, dispatched::set);
+            harness.connectAsMember();
             harness.receive("""
                     {
                       "type": "treasury_out_recorded",
@@ -552,11 +510,11 @@ class ConnectionManagerTest {
     void dispatchesCorrelatedTreasuryErrorBeforeGenericStatusHandling(@TempDir Path config) {
         AtomicReference<TreasuryOutErrorMessage> dispatched = new AtomicReference<>();
         try (var harness = new ConnectionHarness(config)) {
-            ConnectionManager.onTreasuryOutError(error -> {
+            ConnectionManager.claim(ConnectionManager.Inbound.TREASURY_OUT_ERROR, error -> {
                 dispatched.set(error);
                 return true;
             });
-            harness.connection();
+            harness.connectAsMember();
             harness.receive("""
                     {
                       "type": "error",

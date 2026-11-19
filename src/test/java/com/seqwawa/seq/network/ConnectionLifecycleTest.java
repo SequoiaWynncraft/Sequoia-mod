@@ -3,9 +3,7 @@ package com.seqwawa.seq.network;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.seqwawa.seq.model.WynnClassType;
@@ -164,7 +162,7 @@ class ConnectionLifecycleTest {
     }
 
     @Test
-    void aManualConnectRefreshesTheTokenAndReportsEachStepUntilTheSocketOpens() {
+    void aManualConnectRefreshesTheTokenAndReportsEachStepUntilItSignsIn() {
         harness.connectManually();
 
         assertEquals(List.of(true), harness.tokens.requests, "the player asked: sign in afresh");
@@ -176,8 +174,14 @@ class ConnectionLifecycleTest {
                 "Connecting to production...",
                 "Connected websocket to production. Waiting for backend authentication..."), harness.told);
 
+        // Fixed in step 6: the flow used to end when the socket opened, so this never showed.
         harness.signIn();
-        assertEquals(2, harness.told.size(), "the flow the player started ended when the socket opened");
+        assertEquals("Connected as sequoian", harness.told.getLast());
+        assertEquals(3, harness.told.size());
+
+        harness.socket().error(new java.io.IOException("Broken pipe"));
+        harness.settle();
+        assertEquals(3, harness.told.size(), "the flow the player started ended once it signed in");
     }
 
     @Test
@@ -389,7 +393,7 @@ class ConnectionLifecycleTest {
         assertFalse(ConnectionManager.canAutoConnectNow());
 
         harness.connectAutomatically();
-        assertFalse(harness.socket().connected(), "an automatic connect waits for the player");
+        assertEquals(1, harness.sockets.size(), "an automatic connect waits for the player");
         harness.connectManually();
         assertEquals(2, harness.sockets.size());
         assertTrue(harness.socket().connected());
@@ -426,7 +430,10 @@ class ConnectionLifecycleTest {
         harness.answerToken("late-token");
 
         assertFalse(harness.sockets.getFirst().connected());
-        assertNotSame(first, harness.connection());
+        harness.tokens.token = "token";
+        harness.connectAutomatically();
+        assertEquals(2, harness.sockets.size(), "the next connect starts on a socket of its own");
+        assertTrue(harness.socket().connected());
     }
 
     @Test
@@ -440,7 +447,7 @@ class ConnectionLifecycleTest {
         assertEquals(List.of(), harness.told);
         assertFalse(ConnectionManager.canAutoConnectNow());
         harness.connectAutomatically();
-        assertFalse(harness.socket().connected());
+        assertEquals(1, harness.sockets.size());
 
         harness.connectManually();
         assertEquals(2, harness.sockets.size());
@@ -451,15 +458,17 @@ class ConnectionLifecycleTest {
     @Test
     void anAccountChangeDropsTheConnection() {
         FakeBackendSocket socket = harness.connectAsMember();
-        ConnectionManager before = harness.connection();
 
-        ConnectionManager.resetForAccountChange();
+        // The previous account's session ends, and its socket with it.
+        harness.switchAccount();
 
         assertEquals(1, socket.closes());
         assertFalse(ConnectionManager.isConnected());
         harness.echoClientClose();
-        assertNotSame(before, harness.connection());
+        assertFalse(ConnectionManager.hasReconnectTask());
         assertTrue(ConnectionManager.canAutoConnectNow());
+        harness.connectAutomatically();
+        assertEquals(2, harness.sockets.size(), "the next account connects on a socket of its own");
     }
 
     @Test
@@ -558,30 +567,56 @@ class ConnectionLifecycleTest {
         assertEquals(1, harness.toldLines.size());
         com.seqwawa.seq.network.auth.UnlinkedAccountWarning.getInstance().dismiss(ConnectionHarness.PROFILE);
 
-        harness.advance(1_000);
+        // The retry waits out the sign-in backoff, which spans reconnects since step 6.
+        harness.advance(2_000);
         harness.failToken(new AuthException(AuthErrorCode.ACCOUNT_NOT_LINKED, "Link your account first", true));
 
         assertEquals(1, harness.toldLines.size());
     }
 
     @Test
-    void aSecondConnectOnTheSameSocketRightAfterARefusedSignInIsThrottled() {
+    void aConnectRightAfterARefusedSignInWaitsOutTheBackoffThenRetriesByItself() {
         harness.tokens.token = null;
         harness.connectAutomatically();
         harness.failToken(new AuthException(AuthErrorCode.MINECRAFT_SESSION_INVALID, "Restart Minecraft", false));
-        ConnectionManager failed = harness.connection();
         harness.told.clear();
 
         harness.connectManually();
 
-        assertSame(failed, harness.connection(), "nothing replaced the socket, so its backoff still applies");
         assertEquals(List.of("Connecting to production...", "Auth throttled. Retrying in 2s."), harness.told);
         assertEquals(1, harness.tokens.requests.size());
-        assertFalse(ConnectionManager.hasReconnectTask(), "despite its wording, nothing retries");
+        // Fixed in step 6: the retry the message promises used to never run.
+        assertTrue(ConnectionManager.hasReconnectTask(), "the retry waits");
+        assertFalse(ConnectionManager.canAutoConnectNow());
 
+        harness.advance(1_999);
+        assertEquals(1, harness.tokens.requests.size());
+        harness.advance(1);
+        assertEquals(List.of(false, true), harness.tokens.requests, "the player's connect signs in afresh, unasked");
+        assertEquals("Connecting to production...", harness.told.getLast());
+    }
+
+    @Test
+    void theSignInBackoffSpansReconnects() {
+        harness.tokens.token = null;
+        harness.connectAutomatically();
+        harness.failToken(new AuthException(AuthErrorCode.BACKEND_UNAVAILABLE, "Backend unavailable", true));
         harness.advance(2_000);
-        harness.connectManually();
+        harness.failToken(new AuthException(AuthErrorCode.BACKEND_UNAVAILABLE, "Backend unavailable", true));
+
+        // Fixed in step 6: each reconnect used to start the backoff afresh, so the second refusal waited no longer.
+        harness.advance(3_999);
         assertEquals(2, harness.tokens.requests.size());
+        harness.advance(1);
+        assertEquals(3, harness.tokens.requests.size(), "four seconds after the second refusal");
+
+        harness.answerToken("token");
+        harness.open();
+        harness.signIn();
+        harness.closeFromBackend(1006, "");
+        harness.tokens.token = "token";
+        harness.advance(1_000);
+        assertEquals(4, harness.tokens.requests.size(), "an accepted sign-in clears it");
     }
 
     @Test
@@ -616,15 +651,14 @@ class ConnectionLifecycleTest {
 
     @Test
     void aSocketThatFailsToStartIsDroppedAndRetried() {
-        ConnectionManager first = harness.connection();
-        harness.socket().connectFailure = new IllegalStateException("no route to host");
+        harness.nextConnectFailure = new IllegalStateException("no route to host");
 
         harness.connectManually();
 
         assertEquals("Failed to connect: no route to host", harness.told.getLast());
         assertTrue(ConnectionManager.hasReconnectTask());
-        assertNotSame(first, harness.connection(), "the failed instance is dropped");
         harness.advance(1_000);
+        assertEquals(2, harness.sockets.size(), "the failed socket is dropped");
         assertTrue(harness.socket().connected());
     }
 }

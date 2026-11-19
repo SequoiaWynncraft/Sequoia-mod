@@ -42,6 +42,17 @@ class ConnectionCloseTest {
         harness.close();
     }
 
+    /** Moves the clock in steps until the reconnect has a socket connecting: the reconnect delay, or the sign-in backoff. */
+    private void waitForNextSocket() {
+        int before = harness.sockets.size();
+        for (int waited = 0; harness.sockets.size() == before || !harness.socket().connected(); waited += 100) {
+            if (waited > 600_000) {
+                throw new AssertionError("No reconnect within ten minutes");
+            }
+            harness.advance(100);
+        }
+    }
+
     /** How one close leaves the connection. */
     private record Outcome(boolean reconnects, boolean autoConnectPaused, List<String> told) {}
 
@@ -111,7 +122,10 @@ class ConnectionCloseTest {
         harness.closeFromBackend(BackendCloseClassifier.POLICY_VIOLATION, "account_revoked");
 
         assertEquals(List.of(AuthErrorCode.WEBSOCKET_AUTH_REJECTED), harness.tokens.invalidations);
-        harness.advance(1_000);
+        // The reconnect waits out the sign-in backoff the refusal started, which spans reconnects since step 6.
+        harness.advance(1_999);
+        assertEquals(1, harness.sockets.size());
+        harness.advance(1);
         assertEquals(2, harness.sockets.size());
         assertEquals(List.of(false, false), harness.tokens.requests,
                 "the reconnect asks for a token, which the invalidated session no longer has");
@@ -146,7 +160,7 @@ class ConnectionCloseTest {
             harness.settle();
             if (refusal < 3) {
                 assertTrue(ConnectionManager.hasReconnectTask(), "refusal " + refusal);
-                harness.advance(ReconnectBackoff.delayMs(refusal - 1));
+                waitForNextSocket();
             }
         }
 
@@ -162,10 +176,10 @@ class ConnectionCloseTest {
     void anAcceptedSignInBetweenRefusalsStartsTheCountAgain() {
         harness.connectAsMember();
         harness.closeFromBackend(1008, "account_unlinked");
-        harness.advance(1_000);
+        waitForNextSocket();
         harness.socket().closeLocally(BackendCloseClassifier.HANDSHAKE_FAILED, REFUSED_401);
         harness.settle();
-        harness.advance(2_000);
+        waitForNextSocket();
         harness.open();
         harness.signIn();
 
@@ -193,7 +207,7 @@ class ConnectionCloseTest {
         harness.closeFromBackend(1008, "party_finder_banned");
 
         harness.connectAutomatically();
-        assertFalse(harness.socket().connected());
+        assertEquals(1, harness.sockets.size());
 
         harness.connectManually();
         assertTrue(harness.socket().connected());
@@ -265,6 +279,7 @@ class ConnectionCloseTest {
     void aSocketThatFailsToConnectIsReportedOnlyWhenThePlayerAsked() {
         harness.connectAutomatically();
         harness.socket().failToConnect("Connection refused");
+        assertTrue(harness.socket().isClosing(), "a socket that failed to connect can't be used again");
         harness.settle();
         assertEquals(List.of(), harness.told);
         assertTrue(ConnectionManager.hasReconnectTask());

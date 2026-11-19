@@ -109,9 +109,9 @@ public final class WarPlannerManager {
     private int consecutiveFailures;
     private long generation;
 
-    /** The planner for one session, which reads while {@code signedIn} says that session has a token. */
-    public WarPlannerManager(BooleanSupplier signedIn) {
-        this(new ApiGateway(ApiClient.getInstance()), Clock.systemUTC(), signedIn);
+    /** The planner for one session, which reads with {@code api}, carrying that session's token, while {@code signedIn} says it has one. */
+    public WarPlannerManager(ApiClient api, BooleanSupplier signedIn) {
+        this(new ApiGateway(api), Clock.systemUTC(), signedIn);
     }
 
     public WarPlannerManager(Gateway gateway, Clock clock) {

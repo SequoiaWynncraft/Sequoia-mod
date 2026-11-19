@@ -74,9 +74,10 @@ public final class GuildRaidProgressService {
         return SessionManager.getInstance().current().raidProgress();
     }
 
-    public static GuildRaidProgressService create() {
+    /** The progress for one session, fetched with {@code api}, which carries that session's token. */
+    public static GuildRaidProgressService create(ApiClient api) {
         return new GuildRaidProgressService(
-                () -> ApiClient.getInstance().getGuildRaidProgress(),
+                api::getGuildRaidProgress,
                 Clocks::monotonicMillis,
                 ConnectionManager::isConnected,
                 ClientThread.queue(),
