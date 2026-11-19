@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -200,6 +201,33 @@ class ConnectionCloseTest {
         assertFalse(ConnectionManager.hasReconnectTask());
         assertFalse(ConnectionManager.canAutoConnectNow());
         assertEquals(BANNED_NOTICE, harness.told.getLast());
+    }
+
+    private static Stream<Named<String>> refusalsThatCloseToSignInAgain() {
+        return Stream.of(
+                Named.of("a refusal that keeps the token", INVALID_AUTH_REQUEST),
+                Named.of("a rejected token, whose end of the session the socket outlives", TOKEN_INVALID));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("refusalsThatCloseToSignInAgain")
+    void aBanStillQueuedOnASocketClosingToSignInAgainIsNotTheNextAccountsBan(String refusal) {
+        FakeBackendSocket socket = harness.connectAsMember();
+        socket.startClosingBeforeNextClose = true;
+
+        // The client closes to sign in again as the backend's ban closes the socket, and the player
+        // switches account before the game thread hears the ban.
+        harness.receive(refusal);
+        socket.finishClosingFromBackend(BackendCloseClassifier.POLICY_VIOLATION, "party_finder_banned");
+        harness.switchAccount();
+        harness.settle();
+
+        assertFalse(harness.told.contains(BANNED_NOTICE));
+        assertFalse(ConnectionManager.hasReconnectTask(), "nothing signs in again for the previous account");
+        assertTrue(ConnectionManager.canAutoConnectNow(), "the ban was the previous account's");
+        harness.connectAutomatically();
+        assertEquals(2, harness.sockets.size());
+        assertTrue(harness.socket().connected());
     }
 
     @Test

@@ -296,8 +296,8 @@ public final class ConnectionManager {
                     heldConnectFor = NO_SESSION;
                     cancelWait();
                 }
-                // A close already under way keeps its own verdict, such as reconnecting to sign in afresh.
-                if (isLive(attempt) && state != State.CLOSING && attempt.session == ended.session()) {
+                // Closing too: what its close would apply was for that session. The end its own refused token causes moves it on instead.
+                if (isLive(attempt) && attempt.session == ended.session()) {
                     SeqClient.LOGGER.info("[WebSocket] Closing the connection of a session that ended");
                     end(attempt);
                 }
@@ -731,7 +731,7 @@ public final class ConnectionManager {
         /** The token this socket signs in with and the account it signs in for; a Treasury socket has neither. */
         String token;
         UUID account;
-        /** The session current when it started; that session's end closes it. */
+        /** The session current when it started, or the next once its refused token ends that one; its end retires it. */
         long session;
         /** The player asked for this connect: each step is told until it is ready or fails. */
         boolean reporting;
@@ -878,8 +878,9 @@ public final class ConnectionManager {
 
     /**
      * The backend no longer accepts this socket's sign-in. It closes, to sign in afresh, and when
-     * {@code code} is given the token is dropped too, which ends its session. Closed first, so
-     * the frames behind this one are dropped and the session's end finds the socket closing.
+     * {@code code} is given the token is dropped too, which ends its session but not the socket: it
+     * signs in afresh for the next session, whose end retires it. Closed first, so the frames behind
+     * this one are dropped.
      */
     private void rejectToken(Attempt refused, String notice, AuthErrorCode code, String message) {
         refused.standing = Standing.REFUSED;
@@ -892,7 +893,10 @@ public final class ConnectionManager {
         closeFromClient(refused, CLOSE_TO_REAUTHENTICATE, "Re-authenticating");
         if (code != null) {
             refused.tokenDropped = true;
+            refused.session = NO_SESSION;
             env.tokens().invalidateSession(refused.token, code, message);
+            refused.session = env.tokens().sessionId();
+            watch(refused.session);
         }
     }
 

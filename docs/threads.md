@@ -90,7 +90,9 @@ socket that was replaced, or that this client closed, changes nothing. Every clo
 one place, which decides whether to reconnect, and runs a Connect the player asked for meanwhile;
 a Connect held for a close or the sign-in backoff belongs to the session it was asked in, and that
 session's end drops it. A socket still connecting when its session ends is cut short, and the next
-waits for its close.
+waits for its close. One already closing when its session ends closes for no one: what the backend
+said to it applies to no account. The exception is the end its own refused token caused, after which
+it belongs to the next session and signs in afresh.
 Other code hears what the backend sends through `ConnectionManager.listen(type, listener)`,
 on the game thread.
 
