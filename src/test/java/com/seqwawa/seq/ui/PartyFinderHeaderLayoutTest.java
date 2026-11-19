@@ -2,6 +2,7 @@ package com.seqwawa.seq.ui;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import com.seqwawa.seq.model.Activity;
 import com.seqwawa.seq.model.Listing;
 import com.seqwawa.seq.model.PartyCloseReason;
 import com.seqwawa.seq.model.PartyStatus;
@@ -11,6 +12,7 @@ import com.seqwawa.seq.ui.PartyFinderScreen.PartyModalFor;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class PartyFinderHeaderLayoutTest {
@@ -132,6 +134,20 @@ class PartyFinderHeaderLayoutTest {
         assertNull(PartyModalFor.still(creating, listing(8L, PartyStatus.OPEN, null), true),
                 "leading a party since, it closes rather than update that party with these settings");
         assertNull(PartyModalFor.still(creating, listing(8L, PartyStatus.OPEN, null), false), "in a party since");
+    }
+
+    @Test
+    void anUpdateWithNoRaidPickedKeepsTheReservedSlotsItsListingsRaidAllows() {
+        var prelude = new Listing(7L, List.of(new Activity(6L, "ANNI", 10)), null, "leader", null, PartyStatus.OPEN,
+                null, null, List.of(), List.of(), Instant.EPOCH);
+        var managing = PartyModalFor.of(prelude, true);
+
+        // The leader deselected Prelude: the update sends the listing's own raid, which allows nine.
+        assertEquals(Set.of("Prelude to Annihilation"), PartyFinderScreen.raidsToSend(Set.of(), managing, prelude));
+        assertEquals(9, PartyFinderScreen.reservedSlotLimit(Set.of(), managing, prelude), "six are not cut to three");
+        assertEquals(3, PartyFinderScreen.reservedSlotLimit(Set.of("Nest of the Grootslangs"), managing, prelude),
+                "another raid allows three");
+        assertEquals(3, PartyFinderScreen.reservedSlotLimit(Set.of(), PartyModalFor.CREATE, null), "a new party");
     }
 
     private static Listing listing(long id, PartyStatus status, PartyCloseReason closeReason) {

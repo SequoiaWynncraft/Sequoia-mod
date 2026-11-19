@@ -11,6 +11,7 @@ class TextFieldTest {
     @Test
     void typingAddsToTheEndAndBackspaceTakesTheLastCharacterOff() {
         TextField field = new TextField();
+        field.focus();
 
         assertTrue(field.type("ha"));
         assertTrue(field.type("lo"));
@@ -22,11 +23,24 @@ class TextFieldTest {
     @Test
     void nothingToTypeOrDeleteLeavesTheTextAlone() {
         TextField field = new TextField();
+        field.focus();
 
         assertFalse(field.backspace());
         assertFalse(field.type(""));
         assertFalse(field.type(null));
         assertEquals("", field.text());
+    }
+
+    @Test
+    void aFieldWithoutFocusIgnoresTypingAndBackspace() {
+        TextField field = new TextField();
+        field.focus();
+        field.type("Notes");
+        field.blur();
+
+        assertFalse(field.type("x"));
+        assertFalse(field.backspace());
+        assertEquals("Notes", field.text());
     }
 
     @Test

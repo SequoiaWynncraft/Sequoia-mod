@@ -305,11 +305,6 @@ public class PartyFinderManager {
      */
     public List<PartyListing> getParties() {
         if (cachedParties == null || cachedVersion != listingsVersion) {
-            if (cachedParties != null) {
-                for (PartyListing party : cachedParties) {
-                    expandedStates.put(party.id, party.expanded);
-                }
-            }
             cachedParties = listings.stream()
                     .map(listing -> {
                         PartyListing party = new PartyListing(listing);
@@ -320,6 +315,15 @@ public class PartyFinderManager {
             cachedVersion = listingsVersion;
         }
         return cachedParties;
+    }
+
+    /**
+     * Opens or closes listing {@code listingId}'s card, by id: the cards a click was drawn from may
+     * have been rebuilt since, and this one stays as set when they are rebuilt again.
+     */
+    public void setExpanded(long listingId, boolean expanded) {
+        expandedStates.put(listingId, expanded);
+        getParties().stream().filter(party -> party.id == listingId).forEach(party -> party.expanded = expanded);
     }
 
     /** Index of the listing the local player has joined, or -1. */

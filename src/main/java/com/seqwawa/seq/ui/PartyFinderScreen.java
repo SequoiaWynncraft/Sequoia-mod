@@ -266,8 +266,13 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
             float titleRight,
             float height) {}
 
-    /** A card as laid out this frame: the party, and where it is. */
-    private record Card(PartyListing party, UiBounds bounds) {}
+    /** A card as laid out this frame: the party, where it is, and whether it was drawn open. */
+    private record Card(PartyListing party, UiBounds bounds, boolean expanded) {
+        /** Where a click opens or closes it: an open card's header, or all of a closed one. */
+        UiBounds toggle() {
+            return expanded ? new UiBounds(bounds.x(), bounds.y(), bounds.width(), CARD_HEADER_HEIGHT) : bounds;
+        }
+    }
 
     /** The create or update modal, laid out once for drawing and clicking. */
     private record PartyModal(float x, float y) {
@@ -436,7 +441,7 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
                 new UiBounds(panelX + PADDING, contentY, panelWidth - PADDING * 2 - 6, contentHeight));
         List<Card> cards = new ArrayList<>();
         for (int i = 0; i < shown.size(); i++) {
-            cards.add(new Card(shown.get(i), bounds.get(i)));
+            cards.add(new Card(shown.get(i), bounds.get(i), shown.get(i).expanded));
         }
         return cards;
     }
@@ -1574,7 +1579,7 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
     }
 
     private void commitReservedSlotsInput() {
-        int maxSlots = modalSelectedRaids.contains("Prelude to Annihilation") ? 9 : 3;
+        int maxSlots = maxReservedSlots();
         try {
             int val = Integer.parseInt(reservedSlotsInput);
             modalReservedSlots = Math.max(0, Math.min(maxSlots, val));
@@ -1915,12 +1920,9 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
         if (at.x() < panelX || at.y() < contentY || at.y() > contentY + contentHeight)
             return super.mouseClicked(click, outsideScreen);
 
-        // ── Leader member-management buttons ──
+        // ── Leader member-management buttons: they act only while the player leads the listing drawn ──
         for (MemberButton button : renderedMemberActionBounds) {
             if (button.bounds().contains(at)) {
-                if (!party().isPartyLeader()) {
-                    return true;
-                }
                 if (button.action() == MemberAction.PROMOTE) {
                     party().actions().promoteMemberById(button.listingId(), button.memberUuid());
                 } else {
@@ -1944,11 +1946,8 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
 
         // ── Party cards, where they were drawn: an open card closes from its header, a closed one opens anywhere ──
         for (Card card : renderedCards) {
-            UiBounds toggle = card.party().expanded
-                    ? new UiBounds(card.bounds().x(), card.bounds().y(), card.bounds().width(), CARD_HEADER_HEIGHT)
-                    : card.bounds();
-            if (toggle.contains(at)) {
-                card.party().expanded = !card.party().expanded;
+            if (card.toggle().contains(at)) {
+                party().setExpanded(card.party().id, !card.expanded());
                 return true;
             }
         }
@@ -1985,9 +1984,9 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
         modalJoinPolicy = PartyJoinPolicy.DEFAULT_CREATE_POLICY;
     }
 
-    private Set<String> getCurrentListingRaidTags() {
+    /** {@code listing}'s raids by display name; none without a listing. */
+    private static Set<String> raidTags(Listing listing) {
         Set<String> raidTags = new LinkedHashSet<>();
-        Listing listing = party().getCurrentListing();
         if (listing == null) {
             return raidTags;
         }
@@ -2004,7 +2003,7 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
 
     private void applyModalSelectionsFromCurrentListing() {
         modalSelectedRaids.clear();
-        modalSelectedRaids.addAll(getCurrentListingRaidTags());
+        modalSelectedRaids.addAll(raidTags(party().getCurrentListing()));
 
         modalSelectedRegion = party().getCurrentListing() != null
                         && party().getCurrentListing().region() != null
@@ -2174,10 +2173,7 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
             return;
         }
         boolean updatingParty = modalFor.updates();
-        Set<String> selectedRaids = new LinkedHashSet<>(modalSelectedRaids);
-        if (updatingParty && selectedRaids.isEmpty()) {
-            selectedRaids.addAll(getCurrentListingRaidTags());
-        }
+        Set<String> selectedRaids = raidsToSend(modalSelectedRaids, modalFor, party().getCurrentListing());
         if (selectedRaids.isEmpty()) {
             showStatusBanner(updatingParty
                     ? "No raid selected and no current raid could be reused."
@@ -2203,9 +2199,22 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
         scroll.reset();
     }
 
-    /** Up to three reserved slots, or nine for Prelude to Annihilation. */
     private int maxReservedSlots() {
-        return modalSelectedRaids.contains("Prelude to Annihilation") ? 9 : 3;
+        return reservedSlotLimit(modalSelectedRaids, modalFor, party().getCurrentListing());
+    }
+
+    /** The raids the modal sends: those {@code picked}, or for an update with none picked, the listing's own. */
+    static Set<String> raidsToSend(Set<String> picked, PartyModalFor modalFor, Listing current) {
+        Set<String> raids = new LinkedHashSet<>(picked);
+        if (raids.isEmpty() && modalFor != null && modalFor.updates()) {
+            raids.addAll(raidTags(current));
+        }
+        return raids;
+    }
+
+    /** Up to three reserved slots, or nine for Prelude to Annihilation, as the raids the modal sends allow. */
+    static int reservedSlotLimit(Set<String> picked, PartyModalFor modalFor, Listing current) {
+        return raidsToSend(picked, modalFor, current).contains("Prelude to Annihilation") ? 9 : 3;
     }
 
     private void setReservedSlots(int count) {

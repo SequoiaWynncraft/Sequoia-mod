@@ -12,7 +12,8 @@ import com.seqwawa.seq.utils.rendering.UiRenderer;
  * empty and unfocused, and a caret after the text while it has focus.
  *
  * <p>It keeps the text and the focus. Screens decide what the keys do, since their
- * fields differ there, and call {@link #type} and {@link #backspace} for the editing.
+ * fields differ there, and call {@link #type} and {@link #backspace} for the editing,
+ * which changes the text only while the field has focus.
  */
 final class TextField {
     /** Where the text starts, from the field's left edge. */
@@ -42,16 +43,16 @@ final class TextField {
         focused = false;
     }
 
-    /** Adds {@code typed} after the text. Returns whether the text changed. */
+    /** Adds {@code typed} after the text, while the field has focus. Returns whether the text changed. */
     boolean type(String typed) {
-        if (typed == null || typed.isEmpty()) return false;
+        if (!focused || typed == null || typed.isEmpty()) return false;
         text += typed;
         return true;
     }
 
-    /** Takes the last character off. Returns whether there was one. */
+    /** Takes the last character off, while the field has focus. Returns whether there was one. */
     boolean backspace() {
-        if (text.isEmpty()) return false;
+        if (!focused || text.isEmpty()) return false;
         text = text.substring(0, text.length() - 1);
         return true;
     }

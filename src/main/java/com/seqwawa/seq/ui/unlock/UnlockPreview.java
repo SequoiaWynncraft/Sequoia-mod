@@ -366,7 +366,8 @@ public final class UnlockPreview {
                     List.of(new Member(leader, PartyRole.DPS, classes[i % classes.length], at)), List.of(), at,
                     i % 4 == 0 ? PartyJoinPolicy.INVITE_ONLY : PartyJoinPolicy.OPEN));
         }
-        partyFinder.getParties().forEach(card -> card.expanded = card.id == 40 || card.id == 41);
+        partyFinder.setExpanded(40, true);
+        partyFinder.setExpanded(41, true);
     }
 
     /**

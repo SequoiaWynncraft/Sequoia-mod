@@ -966,6 +966,22 @@ class PartyFinderManagerTest {
         assertEquals(List.of("party invite First"), sent);
     }
 
+    @Test
+    void aCardOpenedAfterAnUpdateRebuiltTheCardsStaysOpen() {
+        PartyFinderManager partyFinder = offline();
+        // Names that are not UUIDs keep the cards from looking players up through Minecraft.
+        partyFinder.applyJoined(listing(7L, "leader", member("leader")));
+        PartyListing drawn = partyFinder.getParties().getFirst();
+        // An update lands after the frame that drew the card, and the cards are rebuilt before the click.
+        partyFinder.applyUpdated(listing(7L, "leader", member("leader"), member("joiner")));
+        partyFinder.getParties();
+
+        partyFinder.setExpanded(drawn.id, !drawn.expanded);
+        assertTrue(partyFinder.getParties().getFirst().expanded);
+        partyFinder.applyUpdated(listing(7L, "leader", member("leader")));
+        assertTrue(partyFinder.getParties().getFirst().expanded, "and stays open as they are rebuilt again");
+    }
+
     /** A backend with no listings and one raid, holding the create {@code route}'s reply until the test answers. */
     private CompletableFuture<String> linkedCreateBackend(String route) {
         backend.answer("GET /party-finder/listings", "[]");
