@@ -43,7 +43,7 @@ class PartyFinderManagerTest {
     private static final String KICK_TARGET = "00000000-0000-0000-0000-00000000000b";
     private static final String OTHER_MEMBER = "00000000-0000-0000-0000-00000000000c";
     private static final String THIRD_MEMBER = "00000000-0000-0000-0000-00000000000d";
-    private static final String SESSION_ENDED = "Your account changed or you signed out before this finished.";
+    private static final String SESSION_ENDED = "You reconnected, changed account or signed out before this finished.";
 
     private long clockMs;
     /** The game thread, which runs only when a test lets it. */
@@ -656,6 +656,26 @@ class PartyFinderManagerTest {
         runGameThreadFor(300);
 
         assertNull(partyFinder.consumeLatestPartyError(), "the failure is not shown on the new connection");
+    }
+
+    @Test
+    void aCreateCommandWhoseListingsReadOutlivesItsServerConnectionCreatesNothing() throws Exception {
+        PartyFinderManager partyFinder = sessionPartyFinder();
+        String route = "POST /party-finder/listings";
+        CompletableFuture<String> read = backend.hold("GET /party-finder/listings");
+        backend.answer("GET /party-finder/activities", "[{\"id\":1,\"name\":\"NOTG\",\"maxPartySize\":4}]");
+        backend.answer(route, listingJson(9L, LEADER, LEADER));
+
+        CompletableFuture<CommandResult<Listing>> created = partyFinder.actions().createPartyFromCommand(List.of("NOTG"));
+        backend.awaitRequest("GET /party-finder/listings");
+        // The same account reconnects to Wynncraft while the listings are read.
+        connection = new Object();
+        read.complete("[]");
+
+        assertEquals(SESSION_ENDED, awaitOnGameThread(created).message());
+        settleGameThread();
+        assertFalse(backend.saw(route), "no listing is created with the new connection's world");
+        assertNull(partyFinder.getCurrentListing());
     }
 
     @Test

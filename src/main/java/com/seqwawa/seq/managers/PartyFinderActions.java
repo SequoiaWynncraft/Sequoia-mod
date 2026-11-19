@@ -36,7 +36,7 @@ import java.util.stream.Collectors;
  */
 public final class PartyFinderActions {
 
-    private static final String SESSION_ENDED = "Your account changed or you signed out before this finished.";
+    private static final String SESSION_ENDED = "You reconnected, changed account or signed out before this finished.";
 
     private final PartyFinderManager partyFinder;
     private final PartyFinderPlayer player;

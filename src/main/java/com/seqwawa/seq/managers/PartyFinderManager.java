@@ -184,19 +184,22 @@ public class PartyFinderManager {
     }
 
     /**
-     * {@code call}, sent with this session's backend client unless the session ended since
-     * {@code ticket} was read, and its reply handed to {@code apply} on the game thread, in the
+     * {@code call}, sent with this session's backend client unless the session ended, or the
+     * player moved to another server connection, since {@code ticket} was read: a request sent
+     * after an earlier step, such as the create that follows a listings read, never goes out for a
+     * connection it wasn't asked on. Its reply is handed to {@code apply} on the game thread, in the
      * task that checks the session still lasts: what a reply changes, it changes there, never in a
      * step chained on later. A reply that arrives after the session ends, and a request still
      * waiting when it ends, fail with {@link SupersededByReset} instead: a reply for the previous
      * account must not restore its party, listings or invites, and nothing waits on one for good.
+     * A request already sent when the player reconnects still applies its reply to the listings.
      */
     <T, R> CompletableFuture<R> send(
             Ticket ticket, Function<ApiClient, CompletableFuture<T>> call, Function<? super T, ? extends R> apply) {
         CompletableFuture<R> applied = new CompletableFuture<>();
         inFlight.add(applied);
         // Checked once it is in flight: a reset from here on settles it.
-        if (!holds(ticket)) {
+        if (!holds(ticket) || ticket.connection() != player.connection()) {
             inFlight.remove(applied);
             applied.completeExceptionally(new SupersededByReset());
             return applied;
@@ -218,10 +221,13 @@ public class PartyFinderManager {
         return applied;
     }
 
-    /** A request whose session ended before it went out, or before its reply came; it is dropped without a word. */
+    /**
+     * A request whose session ended, or whose server connection was left, before it went out, or
+     * whose session ended before its reply came; it is dropped without a word.
+     */
     static final class SupersededByReset extends CancellationException {
         SupersededByReset() {
-            super("The party finder's session ended while this request was in flight");
+            super("The party finder's session or server connection ended while this request was in flight");
         }
     }
 
