@@ -8,6 +8,10 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Every platform once a week, macOS included, so a lane that runs only when its inputs change
+  # can't break unnoticed for long. Nothing waits on it.
+  schedule:
+    - cron: '17 4 * * 1'
   workflow_dispatch:
   workflow_call:
 
@@ -76,21 +80,52 @@ jobs:
           retention-days: 14
 
   # A helper whose inputs main already built is taken from the cache main saved after building and
-  # verifying it on its own runner. The caches are restored here, on Linux, so a platform's runner,
-  # scarce on macOS Arm above all, is needed only for a helper whose inputs changed. Tags take
-  # nothing from a cache: every helper they ship is built and verified on its platform.
+  # verifying it on its own runner. The caches are restored here, on Linux, so a platform's runner is
+  # needed only for a helper whose inputs changed: GitHub's macOS runners above all, which can queue
+  # for minutes or never be placed. Tags take the helpers main built and verified the same way, so a
+  # release never waits on one. The cache key covers every input, and a pull request's caches stay
+  # within it, so only main's runs write what a tag ships.
   native-cache:
     name: cached helpers
     needs: guest
-    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
       build: ${{ steps.plan.outputs.build }}
+      macos: ${{ steps.platform.outputs.macos }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # Whether this change touches what the macOS lane tests: the updater, the image previews and the
+      # helpers they run, or the build and its JDK. Other changes run the same Java on macOS as on
+      # Linux, which every pull request tests. Scheduled and manual runs test macOS whatever changed.
+      - name: Decide whether macOS needs testing
+        id: platform
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          # A tag ships what main built and tested, so it never needs macOS.
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            echo macos=false >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # A scheduled or manual run tests everything; so does a change whose base can't be read.
+          if [[ "$EVENT" == schedule || "$EVENT" == workflow_dispatch || -z "$BASE" || "$BASE" =~ ^0+$ ]] \
+              || ! { git cat-file -e "$BASE^{commit}" 2>/dev/null || git fetch --quiet --depth=1 origin "$BASE"; }; then
+            echo macos=true >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          changed=$(git diff --name-only "$BASE" HEAD -- \
+            src/main/java/com/seqwawa/seq/update src/main/java/com/seqwawa/seq/images \
+            src/test/java/com/seqwawa/seq/update src/test/java/com/seqwawa/seq/images \
+            native build.gradle settings.gradle gradle mise.toml mise.lock .github/workflows/build.yml)
+          if [[ -n "$changed" ]]; then
+            printf 'macOS lane needed for:\n%s\n' "$changed"
+            echo macos=true >> "$GITHUB_OUTPUT"
+          else
+            echo macos=false >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: guest
@@ -241,18 +276,17 @@ jobs:
           print("build=" + json.dumps(build, separators=(",", ":")))
           PY
 
-  # Builds, tests and verifies each helper the cache did not have, on its own platform: all of them
-  # for a tag.
+  # Builds, tests and verifies each helper the cache did not have, on its own platform.
   native:
     name: ${{ matrix.platform }}
     needs: [guest, native-cache]
     if: >-
-      ${{ !cancelled() && needs.guest.result == 'success' && (startsWith(github.ref, 'refs/tags/')
-      || (needs.native-cache.result == 'success' && needs.native-cache.outputs.build != '[]')) }}
+      ${{ !cancelled() && needs.guest.result == 'success'
+      && needs.native-cache.result == 'success' && needs.native-cache.outputs.build != '[]' }}
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(startsWith(github.ref, 'refs/tags/') && '[{"platform":"windows-x86_64","runner":"windows-2025"}, {"platform":"windows-aarch64","runner":"windows-11-arm"}, {"platform":"linux-x86_64","runner":"ubuntu-24.04"}, {"platform":"linux-aarch64","runner":"ubuntu-24.04-arm"}, {"platform":"macos-x86_64","runner":"macos-15-intel"}, {"platform":"macos-aarch64","runner":"macos-15"}]' || needs.native-cache.outputs.build) }}
+        include: ${{ fromJSON(needs.native-cache.outputs.build) }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 40
     env:
@@ -282,7 +316,6 @@ jobs:
       # makes a Windows runner's cache readable there. The key matches native-cache's.
       - name: Restore a helper built from the same inputs
         id: cache
-        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -433,17 +466,27 @@ jobs:
           key: ${{ steps.gradle-cache.outputs.cache-primary-key }}
 
   # The updater and image previews on real systems: Windows file locking and helper processes,
-  # macOS Seatbelt and code signing, and unpacking the helpers on each CPU. Pull requests run the two
-  # most used systems; tags and manual runs cover all six platforms.
+  # macOS Seatbelt and code signing, and unpacking the helpers on each CPU. Pull requests and main
+  # run Windows x64, and macOS Arm when the change touches what it tests. Tags run Windows and Linux
+  # on Arm too, but never macOS: its helpers and code were tested on macOS when they changed.
+  # Scheduled and manual runs cover every platform.
   java-native-tests:
     name: java ${{ matrix.platform }}
-    needs: pack
+    needs: [native-cache, pack]
     # A skipped helper job upstream, as when every helper came from the cache, must not skip this.
     if: ${{ !cancelled() && needs.pack.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON((startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch') && '[{"platform":"windows-x86_64","runner":"windows-2025"},{"platform":"macos-aarch64","runner":"macos-15"},{"platform":"windows-aarch64","runner":"windows-11-arm"},{"platform":"linux-aarch64","runner":"ubuntu-24.04-arm"},{"platform":"macos-x86_64","runner":"macos-15-intel"}]' || '[{"platform":"windows-x86_64","runner":"windows-2025"},{"platform":"macos-aarch64","runner":"macos-15"}]') }}
+        include: >-
+          ${{ fromJSON(
+            (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+              && '[{"platform":"windows-x86_64","runner":"windows-2025"},{"platform":"macos-aarch64","runner":"macos-15"},{"platform":"windows-aarch64","runner":"windows-11-arm"},{"platform":"linux-aarch64","runner":"ubuntu-24.04-arm"},{"platform":"macos-x86_64","runner":"macos-15-intel"}]'
+            || startsWith(github.ref, 'refs/tags/')
+              && '[{"platform":"windows-x86_64","runner":"windows-2025"},{"platform":"windows-aarch64","runner":"windows-11-arm"},{"platform":"linux-aarch64","runner":"ubuntu-24.04-arm"}]'
+            || needs.native-cache.outputs.macos == 'true'
+              && '[{"platform":"windows-x86_64","runner":"windows-2025"},{"platform":"macos-aarch64","runner":"macos-15"}]'
+            || '[{"platform":"windows-x86_64","runner":"windows-2025"}]') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     env:
