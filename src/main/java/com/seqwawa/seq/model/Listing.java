@@ -1,8 +1,12 @@
 package com.seqwawa.seq.model;
 
 import com.google.gson.annotations.SerializedName;
+import com.seqwawa.seq.utils.PlayerNameCache;
 import java.time.Instant;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 public record Listing(
         long id,
@@ -108,34 +112,11 @@ public record Listing(
                 PartyJoinPolicy.OPEN);
     }
 
-    /**
-     * Whether this listing's expand state is toggled in the UI (client-only, not
-     * from backend).
-     */
-    private static final java.util.Map<Long, Boolean> expandedState = new java.util.concurrent.ConcurrentHashMap<>();
-
-    public boolean isExpanded() {
-        return expandedState.getOrDefault(id, false);
-    }
-
-    public void setExpanded(boolean expanded) {
-        expandedState.put(id, expanded);
-    }
-
-    public static void clearExpandedState() {
-        expandedState.clear();
-    }
-
     public List<Activity> resolvedActivities() {
         if (activities != null && !activities.isEmpty()) {
             return activities;
         }
         return activity != null ? List.of(activity) : List.of();
-    }
-
-    public Activity primaryActivity() {
-        List<Activity> resolved = resolvedActivities();
-        return resolved.isEmpty() ? null : resolved.get(0);
     }
 
     public int maxPartySize() {
@@ -153,21 +134,16 @@ public record Listing(
         return members != null ? members.size() : 0;
     }
 
+    /** The slots the leader reserved, observed Wynn members aside; an older backend listed them as "reserved" members. */
     public int reservedSlotCount() {
-        if (reservedSlots == null) {
-            return 0;
+        if (reservedSlots != null) {
+            return (int) reservedSlots.stream()
+                    .filter(slot -> slot != null && !slot.isObservedWynnMember())
+                    .count();
         }
-        return (int) reservedSlots.stream()
-                .filter(slot -> slot != null && !slot.isObservedWynnMember())
-                .count();
-    }
-
-    public int observedRosterCount() {
-        if (reservedSlots == null) {
-            return 0;
-        }
-        return (int) reservedSlots.stream()
-                .filter(slot -> slot != null && slot.isObservedWynnMember())
+        return members == null ? 0 : (int) members.stream()
+                .filter(member -> member != null && member.playerUUID() != null
+                        && "reserved".equals(member.playerUUID().trim().toLowerCase(Locale.ROOT)))
                 .count();
     }
 
@@ -175,10 +151,73 @@ public record Listing(
         return joinPolicy != null ? joinPolicy : PartyJoinPolicy.OPEN;
     }
 
-    public Member getLeader() {
+    public boolean isLedBy(String playerUuid) {
+        return samePlayer(playerUuid, leaderUUID);
+    }
+
+    /** Whether {@code playerUuid} is one of the members, not only a reserved slot. */
+    public boolean hasMember(String playerUuid) {
+        return member(playerUuid) != null;
+    }
+
+    /** Whether {@code playerUuid} leads or is a member. */
+    public boolean includes(String playerUuid) {
+        return isLedBy(playerUuid) || hasMember(playerUuid);
+    }
+
+    public Member member(String playerUuid) {
+        if (members == null || playerKey(playerUuid) == null) {
+            return null;
+        }
         return members.stream()
-                .filter(m -> m.playerUUID().equals(leaderUUID))
+                .filter(member -> member != null && samePlayer(playerUuid, member.playerUUID()))
                 .findFirst()
-                .orElse(members.isEmpty() ? null : members.get(0));
+                .orElse(null);
+    }
+
+    public boolean reservesSlotFor(String playerUuid) {
+        return reservedSlots != null && playerKey(playerUuid) != null && reservedSlots.stream()
+                .anyMatch(slot -> slot != null && samePlayer(playerUuid, slot.playerUUID()));
+    }
+
+    /** Each member's {@link #playerKey}, in order. */
+    public Set<String> memberKeys() {
+        Set<String> keys = new LinkedHashSet<>();
+        if (members != null) {
+            for (Member member : members) {
+                String key = member == null ? null : playerKey(member.playerUUID());
+                if (key != null) {
+                    keys.add(key);
+                }
+            }
+        }
+        return keys;
+    }
+
+    public boolean isFull() {
+        int maxPartySize = maxPartySize();
+        return status == PartyStatus.FULL || (maxPartySize > 0 && occupiedSlotCount() >= maxPartySize);
+    }
+
+    /** Closed by the backend because it filled up; it reopens by itself when a slot frees. */
+    public boolean isAutoCapacityClosed() {
+        return status == PartyStatus.CLOSED && closeReason == PartyCloseReason.AUTO_CAPACITY;
+    }
+
+    /** Whether two player ids name one player, with or without dashes, in any case. */
+    public static boolean samePlayer(String left, String right) {
+        String leftKey = playerKey(left);
+        return leftKey != null && leftKey.equals(playerKey(right));
+    }
+
+    /** {@code value} as one spelling of a player id: a UUID's 32 hex digits, else the trimmed text in lower case. */
+    public static String playerKey(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String formatted = PlayerNameCache.formatUUID(value);
+        return formatted != null
+                ? formatted.replace("-", "").toLowerCase(Locale.ROOT)
+                : value.trim().toLowerCase(Locale.ROOT);
     }
 }

@@ -115,7 +115,7 @@ public final class Session {
 
     /** The party finder: its listings, party and invites. Once the session ends, an invite it was still showing never does. */
     public PartyFinderManager partyFinder() {
-        return own("partyFinder", PartyFinderManager::new, PartyFinderManager::reset);
+        return own("partyFinder", () -> new PartyFinderManager(api()), PartyFinderManager::reset);
     }
 
     public WarTerritoryQueueManager warQueue() {

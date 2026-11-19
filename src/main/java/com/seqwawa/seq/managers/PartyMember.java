@@ -90,7 +90,7 @@ public class PartyMember {
      * <li>OTHER → "Other"</li>
      * </ul>
      */
-    private static String formatRole(PartyRole partyRole) {
+    static String formatRole(PartyRole partyRole) {
         if (partyRole == null)
             return "DPS";
         return switch (partyRole) {

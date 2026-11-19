@@ -259,8 +259,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     @Override
     protected void init() {
         super.init();
-        party().refreshData();
-        if (openCreateModalOnInit && party().getJoinedPartyIndex() < 0 && !party().hasListedParty()) {
+        party().actions().refreshData();
+        if (openCreateModalOnInit && party().getJoinedPartyIndex() < 0 && !party().isPartyLeader()) {
             openModal(false);
         }
     }
@@ -519,7 +519,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         }
 
         if (party().isPartyLeader()) {
-            String manageLabel = party().hasListedParty() ? "Manage Party" : "New party +";
+            String manageLabel = party().isPartyLeader() ? "Manage Party" : "New party +";
             drawHeaderButton(canvas, fontName, layout.manageButton(), manageLabel, color(ACCENT_PRIMARY), color(ACCENT_PRIMARY_HOVER));
             drawHeaderButton(canvas, fontName, layout.inviteButton(), "Invite", color(ACCENT_PRIMARY), color(ACCENT_PRIMARY_HOVER));
             boolean autoClosed = isCurrentListingAutoClosed();
@@ -654,7 +654,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private HeaderControlsLayout computeHeaderControlsLayout(float panelX, float panelWidth, String fontName) {
         List<Float> widths = new ArrayList<>();
         if (party().isPartyLeader()) {
-            widths.add(paddedHeaderButtonWidth(party().hasListedParty() ? "Manage Party" : "New party +", fontName));
+            widths.add(paddedHeaderButtonWidth(party().isPartyLeader() ? "Manage Party" : "New party +", fontName));
             widths.add(paddedHeaderButtonWidth("Invite", fontName));
             widths.add(paddedHeaderButtonWidth(
                     isCurrentListingAutoClosed()
@@ -817,7 +817,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 UiCanvas.HorizontalAlign.RIGHT);
 
         // Members
-        boolean isMyParty = partyIndex == party().getMyPartyIndex() && party().isPartyLeader();
+        boolean isMyParty = partyIndex == party().getJoinedPartyIndex() && party().isPartyLeader();
         boolean amLeaderOfThisParty = isMyParty && party().isPartyLeader();
         float memberY = y + CARD_HEADER_HEIGHT;
         for (int mi = 0; mi < party.members.size(); mi++) {
@@ -1373,7 +1373,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         canvas.strokeRect(modalX, modalY, MODAL_WIDTH, PARTY_MODAL_HEIGHT, 1, color(ACCENT_SECONDARY));
 
         // Title
-        String modalTitle = party().hasListedParty() ? "Update Party" : "Create Party";
+        String modalTitle = party().isPartyLeader() ? "Update Party" : "Create Party";
         drawText(
                 canvas,
                 fontName,
@@ -1601,7 +1601,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         }
 
         // Create/Update button
-        String createLabel = party().hasListedParty() ? "Update party" : "Create party";
+        String createLabel = party().isPartyLeader() ? "Update party" : "Create party";
         float createButtonWidth = modalActionButtonWidth(createLabel, fontName);
         float createBtnX = modalX + (MODAL_WIDTH - createButtonWidth) / 2f;
         float createBtnY = modalY + PARTY_MODAL_HEIGHT - MODAL_BUTTON_H - 14;
@@ -1991,7 +1991,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         }
 
         if (hasLoadingName) {
-            party().refreshData();
+            party().actions().refreshData();
             nextLoadingNameRefreshAtMs = now + LOADING_NAME_REFRESH_MS;
         }
     }
@@ -2091,7 +2091,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             roleDropdownOpen = false;
             if (index >= 0) {
                 selectedRole = ROLES[index].equals(selectedRole) ? null : ROLES[index];
-                if (selectedRole != null) party().setRole(selectedRole);
+                if (selectedRole != null) party().actions().setRole(selectedRole);
             }
             return true;
         }
@@ -2144,25 +2144,25 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 } else if (isCurrentListingAutoClosed()) {
                     showStatusBanner("Party is auto-closed at capacity and will reopen when a slot frees.");
                 } else if (isCurrentListingClosed()) {
-                    party().reopenParty(party().getCurrentListing().id());
+                    party().actions().reopenParty(party().getCurrentListing().id());
                 } else {
-                    party().closeParty(party().getCurrentListing().id());
+                    party().actions().closeParty(party().getCurrentListing().id());
                 }
                 return true;
             }
             if (isHovered(mx, my, headerLayout.delistButton())) {
-                party().delistParty();
+                party().actions().delistParty();
                 return true;
             }
             if (isHovered(mx, my, headerLayout.inviteAllButton())) {
                 showStatusBanner("Preparing party invites...");
-                party().inviteAllCurrentMembers()
+                party().game().inviteAllCurrentMembers()
                         .thenAccept(inviteAllResult ->
                                 SeqClient.mc.execute(() -> showStatusBanner(inviteAllResult.message())));
                 return true;
             }
             if (isHovered(mx, my, headerLayout.scanButton())) {
-                var result = party().scanCurrentWynnParty();
+                var result = party().game().scanCurrentWynnParty();
                 showStatusBanner(result.message());
                 return true;
             }
@@ -2211,9 +2211,9 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 continue;
             }
             if (action.action() == MemberAction.PROMOTE) {
-                party().promoteMemberById(action.listingId(), action.memberUuid());
+                party().actions().promoteMemberById(action.listingId(), action.memberUuid());
             } else {
-                party().kickMemberById(action.listingId(), action.memberUuid());
+                party().actions().kickMemberById(action.listingId(), action.memberUuid());
             }
             return true;
         }
@@ -2224,9 +2224,9 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 continue;
             }
             if (button.leave()) {
-                party().leavePartyById(button.listingId());
+                party().actions().leavePartyById(button.listingId());
             } else if (button.enabled()) {
-                party().joinPartyById(button.listingId(), selectedRole);
+                party().actions().joinPartyById(button.listingId(), selectedRole);
             }
             return true;
         }
@@ -2487,7 +2487,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             showErrorPopup("Enter a username to invite.");
             return;
         }
-        party().createInvite(username);
+        party().actions().createInvite(username);
         inviteModalOpen = false;
         inviteUsernameFocused = false;
     }
@@ -2605,12 +2605,12 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         // Create/Update button
         String fontName = SeqClient.getFontManager().getSelectedFont();
-        String createLabel = party().hasListedParty() ? "Update party" : "Create party";
+        String createLabel = party().isPartyLeader() ? "Update party" : "Create party";
         float createButtonWidth = modalActionButtonWidth(createLabel, fontName);
         float createBtnX = mX + (MODAL_WIDTH - createButtonWidth) / 2f;
         float createBtnY = mY + PARTY_MODAL_HEIGHT - MODAL_BUTTON_H - 14;
         if (isHovered(mx, my, createBtnX, createBtnY, createButtonWidth, MODAL_BUTTON_H)) {
-            boolean updatingParty = party().getMyPartyIndex() >= 0;
+            boolean updatingParty = party().getJoinedPartyIndex() >= 0;
 
             Set<String> selectedRaids = new LinkedHashSet<>(modalSelectedRaids);
             if (updatingParty && selectedRaids.isEmpty()) {
@@ -2634,14 +2634,14 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             List<String> activityNames = new ArrayList<>(selectedRaids);
 
             if (updatingParty) {
-                party().updateParty(
+                party().actions().updateParty(
                         activityNames,
                         selectedRole,
                         modalReservedSlots,
                         modalSelectedRegion,
                         modalJoinPolicy);
             } else {
-                party().createParty(
+                party().actions().createParty(
                         activityNames,
                         selectedRole,
                         modalReservedSlots,

@@ -307,7 +307,7 @@ public class SeqCommand {
                                                 .executes(ctx -> relayCommandResult(
                                                                 ctx,
                                                                 SeqClient.getPartyFinderManager()
-                                                                                .leavePartyFromCommand())))
+                                                                                .actions().leavePartyFromCommand())))
                                 .then(ClientCommandManager.literal("invite")
                                                 .then(ClientCommandManager.argument(
                                                                 "username",
@@ -327,30 +327,30 @@ public class SeqCommand {
                                                 .executes(ctx -> relayCommandResult(
                                                                 ctx,
                                                                 SeqClient.getPartyFinderManager()
-                                                                                .reopenPartyFromCommand())))
+                                                                                .actions().reopenPartyFromCommand())))
                                 .then(ClientCommandManager.literal("close")
                                                 .executes(ctx -> relayCommandResult(
                                                                 ctx,
                                                                 SeqClient.getPartyFinderManager()
-                                                                                .closePartyFromCommand())))
+                                                                                .actions().closePartyFromCommand())))
                                 .then(ClientCommandManager.literal("extend")
                                         .executes(ctx -> relayCommandResult(
                                                 ctx,
                                                 SeqClient.getPartyFinderManager()
-                                                                                .extendPartyFromCommand()))
+                                                                                .actions().extendPartyFromCommand()))
                                                 .then(ClientCommandManager.argument(
                                                                 "listingId",
                                                                 LongArgumentType.longArg(1))
                                                         .executes(ctx -> relayCommandResult(
                                                                 ctx,
                                                                 SeqClient.getPartyFinderManager()
-                                                                        .extendPartyFromCommand(LongArgumentType.getLong(
+                                                                        .actions().extendPartyFromCommand(LongArgumentType.getLong(
                                                                                 ctx, "listingId"))))))
                                 .then(ClientCommandManager.literal("disband")
                                                 .executes(ctx -> relayCommandResult(
                                                                 ctx,
                                                                 SeqClient.getPartyFinderManager()
-                                                                                .disbandPartyFromCommand())))
+                                                                                .actions().disbandPartyFromCommand())))
                                 .then(ClientCommandManager.literal("role")
                                                 .then(ClientCommandManager.argument(
                                                                 "role",
@@ -371,12 +371,11 @@ public class SeqCommand {
                                                 .executes(ctx -> relayCommandResult(
                                                                 ctx,
                                                                 SeqClient.getPartyFinderManager()
-                                                                                .inviteAllCurrentMembersFromCommand())))
+                                                                                .game().inviteAllCurrentMembersFromCommand())))
                                 .then(ClientCommandManager.literal("scan")
                                                 .executes(ctx -> relayCommandResult(
                                                                 ctx,
-                                                                SeqClient.getPartyFinderManager()
-                                                                                .scanCurrentWynnPartyFromCommand())));
+                                                                CompletableFuture.completedFuture(SeqClient.getPartyFinderManager().game().scanCurrentWynnParty()))));
         }
 
         private static LiteralArgumentBuilder<FabricClientCommandSource> buildWarCommand() {
@@ -967,7 +966,7 @@ public class SeqCommand {
         private static int runPartyList(CommandContext<FabricClientCommandSource> ctx) {
                 FabricClientCommandSource source = ctx.getSource();
                 PartyFinderManager manager = SeqClient.getPartyFinderManager();
-                manager.refreshListingsForCommand().whenComplete((result, error) -> {
+                manager.actions().refreshListingsForCommand().whenComplete((result, error) -> {
                         if (error != null) {
                                 sendFeedback(source, "Unexpected error while loading party listings.");
                                 return;
@@ -1145,7 +1144,7 @@ public class SeqCommand {
         private static int runPartyStatus(CommandContext<FabricClientCommandSource> ctx) {
                 FabricClientCommandSource source = ctx.getSource();
                 PartyFinderManager manager = SeqClient.getPartyFinderManager();
-                manager.refreshListingsForCommand().whenComplete((result, error) -> {
+                manager.actions().refreshListingsForCommand().whenComplete((result, error) -> {
                         if (error != null) {
                                 sendFeedback(source, "Unexpected error while loading party status.");
                                 return;
@@ -1180,7 +1179,7 @@ public class SeqCommand {
                 }
                 return relayCommandResult(
                                 ctx,
-                                SeqClient.getPartyFinderManager().createPartyFromCommand(activities));
+                                SeqClient.getPartyFinderManager().actions().createPartyFromCommand(activities));
         }
 
         private static int runPartyUpdate(CommandContext<FabricClientCommandSource> ctx) {
@@ -1192,7 +1191,7 @@ public class SeqCommand {
                 }
                 return relayCommandResult(
                                 ctx,
-                                SeqClient.getPartyFinderManager().updatePartyFromCommand(activities));
+                                SeqClient.getPartyFinderManager().actions().updatePartyFromCommand(activities));
         }
 
         private static int runPartyJoin(
@@ -1202,7 +1201,7 @@ public class SeqCommand {
                 long listingId = LongArgumentType.getLong(ctx, "listingId");
                 return relayCommandResult(
                                 ctx,
-                                SeqClient.getPartyFinderManager().joinPartyFromCommand(listingId, role, inviteToken));
+                                SeqClient.getPartyFinderManager().actions().joinPartyFromCommand(listingId, role, inviteToken));
         }
 
         private static int runPartyJoinWithRole(CommandContext<FabricClientCommandSource> ctx) {
@@ -1291,21 +1290,21 @@ public class SeqCommand {
                 String username = StringArgumentType.getString(ctx, "username");
                 return relayCommandResult(
                                 ctx,
-                                SeqClient.getPartyFinderManager().createInviteFromCommand(username));
+                                SeqClient.getPartyFinderManager().actions().createInviteFromCommand(username));
         }
 
         private static int runPartyRevokeInvite(CommandContext<FabricClientCommandSource> ctx) {
                 String username = StringArgumentType.getString(ctx, "username");
                 return relayCommandResult(
                                 ctx,
-                                SeqClient.getPartyFinderManager().revokeInviteFromCommand(username));
+                                SeqClient.getPartyFinderManager().actions().revokeInviteFromCommand(username));
         }
 
         private static int runPartyReserve(CommandContext<FabricClientCommandSource> ctx) {
                 int count = IntegerArgumentType.getInteger(ctx, "count");
                 return relayCommandResult(
                                 ctx,
-                                SeqClient.getPartyFinderManager().setReservedSlotTargetFromCommand(count));
+                                SeqClient.getPartyFinderManager().actions().setReservedSlotTargetFromCommand(count));
         }
 
         private static int runPartyRole(CommandContext<FabricClientCommandSource> ctx) {
@@ -1316,21 +1315,21 @@ public class SeqCommand {
                 }
                 return relayCommandResult(
                                 ctx,
-                                SeqClient.getPartyFinderManager().changeRoleFromCommand(role));
+                                SeqClient.getPartyFinderManager().actions().changeRoleFromCommand(role));
         }
 
         private static int runPartyKick(CommandContext<FabricClientCommandSource> ctx) {
                 String username = StringArgumentType.getString(ctx, "username");
                 return relayCommandResult(
                                 ctx,
-                                SeqClient.getPartyFinderManager().kickMemberFromCommand(username));
+                                SeqClient.getPartyFinderManager().actions().kickMemberFromCommand(username));
         }
 
         private static int runPartyPromote(CommandContext<FabricClientCommandSource> ctx) {
                 String username = StringArgumentType.getString(ctx, "username");
                 return relayCommandResult(
                                 ctx,
-                                SeqClient.getPartyFinderManager().promoteMemberFromCommand(username));
+                                SeqClient.getPartyFinderManager().actions().promoteMemberFromCommand(username));
         }
 
         private static <T> int relayCommandResult(

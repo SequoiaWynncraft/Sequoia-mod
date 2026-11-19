@@ -313,7 +313,7 @@ public final class GuildPresenceManager {
             return CompletableFuture.completedFuture(null);
         }
         PartyRegion region = listingRegion(currentWorld(), RaidProfileStore.getInstance().selfProfile().region());
-        return manager.createPartyFromCommand(activities, region)
+        return manager.actions().createPartyFromCommand(activities, region)
                 .thenApply(result -> {
                     if (result.success() && result.data() != null) {
                         enableLinkedPartySync(result.data().id(), startedFor);
@@ -407,7 +407,7 @@ public final class GuildPresenceManager {
             return;
         }
         try {
-            manager.refreshListingsQuietly();
+            manager.actions().refreshListingsQuietly();
         } catch (RuntimeException e) {
             SeqClient.LOGGER.debug("[GuildPresence] Could not refresh party finder listings", e);
         }
@@ -419,7 +419,7 @@ public final class GuildPresenceManager {
         if (manager == null || spot == null) {
             return CompletableFuture.completedFuture("The party finder is not ready yet.");
         }
-        return manager.joinPartyFromCommand(spot.listingId(), PartyRole.DPS)
+        return manager.actions().joinPartyFromCommand(spot.listingId(), PartyRole.DPS)
                 .thenApply(result -> result.message() == null || result.message().isBlank()
                         ? (result.success() ? "Joined the party." : "Could not join that party.")
                         : result.message())
