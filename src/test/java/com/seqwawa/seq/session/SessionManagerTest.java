@@ -110,14 +110,14 @@ class SessionManagerTest {
     }
 
     @Test
-    void switchingToTheAccountTheSignInSpeaksForKeepsTheConnectionAndHandsTheTokenOn() {
+    void switchingToTheAccountTheSignInSpeaksForHandsTheTokenOnButNotWhatTheBackendSaidToTheOtherAccount() {
         recordEndOf(sessions.current());
         sessions.end(new EndReason.AccountSwitch(true));
 
-        assertFalse(calls.contains("resetConnectionForAccountChange"));
+        // A pause or refusals the shared account's socket earned would otherwise hold the operator's connects back.
+        assertEquals(List.of("resetGuildStorage", "resetConnectionForAccountChange", "carrySignInOver", "end session"),
+                calls.subList(0, 4), "the account's own state still goes");
         assertFalse(calls.contains("clearSession"));
-        assertTrue(calls.contains("carrySignInOver"));
-        assertTrue(calls.contains("end session"), "the account's own state still goes");
     }
 
     @Test

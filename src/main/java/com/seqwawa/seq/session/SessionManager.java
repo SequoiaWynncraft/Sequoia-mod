@@ -121,11 +121,12 @@ public final class SessionManager {
                         SeqClient.getGuildStorageTracker().reset();
                     }
                 });
+                // What the backend said to the previous account stays with it, even when the sign-in carries over.
+                step("resetConnectionForAccountChange", ConnectionManager::resetForAccountChange);
                 if (accountSwitch.keepSignIn()) {
                     // A fresh sign-in with the same token: what the ended session started never reaches the next.
                     auth.carrySignInOver();
                 } else {
-                    step("resetConnectionForAccountChange", ConnectionManager::resetForAccountChange);
                     auth.clearSession();
                 }
                 startNextSession(false);
