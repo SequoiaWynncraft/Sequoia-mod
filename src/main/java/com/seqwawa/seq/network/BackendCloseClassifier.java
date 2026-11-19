@@ -10,7 +10,7 @@ import java.util.regex.Pattern;
  * reconnecting.
  * <p>
  * The backend closes with 1008 (policy violation) for several unrelated reasons, named
- * in the close reason. A handshake it refuses never opens: Java-WebSocket reports that
+ * in the close reason. A handshake it refuses never opens: the socket reports that
  * as a close whose reason carries the HTTP status.
  */
 final class BackendCloseClassifier {
@@ -20,6 +20,7 @@ final class BackendCloseClassifier {
         CLIENT_INITIATED,
         /** The backend refused or revoked the token (a 401 handshake, an unlinked account): sign in afresh. */
         AUTH_REJECTED,
+        /** A 426 handshake, or a 1008 close naming it: only an update helps. */
         VERSION_UNSUPPORTED,
         PARTY_FINDER_BANNED,
         /** A 403 handshake: the backend refuses this account (a ban) or this transport, so retrying cannot help. */
@@ -31,7 +32,7 @@ final class BackendCloseClassifier {
 
     static final int POLICY_VIOLATION = 1008;
 
-    /** Java-WebSocket's close code and reason for a handshake answered with anything but 101. */
+    /** The close code, and reason, a socket reports for a handshake answered with anything but 101. */
     static final int HANDSHAKE_FAILED = 1002;
     private static final Pattern REFUSED_HANDSHAKE = Pattern.compile("^invalid status code received: (\\d{3})\\b");
 
@@ -48,6 +49,7 @@ final class BackendCloseClassifier {
             return switch (refused.group(1)) {
                 case "401" -> Kind.AUTH_REJECTED;
                 case "403" -> Kind.HANDSHAKE_FORBIDDEN;
+                case "426" -> Kind.VERSION_UNSUPPORTED;
                 default -> Kind.OTHER;
             };
         }

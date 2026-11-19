@@ -13,6 +13,7 @@ import com.seqwawa.seq.network.auth.AuthErrorCode;
 import com.seqwawa.seq.network.auth.MinecraftAuthService;
 import com.seqwawa.seq.network.auth.StoredAuthSession;
 import com.seqwawa.seq.session.EndReason;
+import com.seqwawa.seq.session.Session;
 import com.seqwawa.seq.session.SessionManager;
 import com.seqwawa.seq.utils.WynnClassCache;
 import java.time.Clock;
@@ -111,6 +112,9 @@ record ConnectionEnvironment(
 
         /** Which sign-in is current: a token renewal keeps it, and it moves on whenever a session ends. */
         long sessionId();
+
+        /** Runs {@code action} on the game thread once the session {@code sessionId} has ended. */
+        void whenSessionEnds(long sessionId, Runnable action);
     }
 
     /** The parts of the game the connection reads from, or reports to. */
@@ -153,7 +157,7 @@ record ConnectionEnvironment(
                 new GameScheduler(),
                 new ChatNotifier(),
                 new AuthServiceTokens(),
-                JavaBackendSocket::new,
+                JdkBackendSocket::new,
                 new MinecraftGame(),
                 Executors.newSingleThreadExecutor(r -> {
                     Thread t = new Thread(r, "seq-treasury-auth");
@@ -233,6 +237,16 @@ record ConnectionEnvironment(
         @Override
         public long sessionId() {
             return SeqClient.getAuthService().sessionGeneration();
+        }
+
+        @Override
+        public void whenSessionEnds(long sessionId, Runnable action) {
+            Session session = SessionManager.getInstance().current();
+            if (session.id() == sessionId) {
+                session.whenEnded("connection", action);
+            } else {
+                ClientThread.execute(action);
+            }
         }
     }
 

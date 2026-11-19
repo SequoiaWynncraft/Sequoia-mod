@@ -214,11 +214,13 @@ public final class WarTerritoryQueueManager {
 
     /**
      * The queue for one session: your availability, queues and joins come from {@code planner},
-     * that session's war planner, and it polls while {@code signedIn} says the session has a token.
+     * that session's war planner, and it polls with {@code api}, carrying that session's token, while
+     * {@code signedIn} says the session has one.
      */
-    public WarTerritoryQueueManager(java.util.function.Supplier<WarPlannerManager> planner, BooleanSupplier signedIn) {
+    public WarTerritoryQueueManager(
+            ApiClient api, java.util.function.Supplier<WarPlannerManager> planner, BooleanSupplier signedIn) {
         this(
-                new ApiGateway(ApiClient.getInstance()),
+                new ApiGateway(api),
                 Clock.systemUTC(),
                 new RuntimeAvailabilityContext(planner, signedIn),
                 NotificationAccessor::notifyPlayer,

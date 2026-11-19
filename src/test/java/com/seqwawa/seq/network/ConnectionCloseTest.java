@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -26,6 +27,11 @@ class ConnectionCloseTest {
     private static final String REFUSED_401 = "Invalid status code received: 401 Status line: HTTP/1.1 401 Unauthorized";
     private static final String REFUSED_403 = "Invalid status code received: 403 Status line: HTTP/1.1 403 Forbidden";
     private static final String REFUSED_502 = "Invalid status code received: 502 Status line: HTTP/1.1 502 Bad Gateway";
+    private static final String TOKEN_INVALID = "{\"type\":\"error\",\"code\":\"token_invalid\",\"message\":\"Token invalid\"}";
+    /** The backend's older refusal: it refuses the sign-in, but says nothing of the token. */
+    private static final String INVALID_AUTH_REQUEST = "{\"type\":\"error\",\"status\":400,\"message\":\"Invalid auth request\"}";
+    private static final String BANNED_NOTICE = "Sequoia closed the connection: this account is banned from the party finder. "
+            + "Run /seq connect to try again.";
 
     @TempDir
     Path config;
@@ -40,6 +46,17 @@ class ConnectionCloseTest {
     @AfterEach
     void stop() {
         harness.close();
+    }
+
+    /** Moves the clock in steps until the reconnect has a socket connecting: the reconnect delay, or the sign-in backoff. */
+    private void waitForNextSocket() {
+        int before = harness.sockets.size();
+        for (int waited = 0; harness.sockets.size() == before || !harness.socket().connected(); waited += 100) {
+            if (waited > 600_000) {
+                throw new AssertionError("No reconnect within ten minutes");
+            }
+            harness.advance(100);
+        }
     }
 
     /** How one close leaves the connection. */
@@ -70,6 +87,9 @@ class ConnectionCloseTest {
                         new Outcome(true, false, List.of())),
                 // Refusals no retry fixes: pause until the player connects.
                 Arguments.of("version unsupported (1008)", 1008, "mod_version_unsupported", true, new Outcome(false, true,
+                        List.of("This version of Sequoia is no longer supported. Update the mod, then run /seq connect."))),
+                Arguments.of("refused handshake, 426", BackendCloseClassifier.HANDSHAKE_FAILED,
+                        "Invalid status code received: 426", false, new Outcome(false, true,
                         List.of("This version of Sequoia is no longer supported. Update the mod, then run /seq connect."))),
                 Arguments.of("party finder ban (1008)", 1008, "party_finder_banned", true, new Outcome(false, true,
                         List.of("Sequoia closed the connection: this account is banned from the party finder. "
@@ -111,10 +131,103 @@ class ConnectionCloseTest {
         harness.closeFromBackend(BackendCloseClassifier.POLICY_VIOLATION, "account_revoked");
 
         assertEquals(List.of(AuthErrorCode.WEBSOCKET_AUTH_REJECTED), harness.tokens.invalidations);
-        harness.advance(1_000);
+        // The reconnect waits out the sign-in backoff the refusal started, which spans reconnects since step 6.
+        harness.advance(1_999);
+        assertEquals(1, harness.sockets.size());
+        harness.advance(1);
         assertEquals(2, harness.sockets.size());
         assertEquals(List.of(false, false), harness.tokens.requests,
                 "the reconnect asks for a token, which the invalidated session no longer has");
+    }
+
+    @Test
+    void aRefusalTheBackendSendsAsAnErrorThenACloseCountsOnce() {
+        FakeBackendSocket socket = harness.connectAsMember();
+
+        // Both reach the game thread on the same tick.
+        socket.receive(TOKEN_INVALID);
+        socket.closeFromBackend(BackendCloseClassifier.POLICY_VIOLATION, "account_revoked");
+        harness.settle();
+
+        assertEquals(List.of(AuthErrorCode.TOKEN_INVALID), harness.tokens.invalidations);
+        // One refusal's sign-in backoff: the reconnect connects after two seconds, not four.
+        harness.advance(1_999);
+        assertEquals(1, harness.sockets.size());
+        harness.advance(1);
+        assertEquals(2, harness.sockets.size());
+    }
+
+    @Test
+    void aRefusalThatKeptTheTokenThenARevocationStillDropsIt() {
+        FakeBackendSocket socket = harness.connectAsMember();
+
+        // Both reach the game thread on the same tick.
+        socket.receive(INVALID_AUTH_REQUEST);
+        socket.closeFromBackend(BackendCloseClassifier.POLICY_VIOLATION, "account_revoked");
+        harness.settle();
+
+        assertEquals(List.of(AuthErrorCode.WEBSOCKET_AUTH_REJECTED), harness.tokens.invalidations,
+                "the reconnect must not sign in with the revoked token");
+        // Still one refusal's sign-in backoff.
+        harness.advance(1_999);
+        assertEquals(1, harness.sockets.size());
+        harness.advance(1);
+        assertEquals(2, harness.sockets.size());
+    }
+
+    @Test
+    void aBanThatBeginsAsTheClientClosesIsStillTheBackendsVerdict() {
+        FakeBackendSocket socket = harness.connectAsMember();
+        socket.startClosingBeforeNextClose = true;
+
+        // The client closes to sign in again, just as the backend's ban starts closing the socket.
+        harness.receive(INVALID_AUTH_REQUEST);
+        socket.finishClosingFromBackend(BackendCloseClassifier.POLICY_VIOLATION, "party_finder_banned");
+        harness.settle();
+
+        assertFalse(ConnectionManager.hasReconnectTask());
+        assertFalse(ConnectionManager.canAutoConnectNow());
+        assertEquals(BANNED_NOTICE, harness.told.getLast());
+    }
+
+    @Test
+    void aBanThatClosesBehindARefusedTokenStillStopsReconnecting() {
+        FakeBackendSocket socket = harness.connectAsMember();
+
+        socket.receive(TOKEN_INVALID);
+        socket.closeFromBackend(BackendCloseClassifier.POLICY_VIOLATION, "party_finder_banned");
+        harness.settle();
+
+        assertFalse(ConnectionManager.hasReconnectTask());
+        assertFalse(ConnectionManager.canAutoConnectNow());
+        assertEquals(BANNED_NOTICE, harness.told.getLast());
+    }
+
+    private static Stream<Named<String>> refusalsThatCloseToSignInAgain() {
+        return Stream.of(
+                Named.of("a refusal that keeps the token", INVALID_AUTH_REQUEST),
+                Named.of("a rejected token, whose end of the session the socket outlives", TOKEN_INVALID));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("refusalsThatCloseToSignInAgain")
+    void aBanStillQueuedOnASocketClosingToSignInAgainIsNotTheNextAccountsBan(String refusal) {
+        FakeBackendSocket socket = harness.connectAsMember();
+        socket.startClosingBeforeNextClose = true;
+
+        // The client closes to sign in again as the backend's ban closes the socket, and the player
+        // switches account before the game thread hears the ban.
+        harness.receive(refusal);
+        socket.finishClosingFromBackend(BackendCloseClassifier.POLICY_VIOLATION, "party_finder_banned");
+        harness.switchAccount();
+        harness.settle();
+
+        assertFalse(harness.told.contains(BANNED_NOTICE));
+        assertFalse(ConnectionManager.hasReconnectTask(), "nothing signs in again for the previous account");
+        assertTrue(ConnectionManager.canAutoConnectNow(), "the ban was the previous account's");
+        harness.connectAutomatically();
+        assertEquals(2, harness.sockets.size());
+        assertTrue(harness.socket().connected());
     }
 
     @Test
@@ -146,7 +259,7 @@ class ConnectionCloseTest {
             harness.settle();
             if (refusal < 3) {
                 assertTrue(ConnectionManager.hasReconnectTask(), "refusal " + refusal);
-                harness.advance(ReconnectBackoff.delayMs(refusal - 1));
+                waitForNextSocket();
             }
         }
 
@@ -162,10 +275,10 @@ class ConnectionCloseTest {
     void anAcceptedSignInBetweenRefusalsStartsTheCountAgain() {
         harness.connectAsMember();
         harness.closeFromBackend(1008, "account_unlinked");
-        harness.advance(1_000);
+        waitForNextSocket();
         harness.socket().closeLocally(BackendCloseClassifier.HANDSHAKE_FAILED, REFUSED_401);
         harness.settle();
-        harness.advance(2_000);
+        waitForNextSocket();
         harness.open();
         harness.signIn();
 
@@ -193,7 +306,7 @@ class ConnectionCloseTest {
         harness.closeFromBackend(1008, "party_finder_banned");
 
         harness.connectAutomatically();
-        assertFalse(harness.socket().connected());
+        assertEquals(1, harness.sockets.size());
 
         harness.connectManually();
         assertTrue(harness.socket().connected());
@@ -207,6 +320,22 @@ class ConnectionCloseTest {
         ConnectionManager.resetForAccountChange();
 
         assertTrue(ConnectionManager.canAutoConnectNow());
+    }
+
+    @Test
+    void aRefusalStillQueuedWhenThePlayerSwitchesAccountDoesNotHoldTheNextAccountBack() {
+        harness.connectAutomatically();
+
+        // The backend refuses the handshake, and the player switches account before the game thread hears it.
+        harness.socket().closeLocally(BackendCloseClassifier.HANDSHAKE_FAILED, REFUSED_403);
+        harness.switchAccount();
+        harness.settle();
+
+        assertTrue(ConnectionManager.canAutoConnectNow(), "the refusal was the previous account's");
+        assertEquals(List.of(), harness.told);
+        harness.connectAutomatically();
+        assertEquals(2, harness.sockets.size());
+        assertTrue(harness.socket().connected());
     }
 
     @Test
@@ -244,6 +373,19 @@ class ConnectionCloseTest {
     }
 
     @Test
+    void aCloseToSignInAgainReconnectsWhateverCodeTheBackendAnswersItWith() {
+        FakeBackendSocket socket = harness.connectAsMember();
+        harness.receive(TOKEN_INVALID);
+        assertEquals(4001, socket.closeCode());
+
+        // The backend answers with a clean close rather than echo the client's.
+        socket.finishClosingFromBackend(1000, "");
+        harness.settle();
+
+        assertTrue(ConnectionManager.hasReconnectTask(), "the client closed to sign in again");
+    }
+
+    @Test
     void aCloseFromAReplacedSocketChangesNothing() {
         FakeBackendSocket first = harness.connectAsMember();
         harness.connection().disconnect();
@@ -265,6 +407,7 @@ class ConnectionCloseTest {
     void aSocketThatFailsToConnectIsReportedOnlyWhenThePlayerAsked() {
         harness.connectAutomatically();
         harness.socket().failToConnect("Connection refused");
+        assertTrue(harness.socket().isClosing(), "a socket that failed to connect can't be used again");
         harness.settle();
         assertEquals(List.of(), harness.told);
         assertTrue(ConnectionManager.hasReconnectTask());

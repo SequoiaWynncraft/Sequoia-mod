@@ -551,7 +551,7 @@ public class ChatManager {
     // ── Incoming: backend → WS → MC chat ──
 
     private void registerIncomingHook() {
-        ConnectionManager.onGuildChat(msg -> mc.execute(() -> {
+        ConnectionManager.listen(ConnectionManager.Inbound.GUILD_CHAT, msg -> mc.execute(() -> {
             if (mc.player == null) return;
             // Client-only display bypasses the packet hook that relays server guild chat.
             RankPresentation rank = DiscordRankChatDecorator.guildRank(msg.username());
@@ -563,7 +563,7 @@ public class ChatManager {
                 DiscordRankChatDecorator.displayGuildLine(line, () -> mc.player.displayClientMessage(line, false));
             }
         }));
-        ConnectionManager.onDiscordChat(msg -> {
+        ConnectionManager.listen(ConnectionManager.Inbound.DISCORD_CHAT, msg -> {
             if (!SeqClient.getShowDiscordChatSetting().getValue())
                 return;
 

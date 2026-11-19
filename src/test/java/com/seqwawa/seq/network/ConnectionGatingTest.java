@@ -154,7 +154,7 @@ class ConnectionGatingTest {
                 harness.scope = WynncraftServerPolicy.Scope.UNKNOWN;
             }
         }
-        harness.socket().clearSent();
+        harness.clearSent();
         // Past the send throttle anything before this used.
         harness.advance(50);
     }
@@ -167,7 +167,7 @@ class ConnectionGatingTest {
         send.call().accept(harness.connection());
         harness.settle();
 
-        assertEquals(sent, harness.socket().sentTypes().contains(send.type()), harness.socket().sentTypes().toString());
+        assertEquals(sent, harness.sentTypes().contains(send.type()), harness.sentTypes().toString());
     }
 
     // ── What callers are told ──
@@ -189,6 +189,22 @@ class ConnectionGatingTest {
         assertFalse(harness.connection().sendBombShareRequest("dxp", List.of(BombShareType.COMBAT_XP)));
         assertFalse(harness.connection().sendPartySyncSnapshot(1L, true, "Sequoian", List.of("Sequoian")));
         assertFalse(harness.connection().sendWarStatus(WarStatusUpdate.remove()));
+    }
+
+    @Test
+    void sendsRacingTheBackendsCloseReportThatNothingWent() {
+        FakeBackendSocket socket = harness.connectAsMember();
+        harness.advance(50);
+        // The backend has started closing; the game thread hasn't heard yet, so the sign-in still stands.
+        socket.startClosingFromBackend();
+
+        // Fixed in step 6: these three didn't check the socket, and threw once it closed.
+        assertFalse(harness.connection().sendGuildAllianceUpdate("formed", "Avicia"));
+        assertFalse(harness.connection().sendGuildMembershipEvent("invited", "GaztheCat", "NewMember"));
+        assertFalse(harness.connection().sendGuildAllianceSnapshot(List.of("Avicia")));
+        assertFalse(harness.connection().sendGuildChat("Sequoian", null, "hello", null, List.of(), false));
+        assertFalse(harness.connection().sendWarStatus(WarStatusUpdate.remove()));
+        assertEquals(List.of("get_connected"), socket.sentTypes());
     }
 
     @Test
@@ -253,6 +269,18 @@ class ConnectionGatingTest {
         harness.advance(1);
         assertTrue(harness.connection().sendGuildChat("Sequoian", null, "four", null, List.of(), false));
         assertEquals(List.of("guild_chat", "guild_chat"), socket.sentTypes().subList(1, 3));
+    }
+
+    @Test
+    void aBombShareTheThrottleHoldsBackSaysItWasNotSent() {
+        FakeBackendSocket socket = harness.connectAsMember();
+        harness.advance(50);
+        socket.clearSent();
+
+        assertTrue(harness.connection().sendBombShareRequest("dxp", List.of(BombShareType.COMBAT_XP)));
+        assertFalse(harness.connection().sendBombShareSubmit("request-1", List.of("WC1")), "so nobody is told it was shared");
+        assertFalse(harness.connection().sendBombShareRequest("dxp", List.of(BombShareType.COMBAT_XP)));
+        assertEquals(List.of("bomb_share_request"), socket.sentTypes());
     }
 
     @Test

@@ -257,7 +257,7 @@ class ConnectionTreasuryTest {
     @Test
     void aRecordedPayoutReachesItsHandler() {
         List<TreasuryOutRecordedMessage> recorded = new ArrayList<>();
-        ConnectionManager.onTreasuryOutRecorded(recorded::add);
+        ConnectionManager.listen(ConnectionManager.Inbound.TREASURY_OUT_RECORDED, recorded::add);
         harness.connectAsTreasury();
 
         harness.receive("{\"type\":\"treasury_out_recorded\",\"request_id\":\"" + REQUEST_ID
@@ -270,7 +270,7 @@ class ConnectionTreasuryTest {
     @Test
     void anErrorTheTreasuryHandlerClaimsIsNotShownAgain() {
         List<TreasuryOutErrorMessage> errors = new ArrayList<>();
-        ConnectionManager.onTreasuryOutError(error -> errors.add(error));
+        ConnectionManager.claim(ConnectionManager.Inbound.TREASURY_OUT_ERROR, error -> errors.add(error));
         harness.connectAsTreasury();
 
         harness.receive("{\"type\":\"error\",\"request_id\":\"" + REQUEST_ID
@@ -283,7 +283,7 @@ class ConnectionTreasuryTest {
 
     @Test
     void anErrorTheTreasuryHandlerDoesNotClaimIsHandledAsAnyOther() {
-        ConnectionManager.onTreasuryOutError(error -> false);
+        ConnectionManager.claim(ConnectionManager.Inbound.TREASURY_OUT_ERROR, error -> false);
         harness.connectAsTreasury();
 
         harness.receive("{\"type\":\"error\",\"request_id\":\"" + REQUEST_ID
@@ -293,8 +293,58 @@ class ConnectionTreasuryTest {
     }
 
     @Test
+    void aRecordingQueuedJustBeforeADisconnectStillSettlesItsRequest() {
+        List<TreasuryOutRecordedMessage> recorded = new ArrayList<>();
+        ConnectionManager.listen(ConnectionManager.Inbound.TREASURY_OUT_RECORDED, recorded::add);
+        FakeBackendSocket socket = harness.connectAsTreasury();
+
+        socket.receive("{\"type\":\"treasury_out_recorded\",\"request_id\":\"" + REQUEST_ID + "\",\"row\":7}");
+        harness.connection().disconnectManually();
+        harness.settle();
+
+        // Fixed in step 6: the disconnect dropped it, and the request timed out though the backend recorded it.
+        assertEquals(1, recorded.size());
+        assertEquals(REQUEST_ID, recorded.getFirst().requestId());
+    }
+
+    @Test
+    void aClaimedErrorFromAnEndedSocketSettlesItsRequestAndChangesNothingElse() {
+        List<TreasuryOutErrorMessage> errors = new ArrayList<>();
+        ConnectionManager.claim(ConnectionManager.Inbound.TREASURY_OUT_ERROR, errors::add);
+        FakeBackendSocket socket = harness.connectAsTreasury();
+
+        socket.receive("{\"type\":\"error\",\"request_id\":\"" + REQUEST_ID
+                + "\",\"code\":\"token_invalid\",\"message\":\"Token invalid\"}");
+        socket.receive("{\"type\":\"error\",\"code\":\"rate_limited\",\"message\":\"Too many\"}");
+        harness.connection().disconnect();
+        harness.settle();
+
+        assertEquals(1, errors.size());
+        assertEquals(List.of(), harness.tokens.invalidations, "a reply from an ended socket ends no session");
+        assertEquals(1000, socket.closeCode(), "the disconnect's close, not a close to sign in again");
+        assertEquals(List.of(), harness.told);
+    }
+
+    @Test
+    void aConnectDuringTheClientsOwnCloseRunsOnANewSocketOnceTheCloseIsHandled() {
+        FakeBackendSocket first = harness.connectAsTreasury();
+        harness.told.clear();
+        harness.connection().disconnect();
+
+        // Fixed in step 6: this called connect() again on the socket that was closing.
+        harness.connectManually();
+        assertEquals(1, harness.sockets.size(), "it waits for the close");
+        assertEquals(1, first.closes());
+
+        harness.echoClientClose();
+        assertEquals(2, harness.sockets.size());
+        assertTrue(harness.socket().connected());
+        assertEquals(List.of("Connecting to production..."), harness.told);
+    }
+
+    @Test
     void aClaimedErrorThatRejectsTheTokenDropsItAndClosesToSignInAgain() {
-        ConnectionManager.onTreasuryOutError(error -> true);
+        ConnectionManager.claim(ConnectionManager.Inbound.TREASURY_OUT_ERROR, error -> true);
         FakeBackendSocket socket = harness.connectAsTreasury();
 
         harness.receive("{\"type\":\"error\",\"request_id\":\"" + REQUEST_ID
@@ -307,7 +357,7 @@ class ConnectionTreasuryTest {
 
     @Test
     void aClaimedVersionErrorStopsReconnecting() {
-        ConnectionManager.onTreasuryOutError(error -> true);
+        ConnectionManager.claim(ConnectionManager.Inbound.TREASURY_OUT_ERROR, error -> true);
         harness.connectAsTreasury();
 
         harness.receive("{\"type\":\"error\",\"request_id\":\"" + REQUEST_ID

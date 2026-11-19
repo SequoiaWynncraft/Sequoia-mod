@@ -17,14 +17,13 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.Activity;
-import com.seqwawa.seq.managers.ChatManager;
 import com.seqwawa.seq.model.AllyRaidReport;
 import com.seqwawa.seq.model.CreateInviteResponse;
 import com.seqwawa.seq.model.GuildRaidProgress;
@@ -56,6 +55,8 @@ import com.seqwawa.seq.network.auth.MinecraftAuthChallengeResponse;
 import com.seqwawa.seq.network.auth.MinecraftAuthCompleteRequest;
 import com.seqwawa.seq.network.auth.MinecraftAuthCompleteResponse;
 import com.seqwawa.seq.network.auth.MinecraftAuthService;
+import com.seqwawa.seq.network.auth.NotSignedInException;
+import com.seqwawa.seq.session.Session;
 import com.seqwawa.seq.session.SessionManager;
 import com.seqwawa.seq.utils.WynnClassCache;
 
@@ -79,13 +80,16 @@ public class ApiClient {
     private static ApiClient instance;
 
     private final HttpClient httpClient;
-    private final ExecutorService executor;
+    /** Whether requests may go out: in the game, only on Wynncraft's main server. */
+    private final BooleanSupplier serverAllowed;
     private final Gson gson;
     private final String baseUrl;
     private final String authBaseUrl;
     /** Where raid profiles live, which can differ from {@link #baseUrl}. See build.gradle. */
     private final String raidProfilesBaseUrl;
     private final String leafBaseUrl;
+    /** The session whose token requests carry, or null for whichever is current as each goes out. */
+    private final Session session;
 
     public static ApiClient getInstance() {
         if (instance == null) {
@@ -95,20 +99,50 @@ public class ApiClient {
     }
 
     private ApiClient() {
-        this.executor = Executors.newFixedThreadPool(2, r -> {
-            Thread t = new Thread(r, "seq-api-client");
-            t.setDaemon(true);
-            return t;
-        });
+        this(BuildConfig.API_URL, WynncraftServerPolicy::isCurrentServerAllowed);
+    }
+
+    /** A client of the backend at {@code baseUrl}, sending only while {@code serverAllowed}; a test passes its own. */
+    ApiClient(String baseUrl, BooleanSupplier serverAllowed) {
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
-                .executor(executor)
+                .executor(Executors.newFixedThreadPool(2, r -> {
+                    Thread t = new Thread(r, "seq-api-client");
+                    t.setDaemon(true);
+                    return t;
+                }))
                 .build();
+        this.serverAllowed = serverAllowed;
         this.gson = newGson();
-        this.baseUrl = BuildConfig.API_URL;
-        this.authBaseUrl = resolveAuthBaseUrl(BuildConfig.API_URL);
+        this.baseUrl = baseUrl;
+        this.authBaseUrl = resolveAuthBaseUrl(baseUrl);
         this.raidProfilesBaseUrl = BuildConfig.RAID_PROFILES_API_URL;
         this.leafBaseUrl = BuildConfig.LEAF_API_URL;
+        this.session = null;
+    }
+
+    private ApiClient(ApiClient shared, Session session) {
+        this.httpClient = shared.httpClient;
+        this.serverAllowed = shared.serverAllowed;
+        this.gson = shared.gson;
+        this.baseUrl = shared.baseUrl;
+        this.authBaseUrl = shared.authBaseUrl;
+        this.raidProfilesBaseUrl = shared.raidProfilesBaseUrl;
+        this.leafBaseUrl = shared.leafBaseUrl;
+        this.session = session;
+    }
+
+    /**
+     * This client, sending {@code session}'s token: work a session owns never goes out with the
+     * next account's, and once the session ends it goes out with none.
+     */
+    public ApiClient forSession(Session session) {
+        return new ApiClient(this, session);
+    }
+
+    /** A valid token for the next request: the session's, which never signs in, or the current one's. */
+    private CompletableFuture<String> validToken() {
+        return session != null ? session.token(false) : SeqClient.getAuthService().ensureValidToken(false);
     }
 
     /** The Gson every response is read with: snake_case names come from annotations, times are ISO-8601. */
@@ -414,10 +448,11 @@ public class ApiClient {
                 && api.getResponseBody().contains("\"not_a_member\"");
     }
 
-    public CompletableFuture<GuildRaidProgress> getGuildRaidProgress() {
+    /** The guild's raid progress; with {@code record}, recording the player's own raids too, where the backend can. */
+    public CompletableFuture<GuildRaidProgress> getGuildRaidProgress(boolean record) {
         return afterValidToken(
-                SeqClient.getAuthService().ensureValidToken(false),
-                () -> ChatManager.canAnnounceAchievements()
+                validToken(),
+                () -> record
                         ? this.<GuildRaidProgress>post(ACHIEVEMENTS_PATH, null, GuildRaidProgress.class)
                                 .exceptionallyCompose(failure -> {
                                     Throwable cause = failure.getCause() == null ? failure : failure.getCause();
@@ -1109,9 +1144,9 @@ public class ApiClient {
         return newRequestWithToken(resolvedBaseUrl, path, includeAuthHeader ? signedInToken() : null);
     }
 
-    /** The current session's token, expired or not; a 401 asks for a fresh one. */
-    private static String signedInToken() {
-        var signedIn = MinecraftAuthService.getInstance().getCurrentSession();
+    /** The session's token, expired or not, or the current session's for a client tied to none. */
+    private String signedInToken() {
+        var signedIn = session != null ? session.signedIn() : MinecraftAuthService.getInstance().getCurrentSession();
         return signedIn == null ? null : signedIn.token();
     }
 
@@ -1174,7 +1209,11 @@ public class ApiClient {
     }
 
     private <T> CompletableFuture<T> sendAsync(HttpRequest request, java.lang.reflect.Type type) {
-        if (!WynncraftServerPolicy.isCurrentServerAllowed()) {
+        // As each request goes out, a fallback after an earlier answer too: an ended session's work refuses, never goes out bare.
+        if (session != null && session.isEnded()) {
+            return CompletableFuture.failedFuture(new NotSignedInException());
+        }
+        if (!serverAllowed.getAsBoolean()) {
             return CompletableFuture.failedFuture(mainServerOnlyException());
         }
         return httpClient

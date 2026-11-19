@@ -108,8 +108,10 @@ public class SeqClient implements ClientModInitializer {
     @Getter
     public static ConfigManager configManager;
 
-    @Getter
-    public static PartyFinderManager partyFinderManager;
+    /** The current session's party finder. */
+    public static PartyFinderManager getPartyFinderManager() {
+        return SessionManager.getInstance().current().partyFinder();
+    }
 
     /** The current session's war planner. */
     public static WarPlannerManager getWarPlannerManager() {
@@ -397,7 +399,7 @@ public class SeqClient implements ClientModInitializer {
         TnaSahurSoundDetector.initialize();
         fontManager = new FontManager();
         gameManager = new GameManager();
-        partyFinderManager = new PartyFinderManager();
+        PartyFinderManager.listen();
         warTerritoryBoundsReminder = new WarTerritoryBoundsReminder();
         wynnPartySyncManager = new WynnPartySyncManager();
         guildWarTracker = GuildWarTrackers.create();
@@ -406,8 +408,8 @@ public class SeqClient implements ClientModInitializer {
         chatManager = new ChatManager();
         bombShareManager = new BombShareManager();
         treasuryOutManager = new TreasuryOutManager();
-        ConnectionManager.onTreasuryOutRecorded(treasuryOutManager::handleRecorded);
-        ConnectionManager.onTreasuryOutError(treasuryOutManager::handleError);
+        ConnectionManager.listen(ConnectionManager.Inbound.TREASURY_OUT_RECORDED, treasuryOutManager::handleRecorded);
+        ConnectionManager.claim(ConnectionManager.Inbound.TREASURY_OUT_ERROR, treasuryOutManager::handleError);
         configManager = new ConfigManager();
         chatRegexFilterManager = new ChatRegexFilterManager();
         chatRegexFilterManager.settings().forEach(configManager::register);
@@ -570,9 +572,7 @@ public class SeqClient implements ClientModInitializer {
                 warTerritoryBoundsReminder.tick(client);
             }
 
-            if (partyFinderManager != null) {
-                partyFinderManager.tickOpenPartyAnnouncements();
-            }
+            getPartyFinderManager().tickOpenPartyAnnouncements();
             if (wynnPartySyncManager != null) {
                 wynnPartySyncManager.tick();
             }
@@ -600,7 +600,7 @@ public class SeqClient implements ClientModInitializer {
             RadianceCheckerClient.tick(client);
             ConnectionManager.flushPendingOutbound();
 
-            boolean inPartyFinder = partyFinderManager != null && partyFinderManager.isInParty();
+            boolean inPartyFinder = getPartyFinderManager().isInParty();
             if (!inPartyFinder) {
                 wasInPartyFinder = false;
                 lastBroadcastPartyClass = null;

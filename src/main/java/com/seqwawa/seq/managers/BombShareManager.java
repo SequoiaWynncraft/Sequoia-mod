@@ -46,8 +46,8 @@ public class BombShareManager implements NotificationAccessor {
     BombShareManager(BombStateProvider bombStateProvider) {
         this.bombStateProvider = Objects.requireNonNull(bombStateProvider, "bombStateProvider");
 
-        ConnectionManager.onBombSharePrompt(this::handlePrompt);
-        ConnectionManager.onBombShareResult(this::handleResult);
+        ConnectionManager.listen(ConnectionManager.Inbound.BOMB_SHARE_PROMPT, this::handlePrompt);
+        ConnectionManager.listen(ConnectionManager.Inbound.BOMB_SHARE_RESULT, this::handleResult);
     }
 
     public int requestBombShare(String rawSelectors) {

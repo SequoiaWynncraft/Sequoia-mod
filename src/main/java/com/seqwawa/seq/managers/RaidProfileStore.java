@@ -207,8 +207,7 @@ public final class RaidProfileStore {
      * backend's side: the panel still refreshes on open, on Refresh and after a save.
      */
     private void subscribeToLiveUpdates() {
-        // Pushes arrive on the socket's thread.
-        ConnectionManager.onRaidProfileUpdate(message -> gameThread.execute(() -> onLiveUpdate(message)));
+        ConnectionManager.listen(ConnectionManager.Inbound.RAID_PROFILE_UPDATE, this::onLiveUpdate);
     }
 
     void onLiveUpdate(ConnectionManager.RaidProfileUpdateMessage message) {

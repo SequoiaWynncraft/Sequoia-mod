@@ -184,14 +184,16 @@ class ConnectionReconnectTest {
     }
 
     @Test
-    void aSignInThatMayWorkLaterReconnectsOnTheSameBackoff() {
+    void aSignInThatMayWorkLaterReconnectsOnceTheSignInBackoffAllows() {
         harness.tokens.token = null;
         harness.connectAutomatically();
         harness.failToken(new com.seqwawa.seq.network.auth.AuthException(
                 com.seqwawa.seq.network.auth.AuthErrorCode.BACKEND_UNAVAILABLE, "Backend unavailable", true));
 
-        harness.advance(999);
+        // The reconnect is due after a second; since step 6 it then waits out the two-second sign-in backoff.
+        harness.advance(1_999);
         assertEquals(1, harness.tokens.requests.size());
+        assertTrue(ConnectionManager.hasReconnectTask());
         harness.advance(1);
         assertEquals(2, harness.tokens.requests.size());
         assertEquals(2, harness.sockets.size(), "the reconnect starts from a new socket");
@@ -205,7 +207,8 @@ class ConnectionReconnectTest {
 
         harness.echoClientClose();
 
-        assertEquals(1_000L, waitForNextSocket());
+        // A second for the reconnect, then the rest of the sign-in backoff the rejection started.
+        assertEquals(2_000L, waitForNextSocket());
     }
 
     @Test
@@ -216,7 +219,6 @@ class ConnectionReconnectTest {
         harness.connection().disconnect();
         harness.advance(60_000);
 
-        assertEquals(2, harness.sockets.size(), "only the instance disconnect made, which never connects");
-        assertFalse(harness.socket().connected());
+        assertEquals(1, harness.sockets.size(), "no reconnect made another socket");
     }
 }

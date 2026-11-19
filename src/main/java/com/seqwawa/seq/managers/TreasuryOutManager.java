@@ -1,5 +1,6 @@
 package com.seqwawa.seq.managers;
 
+import com.seqwawa.seq.client.ClientThread;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.network.ConnectionManager;
 import com.seqwawa.seq.network.TreasuryOutErrorMessage;
@@ -10,9 +11,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -21,13 +19,6 @@ public final class TreasuryOutManager {
 
     public static final String TREASURY_MINECRAFT_ACCOUNT = "cinfrascitizen";
     static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(20);
-
-    private static final ScheduledExecutorService TIMEOUT_EXECUTOR =
-            Executors.newSingleThreadScheduledExecutor(runnable -> {
-                Thread thread = new Thread(runnable, "seq-treasury-timeouts");
-                thread.setDaemon(true);
-                return thread;
-            });
 
     private final Supplier<String> requestIdFactory;
     private final Transport transport;
@@ -38,10 +29,8 @@ public final class TreasuryOutManager {
         this(
                 () -> UUID.randomUUID().toString(),
                 request -> ConnectionManager.getInstance().sendTreasuryOut(request),
-                (task, delay) -> {
-                    var future = TIMEOUT_EXECUTOR.schedule(task, delay.toMillis(), TimeUnit.MILLISECONDS);
-                    return () -> future.cancel(false);
-                });
+                // On the game thread, so a reply that arrived first is handled first.
+                (task, delay) -> ClientThread.after(delay, task)::cancel);
     }
 
     TreasuryOutManager(Supplier<String> requestIdFactory, Transport transport, TimeoutScheduler timeoutScheduler) {

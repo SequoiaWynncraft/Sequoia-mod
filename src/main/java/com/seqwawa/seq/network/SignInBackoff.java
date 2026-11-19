@@ -5,8 +5,8 @@ import java.util.function.LongSupplier;
 
 /**
  * Spaces out sign-ins after the backend or the auth service refuses one, so a refusal
- * that keeps coming doesn't turn into a sign-in every tick. The wait starts at two
- * seconds and doubles to a minute; an accepted sign-in or a fresh socket clears it.
+ * that keeps coming doesn't turn into a sign-in every tick, across reconnects. The wait
+ * starts at two seconds and doubles to a minute; an accepted sign-in or another account clears it.
  */
 final class SignInBackoff {
 
@@ -38,7 +38,7 @@ final class SignInBackoff {
         notBeforeMs = clockMs.getAsLong() + delay;
     }
 
-    /** A sign-in succeeded, or a new socket opened: the next may start at once. */
+    /** A sign-in succeeded, or the account changed: the next may start at once. */
     synchronized void reset() {
         failures = 0;
         notBeforeMs = 0;

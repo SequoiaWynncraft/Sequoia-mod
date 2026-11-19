@@ -2,7 +2,6 @@ package com.seqwawa.seq.network;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.gson.JsonObject;
@@ -10,7 +9,6 @@ import com.seqwawa.seq.model.GuildWarQueueSubmission;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import org.java_websocket.exceptions.WebsocketNotConnectedException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -69,21 +67,23 @@ class GuildWarOutboundQueueTest {
     }
 
     @Test
-    void socketClosingDuringSendRetainsEventForNextConnection() {
-        var queue = new GuildWarOutboundQueue();
-        queue.offer("guild_war_queue", queuePayload());
-        queue.flushOne((type, payload) -> ConnectionManager.tryGuildWarEventSend(() -> {
-            payload.addProperty("submitted_at", "changed by unsuccessful sender");
-            throw new WebsocketNotConnectedException();
-        }));
+    void socketClosingDuringSendRetainsEventForNextConnection(@TempDir Path config) {
+        try (var harness = new ConnectionHarness(config)) {
+            FakeBackendSocket first = harness.connectAsMember();
+            harness.advance(50);
+            // The backend has started closing; the game thread hasn't heard yet.
+            first.startClosingFromBackend();
 
-        var delivered = new ArrayList<JsonObject>();
-        queue.flushOne((type, payload) -> {
-            delivered.add(payload);
-            return true;
-        });
-        assertEquals(1, delivered.size());
-        assertEquals(QUEUED_AT, delivered.getFirst().get("submitted_at").getAsString());
+            assertTrue(harness.connection().sendGuildWarQueue(QUEUE), "accepted for delivery");
+            assertEquals(List.of("get_connected"), first.sentTypes());
+            first.finishClosingFromBackend(1006, "");
+            harness.settle();
+            harness.advance(1_000);
+            harness.open();
+            harness.signIn();
+
+            assertEquals(QUEUED_AT, harness.socket().lastSent("guild_war_queue").get("submitted_at").getAsString());
+        }
     }
 
     @Test
@@ -93,7 +93,6 @@ class GuildWarOutboundQueueTest {
             // Accepted while disconnected: it waits for a signed-in socket.
             assertTrue(first.sendGuildWarQueue(QUEUE));
             first.disconnect();
-            assertNotSame(first, harness.connection());
 
             harness.connectAutomatically();
             FakeBackendSocket socket = harness.open();

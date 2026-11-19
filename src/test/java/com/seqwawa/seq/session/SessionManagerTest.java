@@ -11,18 +11,26 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.seqwawa.seq.client.TickQueue;
+import com.seqwawa.seq.network.TestApiClients;
 import com.seqwawa.seq.network.auth.AuthErrorCode;
 import com.seqwawa.seq.network.auth.AuthState;
 import com.seqwawa.seq.network.auth.MinecraftAuthService;
 import com.seqwawa.seq.network.auth.NotSignedInException;
 import com.seqwawa.seq.network.auth.StoredAuthSession;
 import com.seqwawa.seq.ui.unlock.UnlockPopup;
+import com.sun.net.httpserver.HttpServer;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 import org.junit.jupiter.api.Test;
 
@@ -93,7 +101,6 @@ class SessionManagerTest {
                 "clearSession",
                 "end session",
                 "forgetPartyClassBroadcast",
-                "resetPartyFinder",
                 "resetWynnPartySync",
                 "resetRaidPartySnapshot",
                 "resetGuildPresence",
@@ -103,22 +110,39 @@ class SessionManagerTest {
     }
 
     @Test
-    void switchingToTheAccountTheSignInSpeaksForKeepsTheConnectionAndHandsTheTokenOn() {
+    void switchingToTheAccountTheSignInSpeaksForHandsTheTokenOnButNotWhatTheBackendSaidToTheOtherAccount() {
         recordEndOf(sessions.current());
         sessions.end(new EndReason.AccountSwitch(true));
 
-        assertFalse(calls.contains("resetConnectionForAccountChange"));
+        // A pause or refusals the shared account's socket earned would otherwise hold the operator's connects back.
+        assertEquals(List.of("resetGuildStorage", "resetConnectionForAccountChange", "carrySignInOver", "end session"),
+                calls.subList(0, 4), "the account's own state still goes");
         assertFalse(calls.contains("clearSession"));
-        assertTrue(calls.contains("carrySignInOver"));
-        assertTrue(calls.contains("end session"), "the account's own state still goes");
     }
 
     @Test
-    void signingOutEndsTheSignInBeforeClosingTheConnection() {
+    void signingOutEndsTheSignInBeforeTheSession() {
         recordEndOf(sessions.current());
         sessions.end(EndReason.SIGN_OUT);
 
-        assertEquals(List.of("signOut", "end session", "disconnect", "resetPartyFinder"), calls);
+        assertEquals(List.of("signOut", "end session"), calls);
+    }
+
+    @Test
+    void endingASessionClosesItsConnectionAndDropsItsPartyFinderThroughTheSession() {
+        Session first = sessions.current();
+        List<String> closed = new ArrayList<>();
+        first.whenEnded("connection", () -> closed.add("socket closed"));
+        var partyFinder = first.partyFinder();
+        assertSame(partyFinder, first.partyFinder());
+
+        sessions.end(EndReason.SIGN_OUT);
+
+        assertEquals(List.of("signOut", "connection stopped", "partyFinder stopped"), calls);
+        assertEquals(List.of("socket closed"), closed);
+        assertNotSame(partyFinder, sessions.current().partyFinder(), "the next session has a party finder of its own");
+        first.whenEnded("late", () -> closed.add("late socket closed"));
+        assertEquals(List.of("socket closed", "late socket closed"), closed, "one that ended stops what joins it at once");
     }
 
     @Test
@@ -130,8 +154,6 @@ class SessionManagerTest {
                 "dropPendingWarEvents",
                 "signOut",
                 "end session",
-                "disconnect",
-                "resetPartyFinder",
                 "forgetDiscordName",
                 "tellPlayer: Backend session cleared. Run /seq connect to sign in again."), calls);
     }
@@ -141,8 +163,8 @@ class SessionManagerTest {
         recordEndOf(sessions.current());
         sessions.end(new EndReason.TokenRejected("operator-token", AuthErrorCode.TOKEN_INVALID, "Rejected."));
 
-        assertEquals(List.of("invalidateSession: TOKEN_INVALID Rejected.", "end session", "resetPartyFinder"), calls,
-                "neither a sign-out nor a disconnect");
+        assertEquals(List.of("invalidateSession: TOKEN_INVALID Rejected.", "end session"), calls,
+                "neither a sign-out nor a disconnect: the refused socket already closes to sign in afresh");
     }
 
     @Test
@@ -158,7 +180,7 @@ class SessionManagerTest {
         assertEquals(sharedSignIn, auth.sessionGeneration(), "the shared account's sign-in is not ended");
         assertSame(shared, sessions.current());
         assertFalse(shared.isEnded());
-        assertFalse(calls.contains("resetPartyFinder"));
+        assertEquals(List.of("invalidateSession: TOKEN_INVALID Rejected."), calls, "nothing of the shared session stops");
     }
 
     @Test
@@ -286,8 +308,7 @@ class SessionManagerTest {
 
         sessions.end(EndReason.SIGN_OUT);
 
-        assertEquals(List.of("signOut", "leafQuests stopped", "raidProfiles stopped", "disconnect", "resetPartyFinder"),
-                calls);
+        assertEquals(List.of("signOut", "leafQuests stopped", "raidProfiles stopped"), calls);
         assertNotSignedIn(raidProfiles.ensureToken(false));
         Session next = sessions.current();
         assertNotSame(quests, next.leafQuests());
@@ -296,17 +317,72 @@ class SessionManagerTest {
         var progress = next.raidProgress();
         var planner = next.warPlanner();
         var queue = next.warQueue();
+        var partyFinder = next.partyFinder();
         calls.clear();
 
         sessions.end(EndReason.CLEAR_SESSION);
 
         assertEquals(List.of("leafQuests stopped", "raidProfiles stopped", "princessStats stopped", "raidProgress stopped",
-                        "warPlanner stopped", "warQueue stopped"),
+                        "warPlanner stopped", "warQueue stopped", "partyFinder stopped"),
                 calls.stream().filter(call -> call.endsWith(" stopped")).toList());
         assertNotSame(princess, sessions.current().princessStats());
         assertNotSame(progress, sessions.current().raidProgress());
         assertNotSame(planner, sessions.current().warPlanner());
         assertNotSame(queue, sessions.current().warQueue());
+        assertNotSame(partyFinder, sessions.current().partyFinder());
+    }
+
+    @Test
+    void anEndedSessionsOwnRequestsRefuseRatherThanTakeTheNextAccountsToken() {
+        Session previous = sessions.current();
+        var previousClient = com.seqwawa.seq.network.ApiClient.getInstance().forSession(previous);
+
+        sessions.end(new EndReason.AccountSwitch(true));
+        assertEquals("operator-token", sessions.current().token(false).join(), "the next session holds a token");
+
+        // Guild raid progress, its 404/405 fallback GET included, asks its own session for the token, before any request.
+        assertNotSignedIn(previousClient.getGuildRaidProgress(true));
+    }
+
+    @Test
+    void aRaidProgressFallbackDueAfterItsSessionEndedRefusesRatherThanGoOutWithoutAToken() throws Exception {
+        HttpServer backend = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        CountDownLatch posted = new CountDownLatch(1);
+        CountDownLatch ended = new CountDownLatch(1);
+        List<String> reads = new CopyOnWriteArrayList<>();
+        backend.createContext("/achievements/progress", exchange -> {
+            if ("POST".equals(exchange.getRequestMethod())) {
+                posted.countDown();
+                try {
+                    ended.await(5, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                // A backend without the recording route.
+                exchange.sendResponseHeaders(404, -1);
+            } else {
+                reads.add(String.valueOf(exchange.getRequestHeaders().getFirst("Authorization")));
+                byte[] body = "{}".getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(200, body.length);
+                exchange.getResponseBody().write(body);
+            }
+            exchange.close();
+        });
+        backend.start();
+        try {
+            var client = TestApiClients.at("http://127.0.0.1:" + backend.getAddress().getPort()).forSession(sessions.current());
+
+            // The POST goes out with the session's token; its 404 comes back once the session has ended.
+            CompletableFuture<?> progress = client.getGuildRaidProgress(true);
+            assertTrue(posted.await(5, TimeUnit.SECONDS), "the POST is under way");
+            sessions.end(EndReason.SIGN_OUT);
+            ended.countDown();
+
+            assertNotSignedIn(progress);
+            assertEquals(List.of(), reads, "the fallback read never goes out");
+        } finally {
+            backend.stop(0);
+        }
     }
 
     @Test
@@ -393,7 +469,7 @@ class SessionManagerTest {
         return new UnlockPopup(UnlockPopup.Kind.TOAST, null, title, "The Nameless Anomaly", 330, 330, null, null);
     }
 
-    private static void assertNotSignedIn(CompletableFuture<String> token) {
+    private static void assertNotSignedIn(CompletableFuture<?> token) {
         CompletionException failure = assertThrows(CompletionException.class, token::join);
         assertInstanceOf(NotSignedInException.class, failure.getCause());
     }

@@ -6,6 +6,7 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
@@ -29,6 +30,7 @@ import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import com.seqwawa.seq.accessors.NotificationAccessor;
+import com.seqwawa.seq.client.ClientThread;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.integrations.WynntilsWorldStateAccess;
 import com.seqwawa.seq.network.ApiClient;
@@ -45,6 +47,8 @@ public class PartyFinderManager implements NotificationAccessor {
                     Instant.class, (JsonDeserializer<Instant>) (json, type, ctx) -> Instant.parse(json.getAsString()))
             .create();
     private static final long INVITE_NAME_LOOKUP_TIMEOUT_SECONDS = 3L;
+    /** Looks up a player's name: who sent an invite, or whom a party command names. A test answers when it chooses. */
+    static Function<String, CompletableFuture<String>> playerNames = PlayerNameCache::resolveAsync;
     private static final long INVITE_ALL_COMMAND_DELAY_MS = 500L;
     private static final String GAME_PARTY_CREATE_COMMAND = "party create";
     private static final String GAME_PARTY_INVITE_PREFIX = "party invite ";
@@ -79,8 +83,9 @@ public class PartyFinderManager implements NotificationAccessor {
     private volatile int listingsVersion = 0;
 
     /** Moves on at each {@link #reset()}; a request remembers the value it started under. */
-
     private volatile long resetGeneration;
+    /** Where what the player sees or sends is handed to the game thread; a test passes its own queue. */
+    private final Executor gameThread;
     private int cachedVersion = -1;
     private volatile String latestPartyError;
     private volatile long nextOpenPartyAnnouncementAtMs;
@@ -125,41 +130,24 @@ public class PartyFinderManager implements NotificationAccessor {
     private record IssuedInvite(UUID targetUUID, String username, String inviteToken) {}
 
     public PartyFinderManager() {
-        SeqClient.LOGGER.info("[PartyFinderWS] Registering party finder websocket handlers");
-        // Register for real-time WS updates
-        ConnectionManager.onPartyFinderUpdate(update -> {
-            SeqClient.LOGGER.info(
-                    "[PartyFinderWS] Received update callback action={} hasListingJson={}",
-                    update.action(),
-                    update.listingJson() != null);
-            Listing listing = GSON.fromJson(update.listingJson(), Listing.class);
-            handlePartyFinderUpdate(update.action(), listing);
-        });
+        this(ClientThread.executor());
+    }
 
-        ConnectionManager.onPartyFinderInvite(invite -> {
-            SeqClient.LOGGER.info(
-                    "[PartyFinderWS] Received invite callback listingId={} inviterUUID={} tokenPresent={} hasListingJson={}",
-                    invite.listingId(),
-                    invite.inviterUUID(),
-                    invite.inviteToken() != null && !invite.inviteToken().isBlank(),
-                    invite.listingJson() != null);
-            Listing listing = null;
-            if (invite.listingJson() != null) {
-                listing = GSON.fromJson(invite.listingJson(), Listing.class);
-            }
-            handlePartyFinderInvite(invite.listingId(), invite.inviterUUID(), invite.inviteToken(), listing);
-        });
+    PartyFinderManager(Executor gameThread) {
+        this.gameThread = gameThread;
+    }
 
-        ConnectionManager.onPartyFinderStaleWarning(warning -> {
-            SeqClient.LOGGER.info(
-                    "[PartyFinderWS] Received stale warning callback reason={} listingId={} disbandAt={} minutesRemaining={}",
-                    warning.reason(),
-                    warning.listingId(),
-                    warning.disbandAt(),
-                    warning.minutesRemaining());
-            handlePartyFinderStaleWarning(
-                    warning.reason(), warning.listingId(), warning.disbandAt(), warning.minutesRemaining());
-        });
+    /** Hands the backend's party finder messages to the current session's party finder, from now on. */
+    public static void listen() {
+        ConnectionManager.listen(ConnectionManager.Inbound.PARTY_FINDER_UPDATE, update -> SeqClient.getPartyFinderManager()
+                .handlePartyFinderUpdate(update.action(), GSON.fromJson(update.listingJson(), Listing.class)));
+        ConnectionManager.listen(ConnectionManager.Inbound.PARTY_FINDER_INVITE, invite -> SeqClient.getPartyFinderManager()
+                .handlePartyFinderInvite(invite.listingId(), invite.inviterUUID(), invite.inviteToken(),
+                        invite.listingJson() == null ? null : GSON.fromJson(invite.listingJson(), Listing.class)));
+        ConnectionManager.listen(ConnectionManager.Inbound.PARTY_FINDER_STALE_WARNING, warning -> SeqClient
+                .getPartyFinderManager()
+                .handlePartyFinderStaleWarning(
+                        warning.reason(), warning.listingId(), warning.disbandAt(), warning.minutesRemaining()));
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -918,9 +906,12 @@ public class PartyFinderManager implements NotificationAccessor {
             refreshCurrentListing();
         }
 
-        PlayerNameCache.resolveAsync(inviterUUID)
+        // Shown only while this party finder's session lasts, to the player it came for.
+        long startedFor = resetGeneration;
+        Object connection = gameConnection();
+        playerNames.apply(inviterUUID)
                 .completeOnTimeout(null, INVITE_NAME_LOOKUP_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-                .whenComplete((resolvedName, error) -> {
+                .whenComplete((resolvedName, error) -> forSamePlayer(startedFor, connection, () -> {
                     String inviterName = formatInviterName(resolvedName);
                     SeqClient.LOGGER.info(
                             "[PartyFinderWS] Resolved inviter name='{}' for uuid={}", inviterName, inviterUUID);
@@ -937,7 +928,7 @@ public class PartyFinderManager implements NotificationAccessor {
                         notifyInviteWithJoinAction(
                                 "Party Finder invite from " + inviterName + ".", listingId, inviteToken);
                     }
-                });
+                }));
 
         SeqClient.LOGGER.info(
                 "Received party_finder_invite listingId={} inviterUUID={} tokenPresent={}",
@@ -2754,12 +2745,14 @@ public class PartyFinderManager implements NotificationAccessor {
         return GAME_PARTY_INVITE_PREFIX + username;
     }
 
-    private void sendGamePartyCommandForUuid(UUID targetUUID, String commandPrefix) {
+    void sendGamePartyCommandForUuid(UUID targetUUID, String commandPrefix) {
         if (targetUUID == null || commandPrefix == null || commandPrefix.isBlank()) {
             return;
         }
 
-        PlayerNameCache.resolveAsync(targetUUID.toString())
+        long startedFor = resetGeneration;
+        Object connection = gameConnection();
+        playerNames.apply(targetUUID.toString())
                 .completeOnTimeout(null, INVITE_NAME_LOOKUP_TIMEOUT_SECONDS, TimeUnit.SECONDS)
                 .thenAccept(resolvedName -> {
                     if (resolvedName == null
@@ -2771,15 +2764,35 @@ public class PartyFinderManager implements NotificationAccessor {
                                 "Skipping party command '{}' for unresolved UUID {}", commandPrefix, targetUUID);
                         return;
                     }
-
-                    SeqClient.mc.execute(() -> {
-                        var player = SeqClient.mc.player;
-                        if (player == null || player.connection == null) {
-                            return;
-                        }
-                        player.connection.sendCommand(commandPrefix + resolvedName);
-                    });
+                    forSamePlayer(startedFor, connection, () -> sendGameCommand(commandPrefix + resolvedName));
                 });
+    }
+
+    /**
+     * Runs {@code action} on the game thread, unless this party finder's session has ended, or the
+     * player has moved to another server connection, since {@code startedFor} and {@code connection}
+     * were read: an invite or command one session began never reaches the account after it.
+     */
+    private void forSamePlayer(long startedFor, Object connection, Runnable action) {
+        gameThread.execute(() -> {
+            if (startedFor == resetGeneration && connection == gameConnection()) {
+                action.run();
+            }
+        });
+    }
+
+    /** The player's server connection, compared by identity, or null without one. */
+    Object gameConnection() {
+        var player = SeqClient.mc.player;
+        return player == null ? null : player.connection;
+    }
+
+    /** Sends {@code command} as the player. Game thread only. */
+    void sendGameCommand(String command) {
+        var player = SeqClient.mc.player;
+        if (player != null && player.connection != null) {
+            player.connection.sendCommand(command);
+        }
     }
 
     private static String validateUsername(String username, boolean rejectSelf) {
@@ -2926,13 +2939,7 @@ public class PartyFinderManager implements NotificationAccessor {
             return;
         }
 
-        SeqClient.mc.execute(() -> {
-            var player = SeqClient.mc.player;
-            if (player == null || player.connection == null) {
-                return;
-            }
-            player.connection.sendCommand("msg " + targetName + " " + message);
-        });
+        forSamePlayer(resetGeneration, gameConnection(), () -> sendGameCommand("msg " + targetName + " " + message));
     }
 
     private void applyReservedSlotTarget(long listingId, int requestedReservedSlots, String context) {

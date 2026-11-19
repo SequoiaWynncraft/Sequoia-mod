@@ -13,6 +13,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -65,6 +66,33 @@ class ConnectionInboundTest {
     }
 
     @Test
+    void connectedUsersTheSendThrottleHeldBackAreAskedForOnceItAllows() {
+        connect();
+        assertTrue(harness.connection().sendGuildChat("Sequoian", null, "hello", null, List.of(), false));
+        List<List<String>> answers = new ArrayList<>();
+
+        harness.connection().requestConnectedUsers(answers::add);
+        assertEquals(List.of("guild_chat"), socket.sentTypes(), "the guild chat holds the throttle");
+
+        // Fixed in step 6: the dropped get_connected left this waiting until some other request's reply.
+        harness.advance(50);
+        assertEquals(List.of("guild_chat", "get_connected"), socket.sentTypes());
+        harness.confirmMembership("Sequoian");
+        assertEquals(List.of(List.of("Sequoian")), answers);
+    }
+
+    @Test
+    void whoeverStillWaitsOnConnectedUsersIsAnsweredWhenTheSocketCloses() {
+        connect();
+        List<List<String>> answers = new ArrayList<>();
+        harness.connection().requestConnectedUsers(answers::add);
+
+        harness.closeFromBackend(1006, "");
+
+        assertEquals(List.of(List.of()), answers);
+    }
+
+    @Test
     void aLaterConnectedUsersReachesNobodyAlreadyAnswered() {
         connect();
         List<List<String>> answers = new ArrayList<>();
@@ -114,8 +142,8 @@ class ConnectionInboundTest {
     void aBombSharePromptReachesItsHandlerAndIsKeptUntilItsResult() {
         List<ConnectionManager.BombSharePromptMessage> prompts = new ArrayList<>();
         List<ConnectionManager.BombShareResultMessage> results = new ArrayList<>();
-        ConnectionManager.onBombSharePrompt(prompts::add);
-        ConnectionManager.onBombShareResult(results::add);
+        ConnectionManager.listen(ConnectionManager.Inbound.BOMB_SHARE_PROMPT, prompts::add);
+        ConnectionManager.listen(ConnectionManager.Inbound.BOMB_SHARE_RESULT, results::add);
         connect();
 
         harness.receive("{\"type\":\"bomb_share_prompt\",\"request_id\":\"r1\",\"requester_username\":\"Recruit\","
@@ -177,7 +205,7 @@ class ConnectionInboundTest {
     @Test
     void displayableGuildChatIsDeliveredOnTheGameThread() {
         List<ConnectionManager.GuildChatMessage> received = new ArrayList<>();
-        ConnectionManager.onGuildChat(received::add);
+        ConnectionManager.listen(ConnectionManager.Inbound.GUILD_CHAT, received::add);
         connect();
 
         socket.receive("{\"type\":\"guild_chat\",\"username\":\"Recruit\",\"nickname\":\"Rec\",\"message\":\"hi\","
@@ -191,7 +219,7 @@ class ConnectionInboundTest {
     @Test
     void guildChatNotMeantForDisplayIsShownOnlyInTheServerQueue() {
         List<ConnectionManager.GuildChatMessage> received = new ArrayList<>();
-        ConnectionManager.onGuildChat(received::add);
+        ConnectionManager.listen(ConnectionManager.Inbound.GUILD_CHAT, received::add);
         connect();
         String echo = "{\"type\":\"guild_chat\",\"username\":\"Recruit\",\"message\":\"hi\",\"should_be_displayed\":false}";
 
@@ -206,7 +234,7 @@ class ConnectionInboundTest {
     @Test
     void guildChatFromAnEndedServerConnectionIsDropped() {
         List<ConnectionManager.GuildChatMessage> received = new ArrayList<>();
-        ConnectionManager.onGuildChat(received::add);
+        ConnectionManager.listen(ConnectionManager.Inbound.GUILD_CHAT, received::add);
         connect();
 
         socket.receive("{\"type\":\"guild_chat\",\"username\":\"Recruit\",\"message\":\"hi\",\"should_be_displayed\":true}");
@@ -219,7 +247,7 @@ class ConnectionInboundTest {
     @Test
     void guildChatForAnAccountThatChangedIsDropped() {
         List<ConnectionManager.GuildChatMessage> received = new ArrayList<>();
-        ConnectionManager.onGuildChat(received::add);
+        ConnectionManager.listen(ConnectionManager.Inbound.GUILD_CHAT, received::add);
         connect();
 
         socket.receive("{\"type\":\"guild_chat\",\"username\":\"Recruit\",\"message\":\"hi\",\"should_be_displayed\":true}");
@@ -230,9 +258,23 @@ class ConnectionInboundTest {
     }
 
     @Test
+    void guildChatThePreviousAccountsSocketReceivesAfterMinecraftSwitchedAccountIsDropped() {
+        List<ConnectionManager.GuildChatMessage> received = new ArrayList<>();
+        ConnectionManager.listen(ConnectionManager.Inbound.GUILD_CHAT, received::add);
+        connect();
+        // Minecraft switched account before the session noticed, so the socket still signs in for the previous one.
+        harness.game.account = new Object();
+        harness.game.profileId = UUID.fromString("f1000000-0000-0000-0000-000000000002");
+
+        harness.receive("{\"type\":\"guild_chat\",\"username\":\"Recruit\",\"message\":\"hi\",\"should_be_displayed\":true}");
+
+        assertEquals(List.of(), received);
+    }
+
+    @Test
     void guildChatIsDroppedWhenTheSocketClosesBeforeDelivery() {
         List<ConnectionManager.GuildChatMessage> received = new ArrayList<>();
-        ConnectionManager.onGuildChat(received::add);
+        ConnectionManager.listen(ConnectionManager.Inbound.GUILD_CHAT, received::add);
         connect();
 
         socket.receive("{\"type\":\"guild_chat\",\"username\":\"Recruit\",\"message\":\"hi\",\"should_be_displayed\":true}");
@@ -245,7 +287,7 @@ class ConnectionInboundTest {
     @Test
     void guildChatWithoutAServerConnectionIsDropped() {
         List<ConnectionManager.GuildChatMessage> received = new ArrayList<>();
-        ConnectionManager.onGuildChat(received::add);
+        ConnectionManager.listen(ConnectionManager.Inbound.GUILD_CHAT, received::add);
         connect();
         harness.game.serverConnection = null;
 
@@ -259,7 +301,7 @@ class ConnectionInboundTest {
     @Test
     void discordChatReachesItsHandlerWithTheSendersDiscordId() {
         List<ConnectionManager.DiscordChatMessage> received = new ArrayList<>();
-        ConnectionManager.onDiscordChat(received::add);
+        ConnectionManager.listen(ConnectionManager.Inbound.DISCORD_CHAT, received::add);
         connect();
 
         harness.receive("{\"type\":\"discord_chat\",\"username\":\"[Mod] Someone\",\"message\":\"hello\",\"discord_id\":\"42\"}");
@@ -273,7 +315,7 @@ class ConnectionInboundTest {
     @Test
     void discordChatFromAnIgnoredBridgeUserIsDropped() {
         List<ConnectionManager.DiscordChatMessage> received = new ArrayList<>();
-        ConnectionManager.onDiscordChat(received::add);
+        ConnectionManager.listen(ConnectionManager.Inbound.DISCORD_CHAT, received::add);
         harness.config.addIgnoredBridgeUser("Pest");
         connect();
 
@@ -287,7 +329,7 @@ class ConnectionInboundTest {
     @Test
     void partyFinderUpdatesReachTheirHandler() {
         List<ConnectionManager.PartyFinderUpdateMessage> received = new ArrayList<>();
-        ConnectionManager.onPartyFinderUpdate(received::add);
+        ConnectionManager.listen(ConnectionManager.Inbound.PARTY_FINDER_UPDATE, received::add);
         connect();
 
         harness.receive("{\"type\":\"party_finder_update\",\"action\":\"created\",\"listing\":{\"id\":7}}");
@@ -302,7 +344,7 @@ class ConnectionInboundTest {
     @Test
     void raidProfileUpdatesReachTheirHandlerOnlyWithAProfile() {
         List<ConnectionManager.RaidProfileUpdateMessage> received = new ArrayList<>();
-        ConnectionManager.onRaidProfileUpdate(received::add);
+        ConnectionManager.listen(ConnectionManager.Inbound.RAID_PROFILE_UPDATE, received::add);
         connect();
 
         harness.receive("{\"type\":\"raid_profile_update\",\"action\":\"removed\",\"profile\":{\"minecraft\":\"Recruit\"}}");
@@ -316,7 +358,7 @@ class ConnectionInboundTest {
     @Test
     void partyFinderInvitesReachTheirHandler() {
         List<ConnectionManager.PartyFinderInviteMessage> received = new ArrayList<>();
-        ConnectionManager.onPartyFinderInvite(received::add);
+        ConnectionManager.listen(ConnectionManager.Inbound.PARTY_FINDER_INVITE, received::add);
         connect();
 
         harness.receive("{\"type\":\"party_finder_invite\",\"listing_id\":7,\"inviter_uuid\":\"u-1\","
@@ -334,7 +376,7 @@ class ConnectionInboundTest {
     @Test
     void partyFinderStaleWarningsReachTheirHandler() {
         List<ConnectionManager.PartyFinderStaleWarningMessage> received = new ArrayList<>();
-        ConnectionManager.onPartyFinderStaleWarning(received::add);
+        ConnectionManager.listen(ConnectionManager.Inbound.PARTY_FINDER_STALE_WARNING, received::add);
         connect();
 
         harness.receive("{\"type\":\"party_finder_stale_warning\",\"reason\":\"idle\",\"listing_id\":7,"
@@ -386,16 +428,16 @@ class ConnectionInboundTest {
     }
 
     @Test
-    void aRepeatedVersionWarningForAnUnnamedFeatureSaysSomeTwice() {
+    void aRepeatedVersionWarningForAnUnnamedFeatureNamesSequoiaFeatures() {
         connect();
         for (int rejection = 1; rejection <= 5; rejection++) {
             error("\"status\":426,\"capability\":\"war_status\",\"message\":\"Unknown backend error\"");
         }
 
-        // Pinned as it reads today: "Some some Sequoia features". A later fix may word it better.
+        // Fixed in step 6: it read "Some some Sequoia features".
         assertEquals(List.of(
                 "Update Sequoia to at least the required version.",
-                "Sequoia is outdated. Some some Sequoia features may not work until you update to a newer version."),
+                "Sequoia is outdated. Some Sequoia features may not work until you update to a newer version."),
                 harness.told);
     }
 
@@ -532,7 +574,7 @@ class ConnectionInboundTest {
     @Test
     void unknownUntypedAndMalformedMessagesAreIgnoredAndTheConnectionCarriesOn() {
         List<ConnectionManager.DiscordChatMessage> received = new ArrayList<>();
-        ConnectionManager.onDiscordChat(received::add);
+        ConnectionManager.listen(ConnectionManager.Inbound.DISCORD_CHAT, received::add);
         connect();
 
         harness.receive("{\"type\":\"something_new\"}");
@@ -549,7 +591,7 @@ class ConnectionInboundTest {
     @Test
     void messagesFromAReplacedSocketAreIgnored() {
         List<ConnectionManager.DiscordChatMessage> received = new ArrayList<>();
-        ConnectionManager.onDiscordChat(received::add);
+        ConnectionManager.listen(ConnectionManager.Inbound.DISCORD_CHAT, received::add);
         connect();
         FakeBackendSocket first = socket;
         harness.connection().disconnect();

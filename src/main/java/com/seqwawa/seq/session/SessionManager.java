@@ -121,16 +121,16 @@ public final class SessionManager {
                         SeqClient.getGuildStorageTracker().reset();
                     }
                 });
+                // What the backend said to the previous account stays with it, even when the sign-in carries over.
+                step("resetConnectionForAccountChange", ConnectionManager::resetForAccountChange);
                 if (accountSwitch.keepSignIn()) {
                     // A fresh sign-in with the same token: what the ended session started never reaches the next.
                     auth.carrySignInOver();
                 } else {
-                    step("resetConnectionForAccountChange", ConnectionManager::resetForAccountChange);
                     auth.clearSession();
                 }
                 startNextSession(false);
                 step("forgetPartyClassBroadcast", SeqClient::forgetPartyClassBroadcast);
-                resetPartyFinder();
                 step("resetWynnPartySync", () -> {
                     if (SeqClient.getWynnPartySyncManager() != null) {
                         SeqClient.getWynnPartySyncManager().reset();
@@ -160,39 +160,29 @@ public final class SessionManager {
             case EndReason.TokenRejected rejected -> {
                 // An old socket's refusal that lands after its sign-in ended has nothing left to end.
                 if (auth.invalidateSession(rejected.token(), rejected.code(), rejected.message())) {
-                    // The connection signs in again by itself, so it is left alone.
+                    // The refused socket is already closing to sign in afresh, which its session's end leaves alone.
                     startNextSession(true);
-                    resetPartyFinder();
                 }
             }
         }
     }
 
-    /** Signed out before the socket closes, so a reconnect already running cannot sign in again in between. */
+    /** Signed out before the session's socket closes, so a reconnect already running cannot sign in again in between. */
     private void signOut() {
         auth.signOut();
         startNextSession(true);
-        step("disconnect", () -> ConnectionManager.getInstance().disconnectForSessionEnd());
-        resetPartyFinder();
     }
 
     /**
-     * Ends the current session, stopping what it owned, and starts the next with the auth service's
-     * current sign-in. {@code samePlayer}: its Leaf stream resumes after the ended one's last event.
+     * Ends the current session, stopping what it owned, its connection and party finder included, and
+     * starts the next with the auth service's current sign-in. {@code samePlayer}: its Leaf stream
+     * resumes after the ended one's last event.
      */
     private void startNextSession(boolean samePlayer) {
         Session ended = current;
         // Stopped first, so its stream's place no longer moves.
         ended.end();
         current = newSession(samePlayer ? ended.leafCursor() : null);
-    }
-
-    private void resetPartyFinder() {
-        step("resetPartyFinder", () -> {
-            if (SeqClient.getPartyFinderManager() != null) {
-                SeqClient.getPartyFinderManager().reset();
-            }
-        });
     }
 
     private void step(String name, Runnable live) {

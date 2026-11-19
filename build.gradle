@@ -116,8 +116,6 @@ dependencies {
         implementation("org.apache.httpcomponents:httpclient:4.5.14")
     }
 
-    // WebSocket client
-    include(implementation("org.java-websocket:Java-WebSocket:1.6.0"))
 
     // Theme files
     include(implementation("org.snakeyaml:snakeyaml-engine:3.0.1"))

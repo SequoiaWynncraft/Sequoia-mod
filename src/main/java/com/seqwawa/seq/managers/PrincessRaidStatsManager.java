@@ -65,8 +65,9 @@ public final class PrincessRaidStatsManager {
     private String recentRaidName;
     private Instant recentRaidAt;
 
-    public PrincessRaidStatsManager() {
-        this(new ApiGateway(ApiClient.getInstance()), Clock.systemUTC(), ClientThread.executor());
+    /** The stats for one session, read and recorded with {@code api}, which carries that session's token. */
+    public PrincessRaidStatsManager(ApiClient api) {
+        this(new ApiGateway(api), Clock.systemUTC(), ClientThread.executor());
     }
 
     PrincessRaidStatsManager(Gateway gateway, Clock clock, Executor gameThread) {
