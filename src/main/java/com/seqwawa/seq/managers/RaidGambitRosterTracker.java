@@ -111,16 +111,21 @@ public final class RaidGambitRosterTracker {
         return count;
     }
 
+    /**
+     * The player a head stands for: the one it is named for, as Wynntils reads it. Wynncraft draws these
+     * heads from skin-only profiles with no name, so the profile's name is only a fallback.
+     */
     private static String resolveUsername(ItemStack stack) {
         Component hoverName = stack.getHoverName();
-        ResolvableProfile profile = stack.get(DataComponents.PROFILE);
-        if (profile != null) {
-            return PacketNameResolver.profile(hoverName.getString(), profile.name().orElse(null),
-                    profile.partialProfile().id(), "raid.gambit").username();
-        }
-
         var resolver = PacketNameResolver.from(hoverName);
-        return resolver.resolve(0, resolver.text().length(), PacketNameResolver.Policy.CHAT, "raid.gambit").username();
+        String named = resolver.resolve(0, resolver.text().length(), PacketNameResolver.Policy.CHAT, "raid.gambit")
+                .username();
+        if (named != null) {
+            return named;
+        }
+        ResolvableProfile profile = stack.get(DataComponents.PROFILE);
+        return profile == null ? null : PacketNameResolver.profile(hoverName.getString(), profile.name().orElse(null),
+                profile.partialProfile().id(), "raid.gambit").username();
     }
 
     record PlayerGambitObservation(String username, int gambitCount) {}
