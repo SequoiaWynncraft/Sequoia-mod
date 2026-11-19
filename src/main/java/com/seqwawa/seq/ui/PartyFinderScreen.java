@@ -16,7 +16,6 @@ import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.NotNull;
 import org.lwjgl.glfw.GLFW;
 import com.seqwawa.seq.accessors.PartyAccessor;
-import com.seqwawa.seq.client.ClientThread;
 import com.seqwawa.seq.client.Clocks;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.managers.AssetManager;
@@ -163,8 +162,18 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
     // ── Leader member management ──
     private final List<MemberButton> renderedMemberActionBounds = new ArrayList<>();
     private final List<JoinButton> renderedJoinButtonBounds = new ArrayList<>();
+    private List<Card> renderedCards = List.of();
 
-    private record TagChip(String tag, UiBounds bounds) {}
+    /** A filter chip as drawn: turned {@code degrees} about its centre while it swings. */
+    record TagChip(String tag, UiBounds bounds, float degrees) {
+        boolean contains(UiPointer at) {
+            double turn = Math.toRadians(-degrees);
+            float dx = at.x() - bounds.centerX();
+            float dy = at.y() - bounds.centerY();
+            return bounds.contains(bounds.centerX() + (float) (dx * Math.cos(turn) - dy * Math.sin(turn)),
+                    bounds.centerY() + (float) (dx * Math.sin(turn) + dy * Math.cos(turn)));
+        }
+    }
 
     private enum MemberAction {
         PROMOTE,
@@ -191,8 +200,8 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
             float titleRight,
             float height) {}
 
-    /** A card as laid out this frame: the party, its index among all parties, and where it is. */
-    private record Card(PartyListing party, int index, UiBounds bounds) {}
+    /** A card as laid out this frame: the party, and where it is. */
+    private record Card(PartyListing party, UiBounds bounds) {}
 
     /** The create or update modal, laid out once for drawing and clicking. */
     private record PartyModal(float x, float y) {
@@ -315,12 +324,11 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
 
         canvas.save();
         canvas.scissor(panelX, contentY, panelWidth, contentHeight);
-        List<Card> cards = new ArrayList<>();
-        float cursorY = layoutCards(panelX, panelWidth, contentY, cards);
-        for (Card card : cards) {
-            renderPartyCard(canvas, fontName, card);
+        Listing joined = party().getCurrentListing();
+        renderedCards = layoutCards(panelX, panelWidth, contentY, contentHeight);
+        for (Card card : renderedCards) {
+            renderPartyCard(canvas, fontName, card, joined);
         }
-        scroll.setMax(cursorY + scroll.offset() - contentY - contentHeight);
         canvas.restore();
 
         scroll.draw(canvas, scrollTrack(panelX, panelWidth, contentY, contentHeight));
@@ -353,24 +361,42 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
         renderStatusBanner(canvas, fontName, panelX, panelWidth, screenHeight);
     }
 
-    /**
-     * Lays out the cards the search and tag filter let through, from the scroll offset down,
-     * and returns where the next card would start. Drawing and clicking both read it.
-     */
-    private float layoutCards(float panelX, float panelWidth, float contentY, List<Card> cards) {
-        float cursorY = contentY - scroll.offset() + PADDING;
-        List<PartyListing> parties = party().getParties();
-        for (int i = 0; i < parties.size(); i++) {
-            PartyListing party = parties.get(i);
-            if (!matchesFilters(party)) continue;
-
-            float cardH = party.expanded
-                    ? CARD_HEADER_HEIGHT + party.members.size() * MEMBER_ROW_HEIGHT + CARD_PADDING
-                    : COLLAPSED_ROW_HEIGHT;
-            cards.add(new Card(party, i, new UiBounds(panelX + PADDING, cursorY, panelWidth - PADDING * 2 - 6, cardH)));
-            cursorY += cardH + CARD_SPACING;
+    /** Lays out the cards the search and tag filter let through, as this frame draws them and its clicks find them. */
+    private List<Card> layoutCards(float panelX, float panelWidth, float contentY, float contentHeight) {
+        List<PartyListing> shown = party().getParties().stream().filter(this::matchesFilters).toList();
+        List<UiBounds> bounds = stackCards(shown.stream().map(PartyFinderScreen::cardHeight).toList(), scroll,
+                new UiBounds(panelX + PADDING, contentY, panelWidth - PADDING * 2 - 6, contentHeight));
+        List<Card> cards = new ArrayList<>();
+        for (int i = 0; i < shown.size(); i++) {
+            cards.add(new Card(shown.get(i), bounds.get(i)));
         }
-        return cursorY;
+        return cards;
+    }
+
+    private static float cardHeight(PartyListing party) {
+        return party.expanded
+                ? CARD_HEADER_HEIGHT + party.members.size() * MEMBER_ROW_HEIGHT + CARD_PADDING
+                : COLLAPSED_ROW_HEIGHT;
+    }
+
+    /**
+     * Cards {@code heights} tall, stacked down {@code view} and as wide as it. {@code scroll} is first
+     * kept within how far they reach past the view, then they are placed at its offset, so a card
+     * collapsing at the bottom of the list moves the cards before they are drawn, not after.
+     */
+    static List<UiBounds> stackCards(List<Float> heights, ScrollPane scroll, UiBounds view) {
+        float total = PADDING;
+        for (float height : heights) {
+            total += height + CARD_SPACING;
+        }
+        scroll.setMax(total - view.height());
+        float y = view.y() + PADDING - scroll.offset();
+        List<UiBounds> cards = new ArrayList<>();
+        for (float height : heights) {
+            cards.add(new UiBounds(view.x(), y, view.width(), height));
+            y += height + CARD_SPACING;
+        }
+        return cards;
     }
 
     private static UiBounds scrollTrack(float panelX, float panelWidth, float contentY, float contentHeight) {
@@ -617,18 +643,18 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
 
     // ── Party cards ──
 
-    private void renderPartyCard(UiCanvas canvas, String fontName, Card card) {
+    /** Draws {@code card}; {@code joined} is the listing the player is in, or null. */
+    private void renderPartyCard(UiCanvas canvas, String fontName, Card card, Listing joined) {
         PartyListing party = card.party();
-        int partyIndex = card.index();
         float x = card.bounds().x();
         float y = card.bounds().y();
         float w = card.bounds().width();
         float h = card.bounds().height();
-        boolean isJoined = party().getJoinedPartyIndex() == partyIndex;
+        boolean isJoined = joined != null && joined.id() == party.id;
         canvas.fillRect(x, y, w, h, party.expanded ? color(BACKGROUND_CONTENT_FOCUSED) : color(BACKGROUND_CONTENT));
 
         if (party.expanded) {
-            renderExpandedCard(canvas, fontName, x, y, w, h, party, partyIndex, isJoined);
+            renderExpandedCard(canvas, fontName, x, y, w, h, party, isJoined, joined != null);
         } else {
             renderCollapsedCard(canvas, fontName, x, y, w, party);
         }
@@ -642,8 +668,8 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
             float w,
             float h,
             PartyListing party,
-            int partyIndex,
-            boolean isJoined) {
+            boolean isJoined,
+            boolean inParty) {
         float rowX = x + CARD_PADDING;
         List<String> raidTags = getRenderedRaidTags(party);
 
@@ -690,7 +716,7 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
                 UiCanvas.HorizontalAlign.RIGHT);
 
         // Members
-        boolean isMyParty = partyIndex == party().getJoinedPartyIndex() && party().isPartyLeader();
+        boolean isMyParty = isJoined && party().isPartyLeader();
         boolean amLeaderOfThisParty = isMyParty && party().isPartyLeader();
         float memberY = y + CARD_HEADER_HEIGHT;
         for (int mi = 0; mi < party.members.size(); mi++) {
@@ -713,7 +739,7 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
         // this area free gives their member-management buttons a stable home.
         float joinX = x + w - CARD_PADDING - JOIN_BUTTON_WIDTH;
         float joinY = memberY - MEMBER_ROW_HEIGHT + (MEMBER_ROW_HEIGHT - BUTTON_HEIGHT) / 2f;
-        boolean alreadyInParty = party().getJoinedPartyIndex() >= 0 && !isJoined;
+        boolean alreadyInParty = inParty && !isJoined;
         boolean listingUnavailable = !isJoined && !party.isJoinable();
         if (!isMyParty) {
             boolean buttonDisabled = alreadyInParty || listingUnavailable;
@@ -1422,9 +1448,6 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
                 curY += chipH + 3;
             }
 
-            UiBounds chip = new UiBounds(curX, curY, chipW, chipH);
-            renderedChipBounds.add(new TagChip(tag, chip));
-
             // Pendulum animation
             float angle = 0;
             Long animStart = animStartTimes.get(tag);
@@ -1442,6 +1465,8 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
 
             float chipCenterX = curX + chipW / 2f;
             float chipCenterY = curY + chipH / 2f;
+            TagChip chip = new TagChip(tag, new UiBounds(curX, curY, chipW, chipH), angle);
+            renderedChipBounds.add(chip);
 
             canvas.save();
             if (angle != 0) {
@@ -1787,8 +1812,9 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
             }
             if (contains(headerLayout.inviteAllButton(), at)) {
                 showStatusBanner("Preparing party invites...");
-                party().game().inviteAllCurrentMembers()
-                        .thenAccept(inviteAllResult -> ClientThread.execute(() -> showStatusBanner(inviteAllResult.message())));
+                party().reply(party().game().inviteAllCurrentMembers(), (result, error) -> {
+                    if (result != null) showStatusBanner(result.message());
+                });
                 return true;
             }
             if (contains(headerLayout.scanButton(), at)) {
@@ -1845,10 +1871,8 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
             }
         }
 
-        // ── Party cards: an open card closes from its header, a closed one opens anywhere ──
-        List<Card> cards = new ArrayList<>();
-        layoutCards(panelX, panelWidth, contentY, cards);
-        for (Card card : cards) {
+        // ── Party cards, where they were drawn: an open card closes from its header, a closed one opens anywhere ──
+        for (Card card : renderedCards) {
             UiBounds toggle = card.party().expanded
                     ? new UiBounds(card.bounds().x(), card.bounds().y(), card.bounds().width(), CARD_HEADER_HEIGHT)
                     : card.bounds();
@@ -2124,7 +2148,7 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
     /** Moves the tag whose chip is under {@code at} from one box to the other, with a swing. */
     private boolean moveChip(UiPointer at, List<TagChip> chips, Set<String> from, Set<String> to) {
         for (TagChip chip : chips) {
-            if (chip.bounds().contains(at)) {
+            if (chip.contains(at)) {
                 from.remove(chip.tag());
                 to.add(chip.tag());
                 filterTagAnimStartTimes.put(chip.tag(), System.currentTimeMillis());
