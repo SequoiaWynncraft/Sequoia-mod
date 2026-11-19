@@ -243,7 +243,7 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
             return lead ? new PartyModalFor(current.id()) : null;
         }
 
-        /** {@code opened} while it may still do what it was opened for; else none (null), and the modal closes. */
+        /** {@code opened} while it may still do what it was opened for; else none (null), and its submit closes it instead. */
         static PartyModalFor still(PartyModalFor opened, Listing current, boolean lead) {
             return opened != null && opened.equals(of(current, lead)) ? opened : null;
         }
@@ -377,7 +377,6 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
         HeaderControlsLayout headerLayout = computeHeaderControlsLayout(panelX, panelWidth, fontName);
         drawnHeader = headerLayout;
         drawnLeaderControls = LeaderControls.of(party().getCurrentListing(), party().isPartyLeader());
-        modalFor = PartyModalFor.still(modalFor, party().getCurrentListing(), party().isPartyLeader());
         float headerHeight = headerLayout.height();
 
         canvas.fillRect(panelX, 0, panelWidth, screenHeight, color(BACKGROUND_BODY));
@@ -1825,9 +1824,7 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
             return handleInviteModalClick(at, inviteModal(panelX, panelWidth, screenHeight));
         }
         if (modalFor != null) {
-            // A modal whose party has changed since the frame drew it closes, and the click does nothing.
-            modalFor = PartyModalFor.still(modalFor, party().getCurrentListing(), party().isPartyLeader());
-            return modalFor == null || handleModalClick(at, partyModal(panelX, panelWidth, screenHeight));
+            return handleModalClick(at, partyModal(panelX, panelWidth, screenHeight));
         }
 
         if (roleDropdownOpen) {
@@ -2169,6 +2166,13 @@ public class PartyFinderScreen extends SequoiaPanelScreen implements PartyAccess
     }
 
     private void submitPartyFromModal() {
+        // Checked when it is sent, not each frame: a listings refresh older than the party can blank it for a
+        // moment, and that must not throw the draft away. A party that really changed closes the modal unsent.
+        if (PartyModalFor.still(modalFor, party().getCurrentListing(), party().isPartyLeader()) == null) {
+            modalFor = null;
+            showStatusBanner("Your party changed. Open Manage Party again.");
+            return;
+        }
         boolean updatingParty = modalFor.updates();
         Set<String> selectedRaids = new LinkedHashSet<>(modalSelectedRaids);
         if (updatingParty && selectedRaids.isEmpty()) {
