@@ -76,6 +76,8 @@ class UnlockPopupTest {
     void playersKnowTheRepeatableSlotAsEndless() {
         assertEquals("Endless", UnlockPopup.slotName("repeatable"));
         assertEquals("Daily", UnlockPopup.slotName("daily"));
+        assertEquals("Timed", UnlockPopup.slotName("timed"));
+        assertEquals("obsidian", UnlockPopup.questTier("timed"));
         assertEquals("Endless quest completed", from("quest_completed",
                 "{\"quest\":{\"slot\":\"repeatable\",\"title\":\"Complete 8 raids or 24 wars\"}}").eyebrow());
     }

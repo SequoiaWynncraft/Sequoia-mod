@@ -9,20 +9,21 @@ import java.util.Objects;
  * The signed-in member's quests, as Leaf's {@code GET /v1/me/quests} sends them.
  *
  * <p>There is at most one quest per slot: a daily (dailies bank up, so missing a
- * day costs nothing), a weekly that ends on Monday, and an endless quest that is
- * replaced as soon as it is finished. Leaf calls that slot {@code repeatable};
- * players see it as Endless.
+ * day costs nothing), a weekly that ends on Monday, and a timed quest, the same for
+ * the whole guild, open for two hours every four. Leaf can also hand out repeatable
+ * quests, which players see as Endless; it doesn't for now.
  */
 public record LeafQuests(
         Daily daily,
+        Timed timed,
         List<Quest> quests,
         @SerializedName("recently_completed") List<Quest> recentlyCompleted) {
 
-    public static final LeafQuests EMPTY = new LeafQuests(new Daily(0, 0, null), List.of(), List.of());
+    public static final LeafQuests EMPTY = new LeafQuests(new Daily(0, 0, null), null, List.of(), List.of());
 
     public static final String DAILY = "daily";
     public static final String WEEKLY = "weekly";
-    public static final String REPEATABLE = "repeatable";
+    public static final String TIMED = "timed";
 
     /**
      * @param charges dailies the member can do, counting the one in progress
@@ -33,6 +34,12 @@ public record LeafQuests(
             int charges,
             @SerializedName("charge_cap") int chargeCap,
             @SerializedName("next_charge_at") Instant nextChargeAt) {}
+
+    /**
+     * @param endsAt when the open timed quest closes, or null between windows
+     * @param nextAt when the next timed quest opens
+     */
+    public record Timed(@SerializedName("ends_at") Instant endsAt, @SerializedName("next_at") Instant nextAt) {}
 
     /**
      * @param raid the raid a raid quest asks for, such as {@code nol}, or null for any raid

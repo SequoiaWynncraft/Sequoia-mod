@@ -41,7 +41,7 @@ import org.jetbrains.annotations.NotNull;
  */
 public final class QuestBoardScreen extends SequoiaPanelScreen {
 
-    static final List<String> SLOTS = List.of(LeafQuests.DAILY, LeafQuests.WEEKLY, LeafQuests.REPEATABLE);
+    static final List<String> SLOTS = List.of(LeafQuests.DAILY, LeafQuests.WEEKLY, LeafQuests.TIMED);
     static final float CARD_HEIGHT = 160;
     /** Read out when Leaf could not be reached, over the quests from the last read that worked. */
     static final String STALE_LINE = "Couldn't reach Leaf, showing earlier progress";
@@ -162,9 +162,12 @@ public final class QuestBoardScreen extends SequoiaPanelScreen {
         List<Card> cards = new ArrayList<>(SLOTS.size());
         for (String slot : SLOTS) {
             Quest quest = source.quest(slot);
+            // A quest whose time is up is gone, even before the next refresh says so.
+            if (quest != null && quest.expiresAt() != null && !now.isBefore(quest.expiresAt())) quest = null;
             Daily daily = source.dailyOrEmpty();
             boolean isDaily = LeafQuests.DAILY.equals(slot);
-            cards.add(new Card(slot, heading(slot, daily), timer(slot, quest, daily, now), quest, emptyLine(slot),
+            cards.add(new Card(slot, heading(slot, daily), timer(slot, quest, daily, source.timed(), now), quest,
+                    emptyLine(slot),
                     isDaily ? daily.charges() : 0, isDaily ? daily.chargeCap() : 0));
         }
         return List.copyOf(cards);
@@ -176,11 +179,11 @@ public final class QuestBoardScreen extends SequoiaPanelScreen {
                     ? "Daily (" + daily.charges() + "/" + daily.chargeCap() + ")"
                     : "Daily";
             case LeafQuests.WEEKLY -> "Weekly";
-            default -> UnlockPopup.slotName(LeafQuests.REPEATABLE);
+            default -> UnlockPopup.slotName(slot);
         };
     }
 
-    static String timer(String slot, Quest quest, Daily daily, Instant now) {
+    static String timer(String slot, Quest quest, Daily daily, LeafQuests.Timed timed, Instant now) {
         return switch (slot) {
             case LeafQuests.DAILY -> daily.nextChargeAt() == null
                     ? "Bank full"
@@ -190,13 +193,28 @@ public final class QuestBoardScreen extends SequoiaPanelScreen {
                 String left = durationLabel(Duration.between(now, quest.expiresAt()));
                 yield quest.completed() ? "Done · new weekly in " + left : "Ends in " + left;
             }
+            case LeafQuests.TIMED -> {
+                Instant next = timed == null ? null : timed.nextAt();
+                String nextIn = next == null ? null : durationLabel(Duration.between(now, next));
+                if (quest == null) {
+                    if (next == null) yield "";
+                    yield now.isBefore(next) ? "Next in " + nextIn : "Opening now";
+                }
+                if (quest.completed()) yield nextIn == null ? "Done" : "Done · next in " + nextIn;
+                yield quest.expiresAt() == null
+                        ? "Ends soon"
+                        : "Ends in " + durationLabel(Duration.between(now, quest.expiresAt()));
+            }
             default -> "Next one when done";
         };
     }
 
     static String emptyLine(String slot) {
-        return LeafQuests.DAILY.equals(slot) ? "No daily waiting. Dailies bank up, so nothing is lost."
-                : "Nothing here right now";
+        return switch (slot) {
+            case LeafQuests.DAILY -> "No daily waiting. Dailies bank up, so nothing is lost.";
+            case LeafQuests.TIMED -> "A timed quest opens for the whole guild every four hours.";
+            default -> "Nothing here right now";
+        };
     }
 
     /** "2d 22h", "6h 12m", "12m" or "under a minute". */
@@ -240,6 +258,7 @@ public final class QuestBoardScreen extends SequoiaPanelScreen {
         return switch (slot) {
             case LeafQuests.DAILY -> ACHIEVEMENT_GOLD;
             case LeafQuests.WEEKLY -> ACHIEVEMENT_DIAMOND;
+            case LeafQuests.TIMED -> ACHIEVEMENT_OBSIDIAN;
             default -> ACHIEVEMENT_BRONZE;
         };
     }

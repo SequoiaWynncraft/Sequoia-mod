@@ -48,7 +48,7 @@ class LeafQuestServiceTest {
 
     private static Snapshot snapshot(long leaf) {
         return new Snapshot(new LeafAccount(leaf, leaf, new LeafAccount.Level(7, 640, 2500)),
-                new LeafQuests(new LeafQuests.Daily(1, 3, null), List.of(), List.of()));
+                new LeafQuests(new LeafQuests.Daily(1, 3, null), null, List.of(), List.of()));
     }
 
     @Test

@@ -363,21 +363,23 @@ public final class UnlockPreview {
 
     /**
      * A member two dailies into their bank, partway through each quest: a daily and a
-     * endless quest that raids or wars can finish, and a weekly for season rating.
+     * timed quest that raids or wars can finish, and a weekly for season rating.
      */
     static LeafQuestService.Snapshot sampleBoard() {
         Instant now = Instant.now();
+        Instant timedEnds = now.plus(Duration.ofMinutes(97));
         LeafQuests quests = new LeafQuests(
                 new LeafQuests.Daily(2, 3, now.plus(Duration.ofMinutes(372))),
+                new LeafQuests.Timed(timedEnds, timedEnds.plus(Duration.ofHours(2))),
                 List.of(
                         quest("daily", "Complete 3 NOL raids or 9 wars", 300, 150, null,
                                 new LeafQuests.Goal("raids", "nol", "Complete 3 NOL raids", 1, 3),
                                 new LeafQuests.Goal("wars", null, "Take part in 9 wars", 4, 9)),
                         quest("weekly", "Earn 6,000 season rating", 800, 400, now.plus(Duration.ofHours(70)),
                                 new LeafQuests.Goal("season_rating", null, "Earn 6,000 season rating", 2_350, 6_000)),
-                        quest("repeatable", "Complete 8 raids or 24 wars", 200, 100, null,
-                                new LeafQuests.Goal("raids", null, "Complete 8 raids", 3, 8),
-                                new LeafQuests.Goal("wars", null, "Take part in 24 wars", 0, 24))),
+                        quest("timed", "Complete 2 TNA raids or 6 wars", 500, 250, timedEnds,
+                                new LeafQuests.Goal("raids", "tna", "Complete 2 TNA raids", 1, 2),
+                                new LeafQuests.Goal("wars", null, "Take part in 6 wars", 2, 6))),
                 List.of());
         Instant at = Instant.now();
         List<LeafEvents.Event> recent = List.of(
