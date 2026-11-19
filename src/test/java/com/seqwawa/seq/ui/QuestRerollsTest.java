@@ -105,4 +105,15 @@ class QuestRerollsTest {
         rerolls.finished(DAILY, Reroll.DONE, 60);
         assertNull(rerolls.notice(LeafQuests.DAILY, 70));
     }
+
+    @Test
+    void aCostThatChangedAfterThePressAsksAgain() {
+        QuestRerolls rerolls = new QuestRerolls();
+        rerolls.press(DAILY, null, 1_000);
+        Quest nowPaid = quest("daily:4", LeafQuests.DAILY, 100L, null);
+
+        assertEquals(RerollLook.IDLE, rerolls.look(nowPaid, false, null, 1_500), "armed for free, not for 100");
+        assertFalse(rerolls.press(nowPaid, null, 1_600), "this press arms it at the new cost");
+        assertTrue(rerolls.press(nowPaid, null, 1_700));
+    }
 }

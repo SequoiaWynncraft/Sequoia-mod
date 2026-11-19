@@ -19,6 +19,8 @@ final class QuestRerolls {
     static final long NOTICE_MS = 5_000;
 
     private String armed;
+    /** The cost the armed button showed: a second press confirms that cost and no other. */
+    private Long armedCost;
     private long armedUntil;
     private String noticeSlot;
     private String notice;
@@ -32,7 +34,7 @@ final class QuestRerolls {
     QuestCard.RerollLook look(Quest quest, boolean hovered, String rerolling, long now) {
         if (quest == null || !quest.rerollable()) return null;
         if (quest.id().equals(rerolling)) return QuestCard.RerollLook.PENDING;
-        if (quest.id().equals(armed) && now < armedUntil) return QuestCard.RerollLook.ARMED;
+        if (isArmed(quest, now)) return QuestCard.RerollLook.ARMED;
         return hovered ? QuestCard.RerollLook.HOVERED : QuestCard.RerollLook.IDLE;
     }
 
@@ -43,13 +45,19 @@ final class QuestRerolls {
     boolean press(Quest quest, String rerolling, long now) {
         if (rerolling != null || quest == null || !quest.rerollable()) return false;
         notice = null;
-        if (quest.id().equals(armed) && now < armedUntil) {
+        if (isArmed(quest, now)) {
             armed = null;
             return true;
         }
         armed = quest.id();
+        armedCost = quest.rerollLeaf();
         armedUntil = now + ARM_MS;
         return false;
+    }
+
+    /** Whether the button is armed for this quest at the cost it shows now; a new cost asks again. */
+    private boolean isArmed(Quest quest, long now) {
+        return quest.id().equals(armed) && quest.rerollLeaf().equals(armedCost) && now < armedUntil;
     }
 
     /** The reroll of {@code quest} ended: the card says why when it didn't happen. */
