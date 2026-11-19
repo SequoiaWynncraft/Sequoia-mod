@@ -11,9 +11,9 @@ class PartyFinderHeaderLayoutTest {
     void roleSelectorSitsBesideNewPartyAndLeavesRoomForTheTitle() {
         var layout = PartyFinderScreen.computeHeaderControlsLayout(140, 600, List.of(85f), 80, 110, false);
         assertEquals(layout.newPartyButton().y(), layout.roleDropdown().y());
-        assertEquals(layout.newPartyButton().x() + layout.newPartyButton().w() + 6, layout.roleDropdown().x());
-        assertTrue(layout.roleDropdown().x() + layout.roleDropdown().w() <= layout.titleRight() - 110 - 6);
-        assertEquals(140, layout.searchBar().w());
+        assertEquals(layout.newPartyButton().x() + layout.newPartyButton().width() + 6, layout.roleDropdown().x());
+        assertTrue(layout.roleDropdown().x() + layout.roleDropdown().width() <= layout.titleRight() - 110 - 6);
+        assertEquals(140, layout.searchBar().width());
         assertNull(layout.manageButton());
     }
 
@@ -23,7 +23,7 @@ class PartyFinderHeaderLayoutTest {
         assertTrue(layout.newPartyButton().y() > layout.searchBar().y());
         assertEquals(layout.newPartyButton().y(), layout.roleDropdown().y());
         assertEquals(148, layout.newPartyButton().x());
-        assertTrue(layout.height() >= layout.roleDropdown().y() + layout.roleDropdown().h());
+        assertTrue(layout.height() >= layout.roleDropdown().y() + layout.roleDropdown().height());
     }
 
     @Test
@@ -37,16 +37,16 @@ class PartyFinderHeaderLayoutTest {
                     layout.delistButton(), layout.inviteAllButton(), layout.scanButton()));
             for (int i = 0; i < controls.size(); i++) {
                 var a = controls.get(i);
-                assertTrue(a.x() >= 148 && a.w() >= 0);
-                assertTrue(a.x() + a.w() <= layout.titleRight());
-                assertTrue(a.y() + a.h() <= layout.height());
+                assertTrue(a.x() >= 148 && a.width() >= 0);
+                assertTrue(a.x() + a.width() <= layout.titleRight());
+                assertTrue(a.y() + a.height() <= layout.height());
                 if (a.y() == layout.searchBar().y()) {
-                    assertTrue(a.x() + a.w() <= layout.titleRight() - 110 - 6);
+                    assertTrue(a.x() + a.width() <= layout.titleRight() - 110 - 6);
                 }
                 for (int j = i + 1; j < controls.size(); j++) {
                     var c = controls.get(j);
-                    assertFalse(a.x() < c.x() + c.w() && a.x() + a.w() > c.x()
-                            && a.y() < c.y() + c.h() && a.y() + a.h() > c.y());
+                    assertFalse(a.x() < c.x() + c.width() && a.x() + a.width() > c.x()
+                            && a.y() < c.y() + c.height() && a.y() + a.height() > c.y());
                 }
             }
         }
