@@ -881,12 +881,6 @@ public final class ConnectionManager {
         return ready != null && ready.standing != Standing.NON_MEMBER;
     }
 
-    /** Whether the backend called this socket's account a non-member: its war events are accepted, and never sent. */
-    private boolean nonMember() {
-        Attempt latest = attempt;
-        return latest != null && latest.standing == Standing.NON_MEMBER;
-    }
-
     /** Whether the Treasury account's socket is open and has proved its Minecraft session. */
     private boolean canSendTreasuryTraffic() {
         Attempt latest = attempt;
@@ -1759,15 +1753,6 @@ public final class ConnectionManager {
             }
         }
 
-        WynncraftServerPolicy.Scope serverScope = currentScope();
-        if (serverScope == WynncraftServerPolicy.Scope.BLOCKED) {
-            SeqClient.LOGGER.warn("[WebSocket] sendGuildWarSubmission dropped outside main Wynncraft host");
-            return false;
-        }
-        if (nonMember()) {
-            SeqClient.LOGGER.debug("[WebSocket] Guild war submission disabled for non-member session");
-            return true;
-        }
         return enqueueGuildWarEvent("guild_war_submission", buildGuildWarSubmissionPayload(submission));
     }
 
@@ -1787,15 +1772,6 @@ public final class ConnectionManager {
             return false;
         }
 
-        WynncraftServerPolicy.Scope serverScope = currentScope();
-        if (serverScope == WynncraftServerPolicy.Scope.BLOCKED) {
-            SeqClient.LOGGER.warn("[WebSocket] sendGuildWarQueue dropped outside main Wynncraft host");
-            return false;
-        }
-        if (nonMember()) {
-            SeqClient.LOGGER.debug("[WebSocket] Guild war queue submission disabled for non-member session");
-            return true;
-        }
         JsonObject msg = new JsonObject();
         msg.addProperty("territory", submission.territory());
         msg.addProperty("submitted_by", submission.submittedBy());
@@ -1818,15 +1794,6 @@ public final class ConnectionManager {
             return false;
         }
 
-        WynncraftServerPolicy.Scope serverScope = currentScope();
-        if (serverScope == WynncraftServerPolicy.Scope.BLOCKED) {
-            SeqClient.LOGGER.warn("[WebSocket] sendGuildWarQueueCancellation dropped outside main Wynncraft host");
-            return false;
-        }
-        if (nonMember()) {
-            SeqClient.LOGGER.debug("[WebSocket] Guild war queue cancellation disabled for non-member session");
-            return true;
-        }
         JsonObject msg = new JsonObject();
         msg.addProperty("territory", cancellation.territory());
         msg.addProperty("submitted_by", cancellation.submittedBy());
@@ -1864,7 +1831,20 @@ public final class ConnectionManager {
         getInstance().flushPendingGuildWarEvents();
     }
 
+    /**
+     * Keeps a war event until a member's socket can take it. Refused off Wynncraft; accepted and
+     * dropped for a non-member, whose war tracking the backend doesn't want.
+     */
     private boolean enqueueGuildWarEvent(String type, JsonObject payload) {
+        if (currentScope() == WynncraftServerPolicy.Scope.BLOCKED) {
+            SeqClient.LOGGER.warn("[WebSocket] {} dropped outside main Wynncraft host", type);
+            return false;
+        }
+        Attempt latest = attempt;
+        if (latest != null && latest.standing == Standing.NON_MEMBER) {
+            SeqClient.LOGGER.debug("[WebSocket] {} disabled for non-member session", type);
+            return true;
+        }
         if (!pendingGuildWarEvents.offer(type, payload)) {
             SeqClient.LOGGER.warn("[WebSocket] War event buffer full; could not retain {} territory='{}'",
                     type, payload.get("territory").getAsString());
