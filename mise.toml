@@ -37,7 +37,7 @@ run_windows = 'gradlew.bat test --tests "com.seqwawa.seq.update.*" --tests "com.
 raw_args = true
 
 [tasks."test:scripts"]
-description = "Run the tests of the native build inputs and the release scripts"
+description = "Run the tests of the native build inputs, the release scripts and the gathering-node script"
 run = [
   "python -m unittest discover -s native/tests -p test_build_inputs.py",
   'python -m unittest discover -s tests -p "test_*.py"',
@@ -112,6 +112,10 @@ run = [
   "cargo fetch --locked",
   "python ../notices.py {{usage.mode}}",
 ]
+
+[tasks."map:nodes"]
+description = "Regenerate the bundled gathering nodes from the Wynncraft API"
+run = "python scripts/gathering_nodes.py"
 
 [tasks."release:check"]
 description = "Validate the release tag, its notes and the version; --jar-directory also checks a built JAR"
