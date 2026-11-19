@@ -338,7 +338,7 @@ public final class PartyFinderActions {
                 })
                 .thenAccept(created -> {
                     if (created) {
-                        player.notify("Party Finder invite created.");
+                        partyFinder.forSamePlayer(ticket, () -> player.notify("Party Finder invite created."));
                     } else {
                         SeqClient.LOGGER.warn("[PartyFinderWS] createInvite did not complete successfully");
                     }

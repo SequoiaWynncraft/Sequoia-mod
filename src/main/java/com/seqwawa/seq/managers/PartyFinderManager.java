@@ -24,8 +24,10 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.Getter;
@@ -164,21 +166,34 @@ public class PartyFinderManager {
     }
 
     /**
+     * Hands {@code result}'s outcome to {@code reply} on the game thread, unless the session or the
+     * server connection it was asked on has gone by then: a command's or a click's answer, held
+     * past a reconnect or a sign-out, tells nobody.
+     */
+    public <T> void reply(CompletableFuture<T> result, BiConsumer<? super T, ? super Throwable> reply) {
+        Ticket ticket = ticket();
+        result.whenComplete((value, error) -> forSamePlayer(ticket, () -> reply.accept(value, error)));
+    }
+
+    /**
      * {@code call}, sent with this session's backend client, unless the session ended since
-     * {@code ticket} was read; then, and for a reply that arrives after it ends, it fails with
-     * {@link SupersededByReset}. A reply for the previous account must not restore its party,
-     * listings or invites.
+     * {@code ticket} was read. Its reply is handed to the game thread, and what is chained on it
+     * runs there; a reply that arrives after the session ends fails with {@link SupersededByReset}
+     * instead. A reply for the previous account must not restore its party, listings or invites.
      */
     <T> CompletableFuture<T> send(Ticket ticket, Function<ApiClient, CompletableFuture<T>> call) {
         if (!holds(ticket)) {
             return CompletableFuture.failedFuture(new SupersededByReset());
         }
-        return call.apply(api).thenApply(result -> {
+        return call.apply(api).handleAsync((result, error) -> {
             if (!holds(ticket)) {
                 throw new SupersededByReset();
             }
+            if (error != null) {
+                throw error instanceof CompletionException wrapped ? wrapped : new CompletionException(error);
+            }
             return result;
-        });
+        }, gameThread);
     }
 
     /** A request whose session ended before it went out, or before its reply came; it is dropped without a word. */

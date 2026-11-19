@@ -966,7 +966,7 @@ public class SeqCommand {
         private static int runPartyList(CommandContext<FabricClientCommandSource> ctx) {
                 FabricClientCommandSource source = ctx.getSource();
                 PartyFinderManager manager = SeqClient.getPartyFinderManager();
-                manager.actions().refreshListingsForCommand().whenComplete((result, error) -> {
+                manager.reply(manager.actions().refreshListingsForCommand(), (result, error) -> {
                         if (error != null) {
                                 sendFeedback(source, "Unexpected error while loading party listings.");
                                 return;
@@ -1144,7 +1144,7 @@ public class SeqCommand {
         private static int runPartyStatus(CommandContext<FabricClientCommandSource> ctx) {
                 FabricClientCommandSource source = ctx.getSource();
                 PartyFinderManager manager = SeqClient.getPartyFinderManager();
-                manager.actions().refreshListingsForCommand().whenComplete((result, error) -> {
+                manager.reply(manager.actions().refreshListingsForCommand(), (result, error) -> {
                         if (error != null) {
                                 sendFeedback(source, "Unexpected error while loading party status.");
                                 return;
@@ -1336,7 +1336,8 @@ public class SeqCommand {
                         CommandContext<FabricClientCommandSource> ctx,
                         CompletableFuture<PartyFinderManager.CommandResult<T>> future) {
                 FabricClientCommandSource source = ctx.getSource();
-                future.whenComplete((result, error) -> {
+                // Told only to the player who asked, on the connection they asked on.
+                SeqClient.getPartyFinderManager().reply(future, (result, error) -> {
                         if (error != null) {
                                 sendFeedback(source, "Unexpected command failure.");
                                 return;

@@ -7,6 +7,7 @@ import com.seqwawa.seq.model.Listing;
 import com.seqwawa.seq.model.Member;
 import com.seqwawa.seq.network.ConnectionManager;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -14,7 +15,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 /**
@@ -172,37 +172,42 @@ public final class PartyGameCommands {
         });
     }
 
-    /** On the game thread: one invite every half second, each sent only while the party and the player are the same. */
+    /** On the game thread: the invites, one at a time, while the party and the player are the same. */
     private CompletableFuture<InviteAllResult> dispatch(
             Ticket ticket, long listingId, List<InviteTarget> targets, int skippedCount, boolean notifyPlayer) {
         String stillFor = stillFor(ticket, listingId);
         if (stillFor != null) {
             return done(ticket, false, 0, skippedCount, stillFor, notifyPlayer);
         }
+        CompletableFuture<InviteAllResult> finished = new CompletableFuture<>();
+        inviteNext(ticket, listingId, targets.iterator(), 0, skippedCount, notifyPlayer, finished);
+        return finished;
+    }
 
-        Set<String> activeMembers = partyFinder.getCurrentListing().memberKeys();
-        AtomicInteger sent = new AtomicInteger();
-        AtomicInteger skipped = new AtomicInteger(skippedCount);
-        List<CompletableFuture<Void>> sends = new ArrayList<>();
-        for (InviteTarget target : targets) {
-            if (!activeMembers.contains(Listing.playerKey(target.memberUUID()))) {
-                skipped.incrementAndGet();
+    /**
+     * Invites the next target still in the party, and waits half a second from then before the
+     * one after, so a late tick never sends two at once.
+     */
+    private void inviteNext(Ticket ticket, long listingId, Iterator<InviteTarget> targets, int sent, int skipped,
+            boolean notifyPlayer, CompletableFuture<InviteAllResult> finished) {
+        while (targets.hasNext()) {
+            InviteTarget target = targets.next();
+            if (stillFor(ticket, listingId) != null || !partyFinder.getCurrentListing().hasMember(target.memberUUID())) {
+                skipped++;
                 continue;
             }
-            CompletableFuture<Void> send = new CompletableFuture<>();
-            partyFinder.gameThread.after(sends.size() * INVITE_ALL_COMMAND_DELAY_MS, () -> {
-                if (stillFor(ticket, listingId) == null) {
-                    player.sendCommand(gamePartyInviteCommand(target.username()));
-                    sent.incrementAndGet();
-                } else {
-                    skipped.incrementAndGet();
-                }
-                send.complete(null);
-            });
-            sends.add(send);
+            player.sendCommand(gamePartyInviteCommand(target.username()));
+            sent++;
+            if (targets.hasNext()) {
+                int sentSoFar = sent;
+                int skippedSoFar = skipped;
+                partyFinder.gameThread.after(INVITE_ALL_COMMAND_DELAY_MS, () -> inviteNext(
+                        ticket, listingId, targets, sentSoFar, skippedSoFar, notifyPlayer, finished));
+                return;
+            }
         }
-        return CompletableFuture.allOf(sends.toArray(CompletableFuture[]::new)).thenCompose(ignored -> done(
-                ticket, true, sent.get(), skipped.get(), formatInviteAllMessage(sent.get(), skipped.get()), notifyPlayer));
+        done(ticket, true, sent, skipped, formatInviteAllMessage(sent, skipped), notifyPlayer)
+                .thenAccept(finished::complete);
     }
 
     /** Null while invites may still go out for {@code ticket}'s listing; else why they may not. */
@@ -217,11 +222,11 @@ public final class PartyGameCommands {
         return partyFinder.isPartyLeader() ? null : "only the party leader can use this.";
     }
 
-    /** The result, told to the player when asked, unless their session has ended since. */
+    /** The result, told to the player when asked, unless their session or server connection has gone since. */
     private CompletableFuture<InviteAllResult> done(
             Ticket ticket, boolean success, int sentCount, int skippedCount, String message, boolean notifyPlayer) {
-        if (notifyPlayer && partyFinder.holds(ticket)) {
-            player.notify(message);
+        if (notifyPlayer) {
+            partyFinder.forSamePlayer(ticket, () -> player.notify(message));
         }
         return CompletableFuture.completedFuture(
                 new InviteAllResult(success, sentCount > 0, sentCount, skippedCount, message));
