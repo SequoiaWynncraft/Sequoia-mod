@@ -241,7 +241,7 @@ public final class GuildPresenceManager {
     }
 
     private Map<String, PartyFinderSpot> partyFinderIndex() {
-        PartyFinderManager manager = SeqClient.getPartyFinderManager();
+        PartyFinderManager manager = SeqClient.partyFinderManager;
         if (manager == null) {
             return Map.of();
         }
@@ -271,13 +271,13 @@ public final class GuildPresenceManager {
 
     /** Whether the local player already sits in a listing, which rules out joining one. */
     public boolean isInPartyFinderListing() {
-        PartyFinderManager manager = SeqClient.getPartyFinderManager();
+        PartyFinderManager manager = SeqClient.partyFinderManager;
         return manager != null && manager.isInParty();
     }
 
     /** The listing the local player sits in, or null when they are in none. */
     public PartyFinderSpot myPartyFinderSpot() {
-        PartyFinderManager manager = SeqClient.getPartyFinderManager();
+        PartyFinderManager manager = SeqClient.partyFinderManager;
         if (manager == null) {
             return null;
         }
@@ -299,7 +299,7 @@ public final class GuildPresenceManager {
      * @return the party finder's own line, or null when nothing was attempted
      */
     public CompletableFuture<String> openPartyFinderListing(RaidType raid) {
-        PartyFinderManager manager = SeqClient.getPartyFinderManager();
+        PartyFinderManager manager = SeqClient.partyFinderManager;
         if (manager == null || !ConnectionManager.isConnected()) {
             return CompletableFuture.completedFuture(null);
         }
@@ -402,7 +402,7 @@ public final class GuildPresenceManager {
 
     /** Loads listings for a session where the party finder screen was never opened. */
     public void refreshPartyFinder() {
-        PartyFinderManager manager = SeqClient.getPartyFinderManager();
+        PartyFinderManager manager = SeqClient.partyFinderManager;
         if (manager == null || !ConnectionManager.isConnected()) {
             return;
         }
@@ -415,7 +415,7 @@ public final class GuildPresenceManager {
 
     /** Joins a member's listing as DPS, the party finder's default, and reports its message. */
     public CompletableFuture<String> joinPartyFinder(PartyFinderSpot spot) {
-        PartyFinderManager manager = SeqClient.getPartyFinderManager();
+        PartyFinderManager manager = SeqClient.partyFinderManager;
         if (manager == null || spot == null) {
             return CompletableFuture.completedFuture("The party finder is not ready yet.");
         }
@@ -630,12 +630,12 @@ public final class GuildPresenceManager {
     }
 
     private boolean hasActiveWynnParty() {
-        WynnPartySyncManager manager = SeqClient.getWynnPartySyncManager();
+        WynnPartySyncManager manager = SeqClient.wynnPartySyncManager;
         return manager != null && manager.hasActiveParty();
     }
 
     private List<String> observedPartyMembers() {
-        WynnPartySyncManager manager = SeqClient.getWynnPartySyncManager();
+        WynnPartySyncManager manager = SeqClient.wynnPartySyncManager;
         return manager == null ? List.of() : manager.getObservedMemberUsernames();
     }
 

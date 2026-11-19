@@ -95,9 +95,9 @@ final class WarPlannerDialogUi {
             UiCanvas canvas, List<WarCompositionRole> compositionRoles, float x, float y) {
         float nextX = x;
         for (WarCompositionRole role : WarCompositionRole.ordered(compositionRoles)) {
-            AssetManager.Asset asset = SeqClient.getAssetManager() == null
+            AssetManager.Asset asset = SeqClient.assetManager == null
                     ? null
-                    : SeqClient.getAssetManager().getAsset(role.assetKey());
+                    : SeqClient.assetManager.getAsset(role.assetKey());
             if (asset != null && asset.getImage() != null) {
                 canvas.drawImage(asset.getImage(), nextX, y, COMPOSITION_ICON_SIZE, COMPOSITION_ICON_SIZE, 1f);
             } else {

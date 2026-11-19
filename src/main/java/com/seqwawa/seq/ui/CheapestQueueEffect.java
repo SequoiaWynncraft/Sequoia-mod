@@ -1,10 +1,12 @@
 package com.seqwawa.seq.ui;
 
 import com.seqwawa.seq.client.SeqClient;
-import com.seqwawa.seq.client.ServerScopeTracker;
 import com.seqwawa.seq.config.Setting;
 import com.seqwawa.seq.network.WynncraftServerPolicy;
+import java.util.concurrent.atomic.AtomicBoolean;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientWorldEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 
@@ -14,6 +16,7 @@ public final class CheapestQueueEffect {
     static final long DURATION_MS = 2_400;
     private static final Setting.BooleanSetting ENABLED =
             new Setting.BooleanSetting("cheapest_success_flash", "guild_wars", true);
+    private static final AtomicBoolean RESET_REQUESTED = new AtomicBoolean();
     private static long startedAtMs = -1;
 
     static {
@@ -30,10 +33,10 @@ public final class CheapestQueueEffect {
     }
 
     public static void initialize() {
-        ServerScopeTracker.get().onDisconnect(CheapestQueueEffect::reset);
-        ServerScopeTracker.get().onWorldChange(CheapestQueueEffect::reset);
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> RESET_REQUESTED.set(true));
+        ClientWorldEvents.AFTER_CLIENT_WORLD_CHANGE.register((client, world) -> reset());
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            if (!enabled() || client.player == null) reset();
+            if (RESET_REQUESTED.getAndSet(false) || !enabled() || client.player == null) reset();
         });
     }
 
@@ -45,7 +48,7 @@ public final class CheapestQueueEffect {
     }
 
     private static boolean ready() {
-        if (!enabled()) {
+        if (RESET_REQUESTED.getAndSet(false) || !enabled()) {
             reset();
             return false;
         }

@@ -250,7 +250,7 @@ public final class PixelArt {
     }
 
     public static AssetManager.Asset asset(String key) {
-        AssetManager.Asset asset = SeqClient.getAssetManager() == null ? null : SeqClient.getAssetManager().getAsset(key);
+        AssetManager.Asset asset = SeqClient.assetManager == null ? null : SeqClient.assetManager.getAsset(key);
         return asset == null || asset.getImage() == null ? null : asset;
     }
 

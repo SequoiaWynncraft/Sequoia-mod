@@ -2,7 +2,6 @@ package com.seqwawa.seq.network;
 
 import com.google.gson.JsonObject;
 import com.mojang.authlib.exceptions.AuthenticationException;
-import com.seqwawa.seq.client.AppServices;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.client.TickQueue;
 import com.seqwawa.seq.config.ConfigManager;
@@ -54,11 +53,12 @@ final class ConnectionHarness implements AutoCloseable {
     volatile WynncraftServerPolicy.Scope scope = WynncraftServerPolicy.Scope.MAIN;
 
     final ConfigManager config;
-    private final AppServices previousApp;
+    private final ConfigManager previousConfig;
 
     ConnectionHarness(Path configDirectory) {
+        previousConfig = SeqClient.configManager;
         config = TestConfigs.in(configDirectory);
-        previousApp = SeqClient.installApp(AppServices.builder().configManager(config).build());
+        SeqClient.configManager = config;
         UnlinkedAccountWarning.getInstance().reset();
         ConnectionManager.useEnvironment(environment());
     }
@@ -67,7 +67,7 @@ final class ConnectionHarness implements AutoCloseable {
     public void close() {
         ConnectionManager.resetForTest();
         UnlinkedAccountWarning.getInstance().reset();
-        SeqClient.installApp(previousApp);
+        SeqClient.configManager = previousConfig;
     }
 
     private ConnectionEnvironment environment() {

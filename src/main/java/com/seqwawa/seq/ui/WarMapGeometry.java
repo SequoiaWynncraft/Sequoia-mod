@@ -43,9 +43,9 @@ final class WarMapGeometry {
             float scale,
             WarMapLayout layout,
             WarMapButtonBounds label) {
-        AssetManager.Asset asset = SeqClient.getAssetManager() == null
+        AssetManager.Asset asset = SeqClient.assetManager == null
                 ? null
-                : SeqClient.getAssetManager().getAsset("hq_icon");
+                : SeqClient.assetManager.getAsset("hq_icon");
         if (asset == null || asset.getImage() == null) return;
         float centerX = previewX(territory.centerX(), coordinateBounds, offsetX, scale);
         float centerY = previewY(territory.centerZ(), coordinateBounds, offsetY, scale);

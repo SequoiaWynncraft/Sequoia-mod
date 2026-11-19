@@ -1,9 +1,9 @@
 package com.seqwawa.seq.raids.tna;
 
-import com.seqwawa.seq.client.ServerScopeTracker;
 import java.util.Map;
 import java.util.Set;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientWorldEvents;
 import net.minecraft.resources.Identifier;
 
 /** Detects and groups the sounds replaced by sahursahur.zip during Challenges: 3/4. */
@@ -26,7 +26,7 @@ public final class TnaSahurSoundDetector {
 
     public static void initialize() {
         ClientTickEvents.END_CLIENT_TICK.register(client -> INSTANCE.tick(monotonicMillis()));
-        ServerScopeTracker.get().onWorldChange(INSTANCE.tracker::reset);
+        ClientWorldEvents.AFTER_CLIENT_WORLD_CHANGE.register((client, world) -> INSTANCE.tracker.reset());
     }
 
     /** Called on the game thread for every client sound Minecraft resolves (see GlobalSoundListener). */
