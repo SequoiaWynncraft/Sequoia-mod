@@ -238,6 +238,13 @@ final class ConnectionHarness implements AutoCloseable {
         return socket;
     }
 
+    /** What a sign-out does to the connection: the player is signed out, then the socket closes. */
+    void signOut() {
+        tokens.signedOutByUser = true;
+        tokens.session++;
+        connection().disconnectForSessionEnd();
+    }
+
     void closeFromBackend(int code, String reason) {
         socket().closeFromBackend(code, reason);
         settle();
@@ -257,10 +264,11 @@ final class ConnectionHarness implements AutoCloseable {
         final List<AuthErrorCode> invalidations = new ArrayList<>();
         /** The token every request gets at once, or null to leave requests waiting in {@link #pending}. */
         String token = "session-token";
-        String lastError;
         boolean signedOutByUser;
+        String signedInUsername;
+        /** The current sign-in, which moves on when it ends. */
+        long session;
         int allowSignIns;
-        int signOuts;
 
         @Override
         public CompletableFuture<String> ensureValidToken(boolean forceRefresh) {
@@ -274,14 +282,9 @@ final class ConnectionHarness implements AutoCloseable {
         }
 
         @Override
-        public void invalidateSession(AuthErrorCode code, String message) {
+        public void invalidateSession(String token, AuthErrorCode code, String message) {
             invalidations.add(code);
-            lastError = message;
-        }
-
-        @Override
-        public String lastErrorMessage() {
-            return lastError;
+            session++;
         }
 
         @Override
@@ -296,9 +299,13 @@ final class ConnectionHarness implements AutoCloseable {
         }
 
         @Override
-        public void signOut() {
-            signOuts++;
-            signedOutByUser = true;
+        public String signedInUsername() {
+            return signedInUsername;
+        }
+
+        @Override
+        public long sessionId() {
+            return session;
         }
     }
 

@@ -212,11 +212,15 @@ public final class WarTerritoryQueueManager {
     private CompletableFuture<WarTerritoryQueueFeed> viewerFetchInFlight;
     private CompletableFuture<ActionResult> viewerRefreshInFlight;
 
-    public WarTerritoryQueueManager() {
+    /**
+     * The queue for one session: your availability, queues and joins come from {@code planner},
+     * that session's war planner, and it polls while {@code signedIn} says the session has a token.
+     */
+    public WarTerritoryQueueManager(java.util.function.Supplier<WarPlannerManager> planner, BooleanSupplier signedIn) {
         this(
                 new ApiGateway(ApiClient.getInstance()),
                 Clock.systemUTC(),
-                new RuntimeAvailabilityContext(),
+                new RuntimeAvailabilityContext(planner, signedIn),
                 NotificationAccessor::notifyPlayer,
                 () -> SeqClient.getWarQueueMissMessagesSetting() != null
                         && SeqClient.getWarQueueMissMessagesSetting().getValue(),
@@ -1531,10 +1535,12 @@ public final class WarTerritoryQueueManager {
         }
     }
 
-    static final class RuntimeAvailabilityContext implements AvailabilityContext {
+    record RuntimeAvailabilityContext(java.util.function.Supplier<WarPlannerManager> planner, BooleanSupplier signedIn)
+            implements AvailabilityContext {
+
         @Override
         public boolean available() {
-            WarPlannerManager manager = SeqClient.getWarPlannerManager();
+            WarPlannerManager manager = planner.get();
             if (manager == null) {
                 return false;
             }
@@ -1544,24 +1550,24 @@ public final class WarTerritoryQueueManager {
 
         @Override
         public String playerUuid() {
-            WarPlannerManager manager = SeqClient.getWarPlannerManager();
+            WarPlannerManager manager = planner.get();
             return manager == null ? null : manager.playerUuid();
         }
 
         @Override
         public boolean sessionActive() {
-            return WarPlannerManager.hasSessionToken();
+            return signedIn.getAsBoolean();
         }
 
         @Override
         public boolean accessDenied() {
-            WarPlannerManager manager = SeqClient.getWarPlannerManager();
+            WarPlannerManager manager = planner.get();
             return manager != null && manager.state() == WarPlannerManager.State.FORBIDDEN;
         }
 
         @Override
         public void refreshAvailability() {
-            WarPlannerManager manager = SeqClient.getWarPlannerManager();
+            WarPlannerManager manager = planner.get();
             if (manager != null) {
                 manager.refreshNow();
             }

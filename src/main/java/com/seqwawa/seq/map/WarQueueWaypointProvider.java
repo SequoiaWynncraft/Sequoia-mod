@@ -18,7 +18,7 @@ public final class WarQueueWaypointProvider {
     private WarQueueWaypointProvider() {}
 
     public static Optional<Waypoint> current(double playerY) {
-        var queues = SeqClient.warTerritoryQueueManager;
+        var queues = SeqClient.getWarTerritoryQueueManager();
         if (queues == null
                 || SeqClient.warQueueAutoWaypointSetting == null
                 || !SeqClient.warQueueAutoWaypointSetting.getValue()

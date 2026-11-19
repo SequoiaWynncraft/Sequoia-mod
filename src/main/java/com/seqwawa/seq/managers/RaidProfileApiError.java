@@ -7,6 +7,7 @@ import com.seqwawa.seq.network.ApiClient;
 import com.seqwawa.seq.network.BuildConfig;
 import com.seqwawa.seq.network.auth.AuthErrorCode;
 import com.seqwawa.seq.network.auth.AuthException;
+import com.seqwawa.seq.network.auth.NotSignedInException;
 import com.seqwawa.seq.network.auth.RaidProfilesSession;
 import java.util.Locale;
 
@@ -31,6 +32,12 @@ public final class RaidProfileApiError {
 
         ApiClient.ApiException api = findApiException(throwable);
         if (api == null) {
+            // No session to send it with, such as one that ended while it was on its way: it never left.
+            for (Throwable cause = throwable; cause != null; cause = cause.getCause()) {
+                if (cause instanceof NotSignedInException notSignedIn) {
+                    return notSignedIn.getMessage();
+                }
+            }
             // Nothing answered, so this never got past the network.
             String cause = rootCauseMessage(throwable);
             return cause == null ? fallback : "Could not reach the backend: " + cause;

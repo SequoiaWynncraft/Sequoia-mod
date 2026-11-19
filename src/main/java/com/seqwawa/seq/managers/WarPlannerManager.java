@@ -2,7 +2,6 @@ package com.seqwawa.seq.managers;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberMoveDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.SupportDraft;
@@ -16,12 +15,14 @@ import com.seqwawa.seq.model.war.WarPlannerSnapshot.RosterMember;
 import com.seqwawa.seq.network.ApiClient;
 import com.seqwawa.seq.network.ApiClient.ApiException;
 import com.seqwawa.seq.network.WynncraftServerPolicy;
+import com.seqwawa.seq.network.auth.NotSignedInException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
 /** Owns the immutable war-planner snapshot and keeps all network work off the render thread. */
@@ -91,6 +92,8 @@ public final class WarPlannerManager {
 
     private final Gateway gateway;
     private final Clock clock;
+    /** Whether the session has a backend token to read the planner with. */
+    private final BooleanSupplier signedIn;
 
     private volatile State state = State.UNKNOWN;
     private volatile WarPlannerSnapshot snapshot;
@@ -106,13 +109,19 @@ public final class WarPlannerManager {
     private int consecutiveFailures;
     private long generation;
 
-    public WarPlannerManager() {
-        this(new ApiGateway(ApiClient.getInstance()), Clock.systemUTC());
+    /** The planner for one session, which reads while {@code signedIn} says that session has a token. */
+    public WarPlannerManager(BooleanSupplier signedIn) {
+        this(new ApiGateway(ApiClient.getInstance()), Clock.systemUTC(), signedIn);
     }
 
     public WarPlannerManager(Gateway gateway, Clock clock) {
+        this(gateway, clock, () -> true);
+    }
+
+    WarPlannerManager(Gateway gateway, Clock clock, BooleanSupplier signedIn) {
         this.gateway = Objects.requireNonNull(gateway, "gateway");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.signedIn = Objects.requireNonNull(signedIn, "signedIn");
     }
 
     public State state() {
@@ -168,14 +177,7 @@ public final class WarPlannerManager {
     }
 
     public void tick() {
-        tick(WynncraftServerPolicy.isCurrentServerAllowed(), hasSessionToken());
-    }
-
-    /** Whether a backend session token is stored; logout and session invalidation clear it. */
-    static boolean hasSessionToken() {
-        return SeqClient.getConfigManager() != null
-                && SeqClient.getConfigManager().getToken() != null
-                && !SeqClient.getConfigManager().getToken().isBlank();
+        tick(WynncraftServerPolicy.isCurrentServerAllowed(), signedIn.getAsBoolean());
     }
 
     public synchronized void tick(boolean contextAllowed, boolean hasToken) {
@@ -190,6 +192,10 @@ public final class WarPlannerManager {
     }
 
     public synchronized CompletableFuture<ActionResult> refreshNow() {
+        if (!signedIn.getAsBoolean()) {
+            // Its session ended, or has no token yet: the request would go out with whoever is signed in now.
+            return CompletableFuture.completedFuture(new ActionResult(false, new NotSignedInException().getMessage()));
+        }
         if (inFlight != null) {
             if (accessRequestInFlight) {
                 if (queuedRefresh == null) {

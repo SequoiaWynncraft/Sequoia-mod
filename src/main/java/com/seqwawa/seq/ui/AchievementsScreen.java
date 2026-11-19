@@ -40,8 +40,11 @@ public final class AchievementsScreen extends SequoiaPanelScreen {
     private static final float SUMMARY_HEIGHT = 28;
     private static final float SCROLL_SPEED = 30;
 
-    private final GuildRaidProgressService service = GuildRaidProgressService.getInstance();
     private final ScrollPane scroll = new ScrollPane();
+    /** Asked each time: a session that ends while the screen is open leaves it. */
+    private static GuildRaidProgressService service() {
+        return GuildRaidProgressService.getInstance();
+    }
 
     private List<Row> rows = List.of();
     private State state = State.LOADING;
@@ -59,8 +62,8 @@ public final class AchievementsScreen extends SequoiaPanelScreen {
     }
 
     private void refresh() {
-        state = service.state();
-        shown = service.progress();
+        state = service().state();
+        shown = service().progress();
         rows = buildRows(shown);
         if (state != State.READY) {
             scroll.setMax(0);
@@ -104,7 +107,7 @@ public final class AchievementsScreen extends SequoiaPanelScreen {
 
     @Override
     protected void beforeFrame() {
-        if (state != service.state() || !shown.equals(service.progress())) {
+        if (state != service().state() || !shown.equals(service().progress())) {
             refresh();
             triggerImmediateNarration(true);
         }

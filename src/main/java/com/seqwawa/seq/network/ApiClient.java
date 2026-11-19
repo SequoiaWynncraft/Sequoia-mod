@@ -55,6 +55,8 @@ import com.seqwawa.seq.model.war.WarTerritoryQueueFeed;
 import com.seqwawa.seq.network.auth.MinecraftAuthChallengeResponse;
 import com.seqwawa.seq.network.auth.MinecraftAuthCompleteRequest;
 import com.seqwawa.seq.network.auth.MinecraftAuthCompleteResponse;
+import com.seqwawa.seq.network.auth.MinecraftAuthService;
+import com.seqwawa.seq.session.SessionManager;
 import com.seqwawa.seq.utils.WynnClassCache;
 
 /**
@@ -320,11 +322,24 @@ public class ApiClient {
      * since that backend signs tokens with a different secret and refuses the main one.
      */
     private <T> CompletableFuture<T> withRaidProfilesToken(java.util.function.Function<String, CompletableFuture<T>> call) {
-        if (!raidProfilesOnSeparateBackend()) {
-            return callWithTokenRetry(force -> SeqClient.getAuthService().ensureValidToken(force), call);
+        return callWithTokenRetry(raidProfilesTokens(
+                raidProfilesOnSeparateBackend(),
+                SeqClient.getAuthService(),
+                () -> SessionManager.getInstance().current().raidProfiles()), call);
+    }
+
+    /**
+     * Both attempts of a raid-profile call take their token from the session current as it starts:
+     * a 401 after an account switch asks that session, which refuses, so a save never lands on the next account.
+     */
+    static Function<Boolean, CompletableFuture<String>> raidProfilesTokens(boolean separateBackend,
+            MinecraftAuthService auth, Supplier<com.seqwawa.seq.network.auth.RaidProfilesSession> raidProfiles) {
+        if (separateBackend) {
+            com.seqwawa.seq.network.auth.RaidProfilesSession signIn = raidProfiles.get();
+            return signIn::ensureToken;
         }
-        return callWithTokenRetry(
-                force -> com.seqwawa.seq.network.auth.RaidProfilesSession.getInstance().ensureToken(force), call);
+        long session = auth.sessionGeneration();
+        return force -> auth.ensureValidToken(force, session);
     }
 
     /**
@@ -1091,8 +1106,13 @@ public class ApiClient {
     }
 
     private HttpRequest.Builder newRequest(String resolvedBaseUrl, String path, boolean includeAuthHeader) {
-        return newRequestWithToken(
-                resolvedBaseUrl, path, includeAuthHeader ? SeqClient.getConfigManager().getToken() : null);
+        return newRequestWithToken(resolvedBaseUrl, path, includeAuthHeader ? signedInToken() : null);
+    }
+
+    /** The current session's token, expired or not; a 401 asks for a fresh one. */
+    private static String signedInToken() {
+        var signedIn = MinecraftAuthService.getInstance().getCurrentSession();
+        return signedIn == null ? null : signedIn.token();
     }
 
     /** A request carrying {@code token} as its bearer, or no Authorization header when it is null. */

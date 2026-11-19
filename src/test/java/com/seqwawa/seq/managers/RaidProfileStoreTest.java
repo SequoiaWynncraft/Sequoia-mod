@@ -430,29 +430,218 @@ class RaidProfileStoreTest {
 
     // ── Setup gating ──
 
+    /** Two Minecraft accounts that play on this computer, neither with a profile in the payload. */
+    private static final String MAIN_ACCOUNT = "20000000-0000-0000-0000-000000000001";
+    private static final String ALT_ACCOUNT = "20000000-0000-0000-0000-000000000002";
+
+    /** A store for whichever account {@code playing} holds. */
+    private static RaidProfileStore storeFor(Path directory, java.util.concurrent.atomic.AtomicReference<String> playing) {
+        return new RaidProfileStore(
+                directory.resolve("raid-profile.json"),
+                directory.resolve("cache/raid-profiles.json"),
+                () -> CompletableFuture.completedFuture(
+                        RaidProfileStore.parseProfilesResponse(BACKEND_PAYLOAD).orElse(null)),
+                () -> false,
+                Runnable::run,
+                Runnable::run,
+                playing::get,
+                profile -> new CompletableFuture<>(),
+                () -> 1L);
+    }
+
     @Test
     void setupIsNeededUntilTheBackendHoldsAProfileForYou(@TempDir Path directory) {
-        RaidProfileStore store = store(directory);
+        RaidProfileStore store = storeFor(directory, new java.util.concurrent.atomic.AtomicReference<>(MAIN_ACCOUNT));
         store.load();
 
-        // No local player in a test, so nothing resolves as "you" and setup is offered.
         assertTrue(store.needsSetup());
 
-        store.dismissSetup();
+        store.dismissSetup(1);
 
         assertFalse(store.needsSetup(), "skipping is remembered");
     }
 
     @Test
     void skippingSetupSurvivesARestart(@TempDir Path directory) {
-        RaidProfileStore store = store(directory);
+        var playing = new java.util.concurrent.atomic.AtomicReference<>(MAIN_ACCOUNT);
+        RaidProfileStore store = storeFor(directory, playing);
         store.load();
-        store.dismissSetup();
+        store.dismissSetup(1);
 
-        RaidProfileStore reloaded = store(directory);
+        RaidProfileStore reloaded = storeFor(directory, playing);
         reloaded.load();
 
         assertFalse(reloaded.needsSetup());
+    }
+
+    @Test
+    void skippingSetupIsEachAccountsOwn(@TempDir Path directory) {
+        var playing = new java.util.concurrent.atomic.AtomicReference<>(MAIN_ACCOUNT);
+        RaidProfileStore store = storeFor(directory, playing);
+        store.load();
+        store.dismissSetup(1);
+
+        playing.set(ALT_ACCOUNT);
+
+        assertTrue(store.needsSetup(), "the alt has not skipped it");
+        playing.set(MAIN_ACCOUNT);
+        assertFalse(store.needsSetup());
+    }
+
+    @Test
+    void anOlderFilesSkipGoesToTheFirstAccountToAsk(@TempDir Path directory) throws Exception {
+        Files.writeString(directory.resolve("raid-profile.json"),
+                "{\"version\": 1, \"setupDismissed\": true, \"friends\": [\"Blousy\"]}");
+        var playing = new java.util.concurrent.atomic.AtomicReference<>(MAIN_ACCOUNT);
+        RaidProfileStore store = storeFor(directory, playing);
+        store.load();
+
+        assertFalse(store.needsSetup(), "the account playing after the update keeps its skip");
+        playing.set(ALT_ACCOUNT);
+        assertTrue(store.needsSetup(), "another account does not inherit it");
+
+        RaidProfileStore restarted = storeFor(directory, playing);
+        restarted.load();
+        assertTrue(restarted.needsSetup(), "the skip was claimed, not left for whoever comes next");
+        playing.set(MAIN_ACCOUNT);
+        assertFalse(restarted.needsSetup());
+    }
+
+    @Test
+    void aSaveThatLandsAfterAnAccountSwitchLeavesTheNextAccountsSkip(@TempDir Path directory) {
+        var playing = new java.util.concurrent.atomic.AtomicReference<>(ALT_ACCOUNT);
+        var answer = new CompletableFuture<RaidProfilesResponse.Profile>();
+        RaidProfileStore store = new RaidProfileStore(
+                directory.resolve("raid-profile.json"),
+                directory.resolve("cache/raid-profiles.json"),
+                () -> CompletableFuture.completedFuture(
+                        RaidProfileStore.parseProfilesResponse(BACKEND_PAYLOAD).orElse(null)),
+                () -> false,
+                Runnable::run,
+                Runnable::run,
+                playing::get,
+                profile -> answer,
+                () -> 1L);
+        store.load();
+        store.dismissSetup(1);
+        playing.set(MAIN_ACCOUNT);
+
+        CompletableFuture<Boolean> saved = store.saveSelfProfile(RaidTeamProfile.empty(), 1);
+        // The player switches to the alt before the backend answers the main account's save.
+        playing.set(ALT_ACCOUNT);
+        answer.complete(RaidProfileStore.parseProfilesResponse(BACKEND_PAYLOAD).orElseThrow().profiles().get(0));
+
+        assertTrue(saved.join());
+        assertFalse(store.needsSetup(), "the alt skipped setup, and the main account's save does not undo that");
+    }
+
+    /** A store for the main account, in whichever session {@code session} holds. */
+    private static RaidProfileStore storeIn(Path directory, java.util.concurrent.atomic.AtomicLong session,
+            java.util.function.Supplier<CompletableFuture<RaidProfilesResponse>> fetch,
+            java.util.function.Function<RaidTeamProfile, CompletableFuture<RaidProfilesResponse.Profile>> save) {
+        return new RaidProfileStore(directory.resolve("raid-profile.json"), directory.resolve("cache/raid-profiles.json"),
+                fetch, () -> false, Runnable::run, Runnable::run, () -> MAIN_ACCOUNT, save, session::get);
+    }
+
+    @Test
+    void aSaveThatFailsAfterItsSessionEndedLeavesTheNextSessionsPanelAlone(@TempDir Path directory) {
+        var session = new java.util.concurrent.atomic.AtomicLong(1);
+        var answer = new CompletableFuture<RaidProfilesResponse.Profile>();
+        RaidProfileStore store = storeIn(directory, session, () -> CompletableFuture.completedFuture(
+                RaidProfileStore.parseProfilesResponse(BACKEND_PAYLOAD).orElse(null)), profile -> answer);
+        store.load();
+
+        CompletableFuture<Boolean> saved = store.saveSelfProfile(RaidTeamProfile.empty(), 1);
+        // The player switches account and the next session's panel loads; then the old save's retry is refused.
+        session.set(2);
+        store.refresh().join();
+        answer.completeExceptionally(new com.seqwawa.seq.network.auth.NotSignedInException());
+
+        assertFalse(saved.join());
+        assertNull(store.lastError(), "the next session's panel shows its own state");
+    }
+
+    @Test
+    void aSetupLeftOpenFromAnEndedSessionSavesAndSkipsNothing(@TempDir Path directory) {
+        var session = new java.util.concurrent.atomic.AtomicLong(1);
+        var sent = new AtomicInteger();
+        RaidProfileStore store = storeIn(directory, session, CompletableFuture::new, profile -> {
+            sent.incrementAndGet();
+            return new CompletableFuture<>();
+        });
+        store.load();
+
+        // The player switches account with session 1's setup open, then clicks Save or Not now.
+        session.set(2);
+
+        assertFalse(store.isCurrentSession(1), "the screen closes");
+        assertFalse(store.saveSelfProfile(RaidTeamProfile.empty(), 1).getNow(true), "refused at once");
+        assertEquals(0, sent.get(), "session 1's draft never reaches the next account's profile");
+        store.dismissSetup(1);
+        assertTrue(store.needsSetup(), "the next account's setup is still its own to skip");
+    }
+
+    @Test
+    void aFetchAnEndedSessionStartedLeavesTheNextSessionsPanelAlone(@TempDir Path directory) {
+        var session = new java.util.concurrent.atomic.AtomicLong(1);
+        List<CompletableFuture<RaidProfilesResponse>> fetches = new ArrayList<>();
+        RaidProfileStore store = storeIn(directory, session, () -> {
+            fetches.add(new CompletableFuture<>());
+            return fetches.getLast();
+        }, profile -> new CompletableFuture<>());
+        store.load();
+
+        // Session 1's fetch, a save's follow-up say, is still running when the player switches account.
+        store.refresh();
+        session.set(2);
+        store.refresh();
+        assertEquals(2, fetches.size(), "session 2 fetches for itself rather than waiting on session 1's");
+
+        fetches.get(0).completeExceptionally(new com.seqwawa.seq.network.auth.NotSignedInException());
+        session.set(3);
+        fetches.get(1).completeExceptionally(new com.seqwawa.seq.network.auth.NotSignedInException());
+        assertNull(store.lastError(), "neither ended session's answer reaches the panel of the session after it");
+
+        store.refresh();
+        fetches.get(2).completeExceptionally(new com.seqwawa.seq.network.auth.NotSignedInException());
+        assertNotNull(store.lastError(), "session 3's own fetch still shows how it went");
+    }
+
+    @Test
+    void anErrorAnEndedSessionStoredIsNotTheNextSessionsToShow(@TempDir Path directory) {
+        var session = new java.util.concurrent.atomic.AtomicLong(1);
+        List<CompletableFuture<RaidProfilesResponse>> fetches = new ArrayList<>();
+        RaidProfileStore store = storeIn(directory, session, () -> {
+            fetches.add(new CompletableFuture<>());
+            return fetches.getLast();
+        }, profile -> new CompletableFuture<>());
+        store.load();
+
+        store.refresh();
+        fetches.get(0).completeExceptionally(new com.seqwawa.seq.network.auth.NotSignedInException());
+        assertNotNull(store.lastError());
+
+        // The player switches account; setup opens while session 2's own fetch is still running.
+        session.set(2);
+        store.refresh();
+        assertNull(store.lastError(), "session 1's error is not session 2's");
+
+        fetches.get(1).completeExceptionally(new com.seqwawa.seq.network.auth.NotSignedInException());
+        assertNotNull(store.lastError(), "session 2's own error shows");
+    }
+
+    @Test
+    void friendsStaySharedBetweenAccounts(@TempDir Path directory) {
+        var playing = new java.util.concurrent.atomic.AtomicReference<>(MAIN_ACCOUNT);
+        RaidProfileStore store = storeFor(directory, playing);
+        store.load();
+        store.toggleFriend("Blousy");
+
+        playing.set(ALT_ACCOUNT);
+        RaidProfileStore restarted = storeFor(directory, playing);
+        restarted.load();
+
+        assertTrue(restarted.isFriend("Blousy"));
     }
 
     // ── Friends ──

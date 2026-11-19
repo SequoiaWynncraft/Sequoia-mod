@@ -7,6 +7,7 @@ import static com.seqwawa.seq.ui.unlock.PixelArt.*;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.managers.AssetManager;
 import com.seqwawa.seq.managers.CombatState;
+import com.seqwawa.seq.session.SessionManager;
 import com.seqwawa.seq.ui.theme.UiColor;
 import com.seqwawa.seq.ui.unlock.UnlockAnimation.Frame;
 import com.seqwawa.seq.ui.unlock.UnlockPopup.Kind;
@@ -83,9 +84,6 @@ public final class UnlockOverlay {
         {0.93f, 0.36f}, {0.32f, 0.08f}, {0.66f, 0.86f}, {0.4f, 0.9f}, {0.58f, 0.06f},
     };
 
-    private static final UnlockOverlay INSTANCE = new UnlockOverlay(
-            () -> UnlockPreview.isRunning() ? UnlockPreview.animationMs() : System.nanoTime() / 1_000_000L,
-            UnlockOverlay::playSound, CombatState::inCombat);
 
     private final LongSupplier clock;
     private final Consumer<UnlockPopup> onStart;
@@ -101,8 +99,16 @@ public final class UnlockOverlay {
         this.inCombat = inCombat;
     }
 
+    /** The current session's: the popups that session's rewards brought, which only it shows. */
     public static UnlockOverlay getInstance() {
-        return INSTANCE;
+        return SessionManager.getInstance().current().popups();
+    }
+
+    /** An empty queue that draws on the game's clock, plays each popup's sound and waits out fights. */
+    public static UnlockOverlay create() {
+        return new UnlockOverlay(
+                () -> UnlockPreview.isRunning() ? UnlockPreview.animationMs() : System.nanoTime() / 1_000_000L,
+                UnlockOverlay::playSound, CombatState::inCombat);
     }
 
     record Playing(UnlockPopup popup, long startedAtMs) {}

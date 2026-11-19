@@ -31,6 +31,14 @@ class RaidProfileApiErrorTest {
     }
 
     @Test
+    void aRequestRefusedForWantOfASessionSaysThatNotThatTheBackendIsUnreachable() {
+        String message = RaidProfileApiError.describe(
+                new CompletionException(new com.seqwawa.seq.network.auth.NotSignedInException()), "fallback");
+
+        assertEquals("There is no Sequoia session; connect to sign in.", message);
+    }
+
+    @Test
     void anUndeployedEndpointIsNotConfusedWithAnUnreachableBackend() {
         // The state this feature is in until the endpoints ship: the backend is up
         // and answering, it just has no route. Reporting that as "unreachable" sends

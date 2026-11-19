@@ -21,6 +21,7 @@ import com.seqwawa.seq.model.GuildMemberPresence;
 import com.seqwawa.seq.network.ApiClient;
 import com.seqwawa.seq.network.BuildConfig;
 import com.seqwawa.seq.network.ConnectionManager;
+import com.seqwawa.seq.session.SessionManager;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -32,11 +33,14 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BooleanSupplier;
+import java.util.function.Function;
+import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 
 /**
@@ -45,7 +49,8 @@ import java.util.function.Supplier;
  * <p>
  * Catalog and profiles are guild data: fetched, cached to disk so the panel is not
  * blank offline, never authored here. Friends, premades, notes and the setup
- * dismissal are personal and stay in a local file.
+ * dismissal are personal and stay in a local file. Friends, premades and notes are
+ * shared by every Minecraft account on this computer; skipping setup is each account's own.
  * <p>
  * Your own profile is read back from the same fetch as everyone else's, so you
  * cannot see a version of yourself the guild cannot.
@@ -81,6 +86,7 @@ public final class RaidProfileStore {
     private final Path localPath;
     private final Path cachePath;
     private final Supplier<CompletableFuture<RaidProfilesResponse>> fetch;
+    private final Function<RaidTeamProfile, CompletableFuture<RaidProfilesResponse.Profile>> save;
     /** Whether raid profiles come from another backend than the socket's. */
     private final BooleanSupplier separateBackend;
 
@@ -108,11 +114,22 @@ public final class RaidProfileStore {
     private final Refreshable<Published> published;
     private final Executor gameThread;
     private final Executor disk;
-    private volatile boolean setupDismissed;
+    /** The Minecraft accounts that skipped setup, by normalised UUID: each account decides for itself. */
+    private final Set<String> setupDismissedBy = ConcurrentHashMap.newKeySet();
+    /** An older file's single "skipped": the first account to ask takes it as its own. */
+    private volatile boolean unclaimedSetupDismissal;
+    /** The Minecraft account playing, by UUID, or null before the game knows. */
+    private final Supplier<String> account;
+    /** The current session's id, so a save's answer is shown only to the session that sent it. */
+    private final LongSupplier session;
     private volatile boolean loaded;
     /** Whether a fetch has worked since the game started. */
     private volatile boolean fetchedOnce;
     private volatile String lastError;
+    /** The session {@link #lastError} was stored in: a later session doesn't see it. */
+    private volatile long errorIn;
+    /** The session the last fetch started in: once it has ended, its answer leaves {@link #lastError} alone. Game thread only. */
+    private long fetchedIn;
 
     RaidProfileStore(Path localPath, Path cachePath) {
         this(
@@ -121,7 +138,10 @@ public final class RaidProfileStore {
                 () -> ApiClient.getInstance().getRaidProfiles(),
                 ApiClient::raidProfilesOnSeparateBackend,
                 ClientThread.executor(),
-                Background.disk());
+                Background.disk(),
+                RaidProfileStore::localUuid,
+                profile -> ApiClient.getInstance().putMyRaidProfile(profile),
+                () -> SessionManager.getInstance().current().id());
     }
 
     /**
@@ -139,7 +159,8 @@ public final class RaidProfileStore {
             Supplier<CompletableFuture<RaidProfilesResponse>> fetch,
             BooleanSupplier separateBackend) {
         // A test completes its fetches on its own thread, which stands in for the game's.
-        this(localPath, cachePath, fetch, separateBackend, Runnable::run, Runnable::run);
+        this(localPath, cachePath, fetch, separateBackend, Runnable::run, Runnable::run, RaidProfileStore::localUuid,
+                profile -> ApiClient.getInstance().putMyRaidProfile(profile), () -> 0L);
     }
 
     RaidProfileStore(
@@ -148,10 +169,16 @@ public final class RaidProfileStore {
             Supplier<CompletableFuture<RaidProfilesResponse>> fetch,
             BooleanSupplier separateBackend,
             Executor gameThread,
-            Executor disk) {
+            Executor disk,
+            Supplier<String> account,
+            Function<RaidTeamProfile, CompletableFuture<RaidProfilesResponse.Profile>> save,
+            LongSupplier session) {
+        this.account = account;
+        this.session = session;
         this.localPath = localPath;
         this.cachePath = cachePath;
         this.fetch = fetch;
+        this.save = save;
         this.separateBackend = separateBackend;
         this.gameThread = gameThread;
         this.disk = disk;
@@ -270,11 +297,12 @@ public final class RaidProfileStore {
     }
 
     public String lastError() {
-        return lastError;
+        return isCurrentSession(errorIn) ? lastError : null;
     }
 
     /** Fetches only when the loaded copy is old enough to be worth replacing. Game thread only. */
     public CompletableFuture<Void> refreshIfStale() {
+        dropEndedSessionsFetch();
         published.request();
         return settled();
     }
@@ -286,8 +314,17 @@ public final class RaidProfileStore {
      * answer, so it can't win with older data. Game thread only; completes there.
      */
     public CompletableFuture<Void> refresh() {
+        dropEndedSessionsFetch();
         published.force();
         return settled();
+    }
+
+    /** A fetch an ended session started is dropped, so the current one fetches for itself rather than waiting on it. */
+    private void dropEndedSessionsFetch() {
+        if (published.isLoading() && !isCurrentSession(fetchedIn)) {
+            published.cancel();
+            published.markStale();
+        }
     }
 
     private CompletableFuture<Void> settled() {
@@ -296,6 +333,7 @@ public final class RaidProfileStore {
 
     /** Reads the backend's answer into what the store shows, keeping the last catalog when it sends none. */
     private CompletableFuture<Published> fetchPublished() {
+        fetchedIn = session.getAsLong();
         return fetch.get().thenApply(response -> {
             if (response == null) {
                 throw new IllegalStateException("The backend sent no raid profiles.");
@@ -314,7 +352,9 @@ public final class RaidProfileStore {
 
     private void fetched(Published fetched) {
         fetchedOnce = true;
-        lastError = null;
+        if (isCurrentSession(fetchedIn)) {
+            lastError = null;
+        }
         if (fetched.source() != null) {
             disk.execute(() -> writeCache(fetched.source()));
         }
@@ -326,12 +366,16 @@ public final class RaidProfileStore {
     }
 
     private void fetchFailed(Throwable failure) {
-        lastError = RaidProfileApiError.describe(failure, "Could not load the guild's raid profiles.");
+        String shown = RaidProfileApiError.describe(failure, "Could not load the guild's raid profiles.");
+        if (isCurrentSession(fetchedIn)) {
+            errorIn = fetchedIn;
+            lastError = shown;
+        }
         SeqClient.LOGGER.warn(
                 "[RaidProfiles] GET {}/raid-profiles failed: {} | shown: {}",
                 BuildConfig.RAID_PROFILES_API_URL,
                 RaidProfileApiError.describeForLog(failure),
-                lastError);
+                shown);
     }
 
     /** Shows a whole response, as a fetch would. */
@@ -412,34 +456,51 @@ public final class RaidProfileStore {
         });
     }
 
+    /** Whether {@code sessionId} is the current session's: a screen opened in an ended one closes. */
+    public boolean isCurrentSession(long sessionId) {
+        return session.getAsLong() == sessionId;
+    }
+
     /**
      * Saves your profile and applies what the backend stored, so what you see is what
-     * the guild sees, including any normalising the server did.
+     * the guild sees, including any normalising the server did. Nothing is sent once
+     * {@code savedIn}, the session the draft was made in, has ended: the token would be the next account's.
      */
-    public CompletableFuture<Boolean> saveSelfProfile(RaidTeamProfile profile) {
+    public CompletableFuture<Boolean> saveSelfProfile(RaidTeamProfile profile, long savedIn) {
+        if (!isCurrentSession(savedIn)) {
+            return CompletableFuture.completedFuture(false);
+        }
         RaidTeamProfile toSave = profile == null ? RaidTeamProfile.empty() : profile;
-        // The answer is handled on the game thread, where the store's state lives.
-        return ApiClient.getInstance()
-                .putMyRaidProfile(toSave)
+        // Whose setup it answers: the account playing now, not whoever plays when the answer lands.
+        String savedBy = accountKey();
+        // The answer is handled on the game thread, where the store's state lives; only
+        // the session that sent it hears how it went, as a later one's panel shows its own state.
+        return save.apply(toSave)
                 .thenApplyAsync(saved -> {
-                    setupDismissed = false;
+                    forgetSetupDismissal(savedBy);
                     persist();
                     // The response is authoritative, including a username that may be a
                     // rename ahead of the token.
                     applyProfileUpdate(saved);
-                    // Pull the authoritative copy in the background; the entry above keeps
-                    // the panel responsive meanwhile.
-                    refresh();
-                    lastError = null;
+                    if (isCurrentSession(savedIn)) {
+                        // Pull the authoritative copy in the background; the entry above keeps
+                        // the panel responsive meanwhile.
+                        refresh();
+                        lastError = null;
+                    }
                     return true;
                 }, gameThread)
                 .exceptionallyAsync(throwable -> {
-                    lastError = RaidProfileApiError.describe(throwable, "Could not save your profile.");
+                    String shown = RaidProfileApiError.describe(throwable, "Could not save your profile.");
+                    if (isCurrentSession(savedIn)) {
+                        errorIn = savedIn;
+                        lastError = shown;
+                    }
                     SeqClient.LOGGER.warn(
                             "[RaidProfiles] PUT {}/raid-profiles/me failed: {} | shown: {}",
                             BuildConfig.RAID_PROFILES_API_URL,
                             RaidProfileApiError.describeForLog(throwable),
-                            lastError);
+                            shown);
                     return false;
                 }, gameThread);
     }
@@ -448,13 +509,48 @@ public final class RaidProfileStore {
 
     /** Whether setup should open instead of the list: until you have a profile, or skip it. */
     public boolean needsSetup() {
-        return !selfProfile().isComplete() && !setupDismissed;
+        return !selfProfile().isComplete() && !setupDismissedHere();
     }
 
-    /** Records that setup was closed without filling anything in. */
-    public void dismissSetup() {
-        setupDismissed = true;
+    /** Records that this account closed setup without filling anything in, unless {@code sessionId} has ended since. */
+    public void dismissSetup(long sessionId) {
+        if (!isCurrentSession(sessionId)) {
+            return;
+        }
+        String self = accountKey();
+        if (self == null) {
+            unclaimedSetupDismissal = true;
+        } else {
+            setupDismissedBy.add(self);
+        }
         persist();
+    }
+
+    /** Whether the account playing skipped setup, claiming an older version's single answer if nobody has. */
+    private boolean setupDismissedHere() {
+        String self = accountKey();
+        if (self == null) {
+            return unclaimedSetupDismissal;
+        }
+        if (unclaimedSetupDismissal) {
+            unclaimedSetupDismissal = false;
+            setupDismissedBy.add(self);
+            persist();
+        }
+        return setupDismissedBy.contains(self);
+    }
+
+    /** A saved profile answers setup for the account that saved it, so its skip no longer applies. */
+    private void forgetSetupDismissal(String savedBy) {
+        if (savedBy == null) {
+            unclaimedSetupDismissal = false;
+        } else {
+            setupDismissedBy.remove(savedBy);
+        }
+    }
+
+    private String accountKey() {
+        return RaidProfilesResponse.normalizeUuid(account.get());
     }
 
     // ── Friends ──
@@ -598,9 +694,18 @@ public final class RaidProfileStore {
     }
 
     void applyLocalDocument(JsonObject document) {
-        setupDismissed = document.has("setupDismissed")
+        unclaimedSetupDismissal = document.has("setupDismissed")
                 && document.get("setupDismissed").isJsonPrimitive()
                 && document.get("setupDismissed").getAsBoolean();
+        setupDismissedBy.clear();
+        if (document.has("setupDismissedBy") && document.get("setupDismissedBy").isJsonArray()) {
+            for (JsonElement element : document.getAsJsonArray("setupDismissedBy")) {
+                String uuid = element.isJsonPrimitive() ? RaidProfilesResponse.normalizeUuid(element.getAsString()) : null;
+                if (uuid != null) {
+                    setupDismissedBy.add(uuid);
+                }
+            }
+        }
 
         notes.clear();
         if (document.has("notes") && document.get("notes").isJsonObject()) {
@@ -683,7 +788,13 @@ public final class RaidProfileStore {
     JsonObject toLocalDocument() {
         JsonObject document = new JsonObject();
         document.addProperty("version", SCHEMA_VERSION);
-        document.addProperty("setupDismissed", setupDismissed);
+        JsonArray dismissedBy = new JsonArray();
+        setupDismissedBy.forEach(dismissedBy::add);
+        document.add("setupDismissedBy", dismissedBy);
+        if (unclaimedSetupDismissal) {
+            // Kept until an account claims it, as an older version wrote it.
+            document.addProperty("setupDismissed", true);
+        }
 
         JsonObject noteObject = new JsonObject();
         new LinkedHashMap<>(notes).forEach(noteObject::addProperty);

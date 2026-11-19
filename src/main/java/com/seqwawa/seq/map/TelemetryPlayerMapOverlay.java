@@ -3,10 +3,10 @@ package com.seqwawa.seq.map;
 import com.seqwawa.seq.client.ClientThread;
 import com.seqwawa.seq.client.Clocks;
 import com.seqwawa.seq.client.Refreshable;
-import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.war.WarStatusSnapshot;
 import com.seqwawa.seq.model.war.WarStatusSnapshot.Player;
 import com.seqwawa.seq.network.ApiClient;
+import com.seqwawa.seq.network.auth.MinecraftAuthService;
 import com.seqwawa.seq.utils.rendering.UiCanvas;
 import java.awt.Color;
 import java.time.Duration;
@@ -55,8 +55,8 @@ public final class TelemetryPlayerMapOverlay implements AutoCloseable {
     }
 
     private static boolean hasToken() {
-        String token = SeqClient.getConfigManager().getToken();
-        return token != null && !token.isBlank();
+        var signedIn = MinecraftAuthService.getInstance().getCurrentSession();
+        return signedIn != null && signedIn.hasToken();
     }
 
     /** Fetches the roster every five seconds while there is a token; without one, shows nobody. */

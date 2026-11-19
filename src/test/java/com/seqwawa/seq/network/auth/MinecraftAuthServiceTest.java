@@ -1,13 +1,9 @@
 package com.seqwawa.seq.network.auth;
 
-import com.seqwawa.seq.client.SeqClient;
-import com.seqwawa.seq.config.ConfigManager;
-import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
 import java.time.Instant;
 
@@ -119,162 +115,147 @@ class MinecraftAuthServiceTest {
         org.junit.jupiter.api.Assertions.assertNull(joined.get());
     }
 
-    @TempDir
-    Path tempDir;
-
-    private interface Scenario {
-        void run() throws Exception;
-    }
-
     private static final StoredAuthSession SESSION = new StoredAuthSession(
             "session-token", Instant.now().plusSeconds(86_400), "123e4567-e89b-12d3-a456-426614174000", "Player");
 
-    /** Runs signed in, with a real token store under a temporary directory, as clearing a session needs one. */
-    private void withConfig(Scenario scenario) throws Exception {
-        withConfig(SESSION, scenario);
-    }
-
-    private void withConfig(StoredAuthSession session, Scenario scenario) throws Exception {
-        ConfigManager previous = SeqClient.configManager;
-        var constructor = ConfigManager.class.getDeclaredConstructor(Path.class, Path.class, boolean.class);
-        constructor.setAccessible(true);
-        SeqClient.configManager = constructor.newInstance(tempDir.resolve("config.json"), tempDir.resolve("token"), false);
-        if (session != null) SeqClient.configManager.setAuthSession(session);
-        try {
-            scenario.run();
-        } finally {
-            SeqClient.configManager = previous;
-        }
-    }
-
     @Test
-    void aRequestFromAClearedSessionNeitherSignsInNorGetsAToken() throws Exception {
-        withConfig(() -> {
-            AtomicInteger starts = new AtomicInteger();
-            var auth = new MinecraftAuthService() {
-                @Override
-                public CompletableFuture<String> ensureValidToken(boolean forceRefresh) {
-                    starts.incrementAndGet();
-                    return CompletableFuture.completedFuture("token");
-                }
-            };
-            long session = auth.sessionGeneration();
-            assertEquals("token", auth.ensureSessionToken(false, session).join());
+    void aRequestFromAClearedSessionNeitherSignsInNorGetsAToken() {
+        AtomicInteger starts = new AtomicInteger();
+        var auth = new MinecraftAuthService(SESSION) {
+            @Override
+            public CompletableFuture<String> ensureValidToken(boolean forceRefresh) {
+                starts.incrementAndGet();
+                return CompletableFuture.completedFuture("token");
+            }
+        };
+        long session = auth.sessionGeneration();
+        assertEquals("token", auth.ensureSessionToken(false, session).join());
 
-            // The session ends after the request began and before it asks for a token again.
-            auth.clearSession();
+        // The session ends after the request began and before it asks for a token again.
+        auth.clearSession();
 
-            assertTrue(auth.ensureSessionToken(false, session).isCompletedExceptionally());
-            assertTrue(auth.ensureSessionToken(true, session).isCompletedExceptionally(),
-                    "nor the fresh sign-in a 401 asks for");
-            assertEquals(1, starts.get());
-        });
+        assertTrue(auth.ensureSessionToken(false, session).isCompletedExceptionally());
+        assertTrue(auth.ensureSessionToken(true, session).isCompletedExceptionally(),
+                "nor the fresh sign-in a 401 asks for");
+        assertEquals(1, starts.get());
     }
 
     @Test
     void aClearCannotLandBetweenTheSessionCheckAndTheStartOfASignIn() throws Exception {
-        withConfig(() -> {
-            AtomicReference<Thread> clearing = new AtomicReference<>();
-            var auth = new MinecraftAuthService() {
-                @Override
-                public CompletableFuture<String> ensureValidToken(boolean forceRefresh) {
-                    // The check has passed and a sign-in is starting. A clear asked for now has to wait.
-                    Thread clear = new Thread(this::clearSession);
-                    clearing.set(clear);
-                    clear.start();
-                    long deadline = System.nanoTime() + 5_000_000_000L;
-                    while (clear.getState() != Thread.State.BLOCKED && System.nanoTime() < deadline) Thread.onSpinWait();
-                    assertEquals(Thread.State.BLOCKED, clear.getState(), "the clear waits for the sign-in to start");
-                    return CompletableFuture.completedFuture("token");
-                }
-            };
-            long session = auth.sessionGeneration();
+        AtomicReference<Thread> clearing = new AtomicReference<>();
+        var auth = new MinecraftAuthService(SESSION) {
+            @Override
+            public CompletableFuture<String> ensureValidToken(boolean forceRefresh) {
+                // The check has passed and a sign-in is starting. A clear asked for now has to wait.
+                Thread clear = new Thread(this::clearSession);
+                clearing.set(clear);
+                clear.start();
+                long deadline = System.nanoTime() + 5_000_000_000L;
+                while (clear.getState() != Thread.State.BLOCKED && System.nanoTime() < deadline) Thread.onSpinWait();
+                assertEquals(Thread.State.BLOCKED, clear.getState(), "the clear waits for the sign-in to start");
+                return CompletableFuture.completedFuture("token");
+            }
+        };
+        long session = auth.sessionGeneration();
 
-            auth.ensureSessionToken(false, session).join();
-            clearing.get().join(5_000);
+        auth.ensureSessionToken(false, session).join();
+        clearing.get().join(5_000);
 
-            assertFalse(clearing.get().isAlive());
-            assertFalse(MinecraftAuthService.isCurrentAuthenticationAttempt(session, auth.sessionGeneration()),
-                    "the clear went ahead once the sign-in had started");
-        });
+        assertFalse(clearing.get().isAlive());
+        assertFalse(MinecraftAuthService.isCurrentAuthenticationAttempt(session, auth.sessionGeneration()),
+                "the clear went ahead once the sign-in had started");
     }
 
     @Test
-    void aRequestWithNoSessionNeverSignsIn() throws Exception {
-        withConfig(null, () -> {
-            AtomicInteger starts = new AtomicInteger();
-            var auth = new MinecraftAuthService() {
-                @Override
-                public CompletableFuture<String> ensureValidToken(boolean forceRefresh) {
-                    starts.incrementAndGet();
-                    return CompletableFuture.completedFuture("token");
-                }
-            };
+    void aRequestWithNoSessionNeverSignsIn() {
+        AtomicInteger starts = new AtomicInteger();
+        var auth = new MinecraftAuthService() {
+            @Override
+            public CompletableFuture<String> ensureValidToken(boolean forceRefresh) {
+                starts.incrementAndGet();
+                return CompletableFuture.completedFuture("token");
+            }
+        };
 
-            var token = auth.ensureSessionToken(false, auth.sessionGeneration());
+        var token = auth.ensureSessionToken(false, auth.sessionGeneration());
 
-            var failure = assertThrows(java.util.concurrent.CompletionException.class, token::join);
-            org.junit.jupiter.api.Assertions.assertInstanceOf(NotSignedInException.class, failure.getCause());
-            assertEquals(0, starts.get());
-        });
+        var failure = assertThrows(java.util.concurrent.CompletionException.class, token::join);
+        org.junit.jupiter.api.Assertions.assertInstanceOf(NotSignedInException.class, failure.getCause());
+        assertEquals(0, starts.get());
     }
 
     @Test
     void aPlayerWhoSignedOutIsNotSignedInAgainByAnyFeature() throws Exception {
-        withConfig(() -> {
-            var auth = new MinecraftAuthService();
+        var auth = new MinecraftAuthService(SESSION);
 
-            auth.signOut();
+        auth.signOut();
 
-            org.junit.jupiter.api.Assertions.assertNull(auth.getCurrentSession());
-            assertTrue(auth.isSignedOutByUser());
-            // Raid profiles, achievements, ally raids and the Leaf stream all ask this way.
-            assertNotSignedIn(auth.ensureValidToken(false));
-            assertNotSignedIn(auth.ensureValidToken(true));
-            assertNotSignedIn(auth.beginAuthentication());
-            // A raid-profiles backend of its own would sign in separately.
-            assertNotSignedIn(auth.authenticateAgainst("https://staging.seqwawa.com/api"));
-            assertEquals(AuthState.IDLE, auth.getState());
-        });
+        org.junit.jupiter.api.Assertions.assertNull(auth.getCurrentSession());
+        assertTrue(auth.isSignedOutByUser());
+        // Raid profiles, achievements, ally raids and the Leaf stream all ask this way.
+        assertNotSignedIn(auth.ensureValidToken(false));
+        assertNotSignedIn(auth.ensureValidToken(true));
+        assertNotSignedIn(auth.beginAuthentication());
+        // A raid-profiles backend of its own would sign in separately.
+        assertNotSignedIn(auth.authenticateAgainst("https://staging.seqwawa.com/api"));
+        assertEquals(AuthState.IDLE, auth.getState());
     }
 
     @Test
     void connectingExplicitlyEndsASignOut() throws Exception {
-        withConfig(() -> {
-            var auth = new MinecraftAuthService();
-            auth.signOut();
+        var auth = new MinecraftAuthService(SESSION);
+        auth.signOut();
 
-            auth.allowSignIn();
+        auth.allowSignIn();
 
-            assertFalse(auth.isSignedOutByUser());
-        });
+        assertFalse(auth.isSignedOutByUser());
     }
 
     @Test
     void anAccountChangeLeavesTheNextAccountFreeToSignIn() throws Exception {
-        withConfig(() -> {
-            var auth = new MinecraftAuthService();
-            auth.signOut();
+        var auth = new MinecraftAuthService(SESSION);
+        auth.signOut();
 
-            auth.clearSession();
+        auth.clearSession();
 
-            assertFalse(auth.isSignedOutByUser(), "the next account signs in as usual");
-            org.junit.jupiter.api.Assertions.assertNull(auth.getCurrentSession());
-        });
+        assertFalse(auth.isSignedOutByUser(), "the next account signs in as usual");
+        org.junit.jupiter.api.Assertions.assertNull(auth.getCurrentSession());
     }
 
     @Test
     void clearingOrInvalidatingASessionIsNotASignOut() throws Exception {
-        withConfig(() -> {
-            var auth = new MinecraftAuthService();
+        var auth = new MinecraftAuthService(SESSION);
 
-            auth.clearSession();
-            assertFalse(auth.isSignedOutByUser());
+        auth.clearSession();
+        assertFalse(auth.isSignedOutByUser());
 
-            SeqClient.configManager.setAuthSession(SESSION);
-            auth.invalidateSession(AuthErrorCode.TOKEN_INVALID, "Backend rejected the stored token.");
-            assertFalse(auth.isSignedOutByUser(), "a rejected token signs in afresh");
-        });
+        var rejected = new MinecraftAuthService(SESSION);
+        rejected.invalidateSession("session-token", AuthErrorCode.TOKEN_INVALID, "Backend rejected the stored token.");
+        assertFalse(rejected.isSignedOutByUser(), "a rejected token signs in afresh");
+    }
+
+    @Test
+    void aRefusalOfATokenTheSignInNoLongerHoldsEndsNothing() {
+        var auth = new MinecraftAuthService(SESSION);
+        assertTrue(auth.invalidateSession("session-token", AuthErrorCode.TOKEN_INVALID, "Rejected."));
+        SignIn next = auth.currentSignIn();
+
+        // The same refusal again, as a second socket message or an old socket's after a switch.
+        assertFalse(auth.invalidateSession("session-token", AuthErrorCode.TOKEN_INVALID, "Rejected."));
+        assertTrue(next == auth.currentSignIn(), "the sign-in that replaced it carries on");
+        assertFalse(auth.invalidateSession(null, AuthErrorCode.TOKEN_INVALID, "Rejected."), "a socket with no token");
+    }
+
+    @Test
+    void aTokenSpeaksForTheSignInOnlyUntilItEnds() {
+        var auth = new MinecraftAuthService(SESSION);
+        assertTrue(auth.holdsToken("session-token"));
+        assertFalse(auth.holdsToken("another-token"));
+        assertFalse(auth.holdsToken(null), "a socket with no token holds none");
+
+        auth.clearSession();
+
+        assertFalse(auth.holdsToken("session-token"));
     }
 
     private static void assertNotSignedIn(CompletableFuture<?> future) {

@@ -9,8 +9,8 @@ import com.seqwawa.seq.model.LeafAccount;
 import com.seqwawa.seq.model.LeafEvents;
 import com.seqwawa.seq.model.LeafQuests;
 import com.seqwawa.seq.network.ApiClient;
-import com.seqwawa.seq.network.auth.MinecraftAuthService;
 import com.seqwawa.seq.network.auth.NotSignedInException;
+import com.seqwawa.seq.session.SessionManager;
 import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
@@ -70,17 +70,10 @@ public final class LeafQuestService {
     /** How long the recent events may take before the board shows the rest without them. */
     static final Duration EVENTS_DEADLINE = Duration.ofSeconds(20);
 
-    private static LeafQuestService instance;
-
-    /**
-     * One read of Leaf: the sign-in session it belongs to, and whether the board
-     * still wants it.
-     */
-    record Read(long session, BooleanSupplier wanted) {}
+    /** One read of Leaf: whether the board still wants it. */
+    record Read(BooleanSupplier wanted) {}
 
     private final Executor gameThread;
-    /** The auth service's current session, as {@link MinecraftAuthService#sessionGeneration()} counts them. */
-    private final LongSupplier authSession;
     /**
      * Keeps what the board shows when a refresh fails, and forgets it when there is no
      * session to read with or the player is not a member. A read that takes longer
@@ -88,23 +81,14 @@ public final class LeafQuestService {
      * board loading for good.
      */
     private final Refreshable<Snapshot> reads;
-    /**
-     * The session what this shows belongs to: the one current when it started or
-     * was last reset. Clearing a session moves the auth service on first and resets
-     * this after, so a read started in between still belongs to the old session,
-     * and the auth service will not sign it in.
-     */
-    private long session;
     /** Fixed sample data the development preview shows instead of reading Leaf, or null. */
     private Snapshot preview;
 
     LeafQuestService(Function<Read, CompletableFuture<Snapshot>> fetcher, LongSupplier clock, Duration readDeadline,
-            LongSupplier authSession, TickQueue gameThread) {
+            TickQueue gameThread) {
         this.gameThread = gameThread;
-        this.authSession = authSession;
-        this.session = authSession.getAsLong();
         this.reads = Refreshable.<Snapshot>builderWithTicket("Leaf quests",
-                        ticket -> fetcher.apply(new Read(session, ticket::current)))
+                        ticket -> fetcher.apply(new Read(ticket::current)))
                 .clock(clock)
                 .handBack(gameThread)
                 .refreshEveryMs(REFRESH_INTERVAL_MS)
@@ -119,20 +103,20 @@ public final class LeafQuestService {
                 .build();
     }
 
-    public static synchronized LeafQuestService getInstance() {
-        if (instance == null) {
-            instance = new LeafQuestService(LeafQuestService::fetch, Clocks::monotonicMillis, READ_DEADLINE,
-                    () -> SeqClient.getAuthService() == null ? 0 : SeqClient.getAuthService().sessionGeneration(),
-                    ClientThread.queue());
-        }
-        return instance;
+    /** The current session's. */
+    public static LeafQuestService getInstance() {
+        return SessionManager.getInstance().current().leafQuests();
     }
 
-    private static CompletableFuture<Snapshot> fetch(Read read) {
+    /** Reads Leaf with one session's {@code tokens}, which refuse once it has ended. */
+    public static LeafQuestService forSession(Function<Boolean, CompletableFuture<String>> tokens) {
+        return new LeafQuestService(read -> fetch(read, tokens), Clocks::monotonicMillis, READ_DEADLINE,
+                ClientThread.queue());
+    }
+
+    private static CompletableFuture<Snapshot> fetch(Read read, Function<Boolean, CompletableFuture<String>> tokens) {
         ApiClient api = ApiClient.getInstance();
-        MinecraftAuthService auth = SeqClient.getAuthService();
-        Function<Boolean, CompletableFuture<String>> tokenFor = sessionToken(read.wanted(),
-                force -> auth.ensureSessionToken(force, read.session()));
+        Function<Boolean, CompletableFuture<String>> tokenFor = sessionToken(read.wanted(), tokens);
         // Quests first: with sync=1 Leaf pays what was just finished, so the balance read after it includes it.
         // The recent events are a nicety: without them the board still shows the balance and the quests, and
         // says the list could not be read. A blank answer is an empty list, not a failure.
@@ -150,10 +134,9 @@ public final class LeafQuestService {
     /**
      * Where a read gets its tokens, the fresh one after a 401 included: from
      * {@code tokens} while the read is still wanted, and nowhere once the board
-     * has been reset. The tokens themselves come from the auth service bound to
-     * the session the read began under, which refuses to sign in once that
-     * session is cleared, so a read still running then can finish but never
-     * signs the player in again.
+     * has been reset. The tokens themselves are the board's own session's, which
+     * refuse once that session has ended, so a read still running then can finish
+     * but never signs the player in again.
      */
     static Function<Boolean, CompletableFuture<String>> sessionToken(BooleanSupplier sessionCurrent,
             Function<Boolean, CompletableFuture<String>> tokens) {
@@ -192,9 +175,8 @@ public final class LeafQuestService {
         return preview == null && current.hasValue() && current.failure() != null;
     }
 
-    /** Forgets everything, for a different account. Game thread only. */
+    /** Forgets everything and drops the read running, for a session that ended. Game thread only. */
     public void reset() {
-        session = authSession.getAsLong();
         preview = null;
         reads.reset();
     }

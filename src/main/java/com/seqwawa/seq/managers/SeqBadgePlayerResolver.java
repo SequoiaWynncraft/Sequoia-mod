@@ -6,6 +6,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.SeqBadge;
+import com.seqwawa.seq.network.auth.MinecraftAuthService;
 import com.seqwawa.seq.network.auth.StoredAuthSession;
 
 final class SeqBadgePlayerResolver {
@@ -59,7 +60,7 @@ final class SeqBadgePlayerResolver {
     }
 
     private static StoredAuthSession currentStoredAuthSession() {
-        return SeqClient.getConfigManager().getStoredAuthSession();
+        return MinecraftAuthService.getInstance().getCurrentSession();
     }
 
     private static UUID currentLauncherUuid() {

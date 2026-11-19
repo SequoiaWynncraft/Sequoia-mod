@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -312,6 +313,29 @@ class GuildStorageTrackerTest {
         tracker.flushPendingSnapshotIfReady(true, true);
 
         assertEquals(List.of(first), published);
+    }
+
+    @Test
+    void resetForgetsTheStorageEvenWhenItsRewardFlushFails() {
+        GuildStorageTracker tracker = new GuildStorageTracker(
+                snapshot -> {},
+                reward -> {
+                    throw new IllegalStateException("socket closed");
+                },
+                message -> {},
+                () -> true,
+                () -> 100,
+                () -> 100,
+                System::currentTimeMillis);
+        tracker.applyObservedSnapshot(new GuildStorageTracker.StorageSnapshot(
+                new GuildStorageTracker.ResourceSnapshot(5_000, 92_160),
+                new GuildStorageTracker.ResourceSnapshot(10, 120)));
+        tracker.onSystemChat(Component.literal("Dwoc rewarded 1024 Emeralds to cinfrascitizen"));
+
+        // The session step that runs it logs the failure.
+        assertThrows(IllegalStateException.class, tracker::reset);
+
+        assertNull(tracker.currentSnapshot(), "the next account starts without the previous one's storage");
     }
 
     @Test

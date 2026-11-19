@@ -104,7 +104,9 @@ public final class WarPlannerScreen extends Screen {
     @Override
     public void tick() {
         if (tab == Tab.ZONES) zones.tick();
-        if (manager == null || manager.state() == WarPlannerManager.State.FORBIDDEN) {
+        // Also once its session has ended: the next session has a planner of its own.
+        if (manager == null || manager.state() == WarPlannerManager.State.FORBIDDEN
+                || manager != SeqClient.getWarPlannerManager()) {
             SeqClient.mc.setScreen(parent);
         } else if (warPingPicker.isOpen() && !manager.canManage()) {
             warPingPicker.close();

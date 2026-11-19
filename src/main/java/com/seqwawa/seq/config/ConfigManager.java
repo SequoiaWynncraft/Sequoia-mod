@@ -1,23 +1,24 @@
 package com.seqwawa.seq.config;
 
 import com.google.gson.*;
+import lombok.AccessLevel;
 import lombok.Getter;
 import com.seqwawa.seq.client.SeqClient;
-import com.seqwawa.seq.network.auth.StoredAuthSession;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.regex.Pattern;
 
 @Getter
@@ -28,7 +29,9 @@ public class ConfigManager {
     private static final String TOKEN_EXPIRES_AT_KEY = "_auth_token_expires_at";
     private static final String MINECRAFT_UUID_KEY = "_minecraft_uuid";
     private static final String MINECRAFT_USERNAME_KEY = "_minecraft_username";
-    private static final String DISCORD_USERNAME_KEY = "_discord_username";
+    /** Before Discord names were kept per Minecraft account: one name, for whoever played. */
+    private static final String LEGACY_DISCORD_USERNAME_KEY = "_discord_username";
+    private static final String DISCORD_USERNAMES_KEY = "_discord_usernames";
     private static final String IGNORED_BRIDGE_USERS_KEY = "_ignored_bridge_users";
     private static final String BOMB_SHARE_PROMPT_SEEN_KEY = "_bomb_share_prompt_seen";
     private static final String STARTUP_VIDEO_X_KEY = "_startup_video_x";
@@ -49,11 +52,12 @@ public class ConfigManager {
     private final Set<String> trackedWorldEventIds = new LinkedHashSet<>();
     private final Set<Long> hiddenWarPlannerZoneIds = new LinkedHashSet<>();
     private final Set<Long> hiddenWarPlannerZoneCategoryIds = new LinkedHashSet<>();
-    private String authToken;
-    private Instant authTokenExpiresAt;
-    private String minecraftUuid;
-    private String minecraftUsername;
-    private String discordUsername;
+    /** Each Minecraft account's linked Discord name by UUID, empty when the backend said none. Guarded by this. */
+    @Getter(AccessLevel.NONE)
+    private final Map<String, String> discordUsernames = new LinkedHashMap<>();
+    /** A name an older version saved for no account in particular; the first account to ask takes it. */
+    @Getter(AccessLevel.NONE)
+    private String unclaimedDiscordUsername;
     private boolean bombSharePromptSeen;
     private Double startupVideoX;
     private Double startupVideoY;
@@ -85,74 +89,56 @@ public class ConfigManager {
         legacySettingKeys.put(setting, List.of(legacyKeys));
     }
 
-    // ── Token management ──
-
-    public String getToken() {
-        return authToken;
-    }
-
-    public Instant getTokenExpiresAt() {
-        return authTokenExpiresAt;
-    }
-
-    public String getMinecraftUuid() {
-        return minecraftUuid;
-    }
-
-    public String getMinecraftUsername() {
-        return minecraftUsername;
-    }
-
-    public String getDiscordUsername() {
-        return discordUsername;
+    /** The Discord name linked to {@code account}, or null; the first account to ask claims an older version's. */
+    public String getDiscordUsername(UUID account) {
+        if (account == null) {
+            return null;
+        }
+        boolean claimed;
+        String name;
+        synchronized (this) {
+            String key = account.toString();
+            claimed = unclaimedDiscordUsername != null && !discordUsernames.containsKey(key);
+            if (claimed) {
+                discordUsernames.put(key, unclaimedDiscordUsername);
+                unclaimedDiscordUsername = null;
+            }
+            name = discordUsernames.get(key);
+        }
+        if (claimed) {
+            save();
+        }
+        return name == null || name.isBlank() ? null : name;
     }
 
     public boolean isBombSharePromptSeen() {
         return bombSharePromptSeen;
     }
 
-    public StoredAuthSession getStoredAuthSession() {
-        if (authToken == null || authToken.isBlank()) {
-            return null;
-        }
-        return new StoredAuthSession(authToken, authTokenExpiresAt, minecraftUuid, minecraftUsername);
-    }
-
-    public void setToken(String token) {
-        this.authToken = token;
-        this.authTokenExpiresAt = null;
-    }
-
-    public void setAuthSession(StoredAuthSession session) {
-        if (session == null || !session.hasToken()) {
-            clearAuthSession();
+    /**
+     * The Discord name the backend linked to {@code account} when it signed in, or none. Kept even
+     * when empty, so the account no longer claims an older version's name, which stays for another.
+     */
+    public void setDiscordUsername(UUID account, String discordUsername) {
+        if (account == null) {
             return;
         }
-
-        this.authToken = session.token();
-        this.authTokenExpiresAt = session.expiresAt();
-        this.minecraftUuid = session.minecraftUuid();
-        this.minecraftUsername = session.minecraftUsername();
-    }
-
-    public void clearToken() {
-        clearAuthSession();
-    }
-
-    public void clearAuthSession() {
-        this.authToken = null;
-        this.authTokenExpiresAt = null;
-        this.minecraftUuid = null;
-        this.minecraftUsername = null;
-    }
-
-    public void setDiscordUsername(String discordUsername) {
-        this.discordUsername = discordUsername;
+        synchronized (this) {
+            discordUsernames.put(
+                    account.toString(), discordUsername == null || discordUsername.isBlank() ? "" : discordUsername);
+        }
         save();
     }
 
-    public void clearDiscordUsername() {
-        this.discordUsername = null;
+    /** Clear session: forgets {@code account}'s Discord name, and an older version's it would claim next. */
+    public void clearDiscordUsername(UUID account) {
+        if (account == null) {
+            return;
+        }
+        synchronized (this) {
+            discordUsernames.remove(account.toString());
+            unclaimedDiscordUsername = null;
+        }
         save();
     }
 
@@ -294,8 +280,15 @@ public class ConfigManager {
     public void save() {
         try {
             JsonObject root = new JsonObject();
-            if (discordUsername != null) {
-                root.addProperty(DISCORD_USERNAME_KEY, discordUsername);
+            synchronized (this) {
+                if (!discordUsernames.isEmpty()) {
+                    JsonObject names = new JsonObject();
+                    discordUsernames.forEach(names::addProperty);
+                    root.add(DISCORD_USERNAMES_KEY, names);
+                }
+                if (unclaimedDiscordUsername != null) {
+                    root.addProperty(LEGACY_DISCORD_USERNAME_KEY, unclaimedDiscordUsername);
+                }
             }
             if (!ignoredBridgeUsers.isEmpty()) {
                 JsonArray ignoredUsers = new JsonArray();
@@ -342,9 +335,7 @@ public class ConfigManager {
             if (root != null && removePersistedAuthSession(root)) {
                 writeConfig(root);
             }
-            if (root != null && root.has(DISCORD_USERNAME_KEY) && root.get(DISCORD_USERNAME_KEY).isJsonPrimitive()) {
-                discordUsername = root.get(DISCORD_USERNAME_KEY).getAsString();
-            }
+            readDiscordUsernames(root);
             ignoredBridgeUsers.clear();
             if (root != null && root.has(IGNORED_BRIDGE_USERS_KEY) && root.get(IGNORED_BRIDGE_USERS_KEY).isJsonArray()) {
                 for (JsonElement element : root.getAsJsonArray(IGNORED_BRIDGE_USERS_KEY)) {
@@ -421,6 +412,24 @@ public class ConfigManager {
         }
     }
 
+    private synchronized void readDiscordUsernames(JsonObject root) {
+        discordUsernames.clear();
+        unclaimedDiscordUsername = null;
+        if (root == null) {
+            return;
+        }
+        if (root.has(DISCORD_USERNAMES_KEY) && root.get(DISCORD_USERNAMES_KEY).isJsonObject()) {
+            for (Map.Entry<String, JsonElement> entry : root.getAsJsonObject(DISCORD_USERNAMES_KEY).entrySet()) {
+                if (entry.getValue().isJsonPrimitive()) {
+                    discordUsernames.put(entry.getKey(), entry.getValue().getAsString());
+                }
+            }
+        }
+        if (root.has(LEGACY_DISCORD_USERNAME_KEY) && root.get(LEGACY_DISCORD_USERNAME_KEY).isJsonPrimitive()) {
+            unclaimedDiscordUsername = root.get(LEGACY_DISCORD_USERNAME_KEY).getAsString();
+        }
+    }
+
     private void writeConfig(JsonObject root) throws IOException {
         Path parent = configPath.getParent();
         if (parent != null) {
@@ -480,6 +489,7 @@ public class ConfigManager {
         }
     }
 
+    /** Older versions wrote the backend session here; it is kept in memory only now. */
     private static boolean removePersistedAuthSession(JsonObject root) {
         boolean removed = root.remove(TOKEN_KEY) != null;
         removed |= root.remove(TOKEN_EXPIRES_AT_KEY) != null;

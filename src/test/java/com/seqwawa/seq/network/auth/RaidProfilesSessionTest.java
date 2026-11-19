@@ -1,6 +1,10 @@
 package com.seqwawa.seq.network.auth;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+import java.util.concurrent.CompletionException;
 
 import org.junit.jupiter.api.Test;
 
@@ -20,6 +24,19 @@ class RaidProfilesSessionTest {
         assertEquals(
                 RaidProfilesSession.linkUrlFor("https://staging.seqwawa.com/api"),
                 RaidProfilesSession.linkUrlFor("https://staging.seqwawa.com"));
+    }
+
+    @Test
+    void anEndedSessionsSignInRefusesForGoodWithoutSigningIn() {
+        // An insecure address fails a sign-in at once, so one that started would fail differently.
+        RaidProfilesSession signIn = new RaidProfilesSession("http://localhost/api");
+
+        signIn.clear();
+
+        for (boolean force : new boolean[] {false, true}) {
+            var failure = assertThrows(CompletionException.class, () -> signIn.ensureToken(force).join());
+            assertInstanceOf(NotSignedInException.class, failure.getCause(), "force=" + force);
+        }
     }
 
     @Test

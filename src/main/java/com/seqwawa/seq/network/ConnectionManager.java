@@ -2,6 +2,7 @@ package com.seqwawa.seq.network;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import java.net.URI;
 import java.time.Instant;
@@ -37,7 +38,6 @@ import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.config.ConfigManager;
 import com.seqwawa.seq.model.ChatItemPreview;
 import com.seqwawa.seq.managers.GuildRankEventParser;
-import com.seqwawa.seq.managers.PartyFinderManager;
 import com.seqwawa.seq.managers.TreasuryOutManager;
 import com.seqwawa.seq.model.BombShareType;
 import com.seqwawa.seq.model.GuildWarSubmission;
@@ -98,6 +98,11 @@ public class ConnectionManager {
     private long connectionAttemptGeneration;
     private volatile boolean userInitiatedConnectFlow;
     private volatile boolean treasuryOnlyConnection;
+    /** The token this socket signed in with, and the account it signed in for; a Treasury-only socket has neither. */
+    private volatile String handshakeToken;
+    private volatile UUID handshakeAccount;
+    /** The sign-in its token came from, which a renewal of the token keeps. */
+    private volatile long handshakeSession;
     private final TreasurySessionAuthenticator treasurySessionAuthenticator;
     // WebSocket instances are replaced on reconnect; pending events belong to the account session.
     private static final GuildWarOutboundQueue pendingGuildWarEvents = new GuildWarOutboundQueue();
@@ -133,6 +138,11 @@ public class ConnectionManager {
      * In between the socket already reads as closed, but only that close decides what comes next.
      */
     private volatile boolean closeQueued;
+    /**
+     * Set once the backend refused this socket's token. Frames it delivered after the refusal speak
+     * for the session that refusal ended and are dropped; its close still decides what comes next.
+     */
+    private volatile boolean rejected;
     /** A Connect the player asked for while {@link #closeQueued}: it runs on a new socket once the close is handled. */
     private volatile boolean connectOnceClosed;
     private volatile boolean versionRejectionShown;
@@ -426,7 +436,7 @@ public class ConnectionManager {
         if (treasuryOnlyConnection) {
             notifyConnectionStatus("Connected for Treasury OUT. Verifying the cinfrascitizen Minecraft session...");
         } else {
-            String username = SeqClient.getConfigManager().getMinecraftUsername();
+            String username = environment.tokens().signedInUsername();
             notifyConnectionStatus(
                     username != null && !username.isBlank()
                             ? "Connected websocket for " + username + ". Waiting for backend authentication..."
@@ -444,8 +454,8 @@ public class ConnectionManager {
             SeqClient.LOGGER.debug("[WebSocket] Ignoring message from a superseded websocket connection");
             return;
         }
-        if (endedOnPurpose) {
-            SeqClient.LOGGER.debug("[WebSocket] Ignoring message from a connection that was ended");
+        if (endedOnPurpose || rejected) {
+            SeqClient.LOGGER.debug("[WebSocket] Ignoring message from a connection that was ended or refused");
             return;
         }
         SeqClient.LOGGER.debug("[WebSocket] onMessage raw={} chars", message != null ? message.length() : -1);
@@ -782,6 +792,7 @@ public class ConnectionManager {
             return;
         }
         long connectionAttempt = beginConnectionAttempt();
+        long signIn = environment.tokens().sessionId();
         environment.tokens()
                 .ensureValidToken(forceTokenRefresh)
                 .whenComplete((token, throwable) -> environment.scheduler().execute(() -> {
@@ -827,6 +838,9 @@ public class ConnectionManager {
                             finishConnectFlow();
                             return;
                         }
+                        handshakeToken = token;
+                        handshakeAccount = environment.game().profileId();
+                        handshakeSession = signIn;
                         socket.connect(buildHandshakeHeaders(token));
                     } catch (Exception exception) {
                         connectInProgress = false;
@@ -1023,11 +1037,9 @@ public class ConnectionManager {
         switch (kind) {
             case AUTH_REJECTED -> {
                 authFailed = true;
-                environment.tokens()
-                        .invalidateSession(
-                                AuthErrorCode.WEBSOCKET_AUTH_REJECTED,
-                                "Backend rejected websocket authentication. Re-authenticating.");
-                notifyConnectionFailure(environment.tokens().lastErrorMessage(), false);
+                String message = "Backend rejected websocket authentication. Re-authenticating.";
+                environment.tokens().invalidateSession(handshakeToken, AuthErrorCode.WEBSOCKET_AUTH_REJECTED, message);
+                notifyConnectionFailure(message, false);
                 registerAuthFailure();
                 recordAuthRejection();
             }
@@ -2064,13 +2076,12 @@ public class ConnectionManager {
                     // Last, so a reader on another thread that sees the session sees all of the above too.
                     authenticated = true;
                     autoReconnect = true;
-                    if (json.has("discord_username")
-                            && json.get("discord_username").isJsonPrimitive()) {
-                        String discordUser = json.get("discord_username").getAsString();
-                        storeDiscordUsername(discordUser);
+                    String discordUser = discordUsernameIn(json);
+                    discordNameDelivery(discordUser, handshakeAccount,
+                            () -> instance == this && environment.tokens().sessionId() == handshakeSession,
+                            SeqClient.getConfigManager()::setDiscordUsername).run();
+                    if (discordUser != null) {
                         notifyConnectionStatus("Connected as " + discordUser);
-                    } else {
-                        clearDiscordUsername();
                     }
                     sendPrepared("get_connected", null);
                     flushPendingGuildWarEvents();
@@ -2293,10 +2304,10 @@ public class ConnectionManager {
                             authFailed = true;
                             authenticated = false;
                             registerAuthFailure();
-                            environment.tokens()
-                                    .invalidateSession(
-                                            AuthErrorCode.TOKEN_INVALID,
-                                            "Backend rejected the stored token. Re-authentication required.");
+                            environment.tokens().invalidateSession(
+                                    handshakeToken,
+                                    AuthErrorCode.TOKEN_INVALID,
+                                    "Backend rejected the stored token. Re-authentication required.");
                             recordAuthRejection();
                             closeToReauthenticate();
                         } else if ("mod_version_unsupported".equalsIgnoreCase(backendCode)) {
@@ -2358,13 +2369,14 @@ public class ConnectionManager {
                             authFailed = true;
                             authenticated = false;
                             registerAuthFailure();
-                            environment.tokens()
-                                    .invalidateSession(
-                                            expired ? AuthErrorCode.TOKEN_EXPIRED : AuthErrorCode.TOKEN_INVALID,
-                                            expired
-                                                    ? "Backend token expired. Re-authentication required."
-                                                    : "Backend rejected the stored token. Re-authentication required.");
-                            notify(environment.tokens().lastErrorMessage());
+                            String rejection = expired
+                                    ? "Backend token expired. Re-authentication required."
+                                    : "Backend rejected the stored token. Re-authentication required.";
+                            environment.tokens().invalidateSession(
+                                    handshakeToken,
+                                    expired ? AuthErrorCode.TOKEN_EXPIRED : AuthErrorCode.TOKEN_INVALID,
+                                    rejection);
+                            notify(rejection);
                             recordAuthRejection();
                             closeToReauthenticate();
                         }
@@ -2514,30 +2526,17 @@ public class ConnectionManager {
     }
 
     public String getLinkedDiscordUsername() {
-        return SeqClient.getConfigManager().getDiscordUsername();
+        return SeqClient.getConfigManager().getDiscordUsername(environment.game().profileId());
     }
 
-    public void unlinkLocally() {
-        pendingGuildWarEvents.clear();
-        signOut();
-        clearDiscordUsername();
-        notify("Backend session cleared. Run /seq connect to sign in again.");
-    }
-
-    /**
-     * Signs the player out, as /seq logout and Clear session do: nothing reconnects or signs
-     * them back in until they connect explicitly. The session is marked signed out before the
-     * socket closes, so a reconnect already running cannot sign in again in between.
-     */
-    public void signOut() {
-        environment.tokens().signOut();
+    /** Closes the connection for a session that ended, without counting as the player's own disconnect. */
+    public void disconnectForSessionEnd() {
         disconnectInternal(false);
-        PartyFinderManager partyFinder = SeqClient.getPartyFinderManager();
-        if (partyFinder != null) {
-            partyFinder.reset();
-        }
-        // Raid profiles sign in to their own backend: drop that token too, and any sign-in in flight.
-        com.seqwawa.seq.network.auth.RaidProfilesSession.getInstance().clear();
+    }
+
+    /** Drops the war events waiting to be sent: they were the ended session's to send. */
+    public static void dropPendingWarEvents() {
+        pendingGuildWarEvents.clear();
     }
 
     private boolean canAttemptAuthNow() {
@@ -2652,6 +2651,7 @@ public class ConnectionManager {
      * reconnects as any other does, signing in afresh if the session was invalidated.
      */
     private void closeToReauthenticate() {
+        rejected = true;
         if (isOpen()) {
             closeFromClient(CLOSE_TO_REAUTHENTICATE, "Re-authenticating");
         }
@@ -2886,14 +2886,30 @@ public class ConnectionManager {
         return false;
     }
 
-    private void storeDiscordUsername(String discordUsername) {
-        if (hasDiscordUsername(discordUsername)) {
-            SeqClient.getConfigManager().setDiscordUsername(discordUsername);
-        }
+    /**
+     * Keeps the Discord name a sign-in reply links, or that it links none, for {@code account}, the one
+     * the socket signed in for, and only while {@code signInCurrent}: a reply that lands after a switch changes no name.
+     */
+    static Runnable discordNameDelivery(String discordUsername, UUID account, BooleanSupplier signInCurrent,
+            java.util.function.BiConsumer<UUID, String> store) {
+        return () -> {
+            if (account == null || !signInCurrent.getAsBoolean()) {
+                SeqClient.LOGGER.debug("[WebSocket] Ignoring the Discord name of a sign-in that has ended");
+                return;
+            }
+            store.accept(account, discordUsername);
+        };
     }
 
-    private void clearDiscordUsername() {
-        SeqClient.getConfigManager().clearDiscordUsername();
+    /** The Discord name a sign-in reply links to the account, or null when it names none: absent and blank alike. */
+    static String discordUsernameIn(JsonObject reply) {
+        // The backend leaves the field out when the account has no Discord link.
+        JsonElement name = reply == null ? null : reply.get("discord_username");
+        if (name == null || !name.isJsonPrimitive()) {
+            return null;
+        }
+        String value = name.getAsString();
+        return hasDiscordUsername(value) ? value : null;
     }
 
     // ── Message records ──

@@ -301,6 +301,52 @@ class ApiClientTest {
         assertEquals(0, calls.get());
     }
 
+    @Test
+    void aRaidProfileSaveRefusedAfterAnAccountSwitchIsNotRetriedWithTheNextAccountsToken() {
+        var signedInAs = new java.util.concurrent.atomic.AtomicReference<>("previous-token");
+        var auth = new com.seqwawa.seq.network.auth.MinecraftAuthService(new com.seqwawa.seq.network.auth.StoredAuthSession(
+                "previous-token", java.time.Instant.now().plusSeconds(86_400),
+                "123e4567-e89b-12d3-a456-426614174000", "Previous")) {
+            @Override
+            public CompletableFuture<String> ensureValidToken(boolean forceRefresh) {
+                return CompletableFuture.completedFuture(signedInAs.get());
+            }
+        };
+        var tokens = ApiClient.raidProfilesTokens(false, auth, () -> {
+            throw new AssertionError("the main backend's raid profiles use the main sign-in");
+        });
+        List<String> sent = new ArrayList<>();
+
+        CompletableFuture<String> saved = ApiClient.callWithTokenRetry(tokens, token -> {
+            sent.add(token);
+            // The player switched account while the save was on its way, and the next account signed in.
+            auth.clearSession();
+            signedInAs.set("next-token");
+            return CompletableFuture.failedFuture(unauthorized());
+        });
+
+        CompletionException failure = assertThrows(CompletionException.class, saved::join);
+        org.junit.jupiter.api.Assertions.assertInstanceOf(
+                com.seqwawa.seq.network.auth.NotSignedInException.class, failure.getCause());
+        assertEquals(List.of("previous-token"), sent, "the next account's profile is never written");
+    }
+
+    @Test
+    void aRaidProfileCallOnItsOwnBackendKeepsTheSignInItStartedWith() {
+        AtomicInteger lookedUp = new AtomicInteger();
+        var tokens = ApiClient.raidProfilesTokens(true, new com.seqwawa.seq.network.auth.MinecraftAuthService(), () -> {
+            lookedUp.incrementAndGet();
+            // Each is a session's that has ended, so none signs in.
+            var ended = com.seqwawa.seq.network.auth.RaidProfilesSession.create();
+            ended.clear();
+            return ended;
+        });
+
+        assertTrue(tokens.apply(false).isCompletedExceptionally());
+        assertTrue(tokens.apply(true).isCompletedExceptionally(), "the retry a 401 asks for refuses too");
+        assertEquals(1, lookedUp.get(), "both attempts ask the sign-in current when the call started");
+    }
+
     private static ApiClient.ApiException unauthorized() {
         return new ApiClient.ApiException(401, "{\"code\":\"token_invalid\",\"message\":\"Invalid token\"}");
     }

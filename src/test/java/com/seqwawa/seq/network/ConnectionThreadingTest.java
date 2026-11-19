@@ -174,10 +174,11 @@ class ConnectionThreadingTest {
         FakeBackendSocket socket = harness.open();
         socket.receive("{\"type\":\"authenticated\",\"discord_username\":\"sequoian\"}");
 
-        harness.connection().unlinkLocally();
+        harness.signOut();
+        harness.config.clearDiscordUsername(ConnectionHarness.PROFILE);
         harness.settle();
 
-        assertNull(harness.config.getDiscordUsername());
+        assertNull(harness.config.getDiscordUsername(ConnectionHarness.PROFILE));
         assertFalse(ConnectionManager.isConnected());
     }
 
@@ -188,10 +189,26 @@ class ConnectionThreadingTest {
         FakeBackendSocket socket = harness.connectAsMember();
         socket.receive(partyFinderUpdate(7));
 
-        harness.connection().signOut();
+        harness.signOut();
         harness.settle();
 
         assertEquals(List.of(), listings);
+    }
+
+    @Test
+    void aListingQueuedBehindTheBackendsRefusalOfTheTokenIsDropped() {
+        List<Integer> listings = new ArrayList<>();
+        ConnectionManager.onPartyFinderUpdate(update -> listings.add(update.listingJson().get("id").getAsInt()));
+        FakeBackendSocket socket = harness.connectAsMember();
+
+        // Both reach the game thread together; the refusal ends the session and clears Party Finder.
+        socket.receive("{\"type\":\"error\",\"code\":\"token_expired\",\"message\":\"Token expired\"}");
+        socket.receive(partyFinderUpdate(7));
+        harness.settle();
+
+        assertEquals(List.of(), listings);
+        harness.echoClientClose();
+        assertTrue(ConnectionManager.hasReconnectTask(), "its close still reconnects");
     }
 
     @Test

@@ -58,6 +58,26 @@ Readers on any thread see one consistent `State`: the value, whether there is on
 changes with it, whether a fetch is running, and the last failure.
 Everything else belongs to the game thread.
 
+## Sessions
+
+What one sign-in of one account reads and shows lives in that account's `Session`
+(`com.seqwawa.seq.session`): Leaf quests, guild raid progress, Princess stats, the raid-profile
+sign-in, the Leaf event stream and its popups, and the war planner and queue.
+`SessionManager` always has a current session, a signed-out one while signed out, and ends it in
+one way: `end(reason)`, for an account switch, /seq logout, Clear session or a rejected token.
+
+- **Ending stops what it owned.** An answer that arrives later lands in an object nobody reads,
+  and the ended session's token refuses without signing in. A step that throws is logged and the
+  rest still run, so the next session always starts.
+- **Ask your own session.** Work that belongs to a session takes its token from `Session.token`,
+  not the auth service, and hands results to its own session's objects. `getInstance()` answers
+  with whichever session is current by the time it is called. A screen that acts for one account,
+  such as the War Planner or raid-profile setup, closes once the session it opened in has ended.
+- **A rejected token** ends only the sign-in that still holds it. A refusal that lands after
+  its sign-in already ended, such as an old socket's after an account switch, ends nothing.
+
+`end(reason)` runs on the game thread, the connection's rejections included.
+
 ## Clocks
 
 - Code that throttles, waits, or gives up after a while takes a `LongSupplier` of milliseconds:

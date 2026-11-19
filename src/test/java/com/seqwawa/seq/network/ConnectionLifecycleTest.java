@@ -11,7 +11,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.seqwawa.seq.model.WynnClassType;
 import com.seqwawa.seq.network.auth.AuthErrorCode;
 import com.seqwawa.seq.network.auth.AuthException;
-import com.seqwawa.seq.network.auth.StoredAuthSession;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -88,20 +87,46 @@ class ConnectionLifecycleTest {
         assertEquals(Instant.parse("2026-11-18T12:00:00Z").plusMillis(harness.nowMs.get()),
                 harness.connection().getConnectedSince());
         assertEquals(List.of("get_connected"), socket.sentTypes());
-        assertEquals("sequoian", harness.config.getDiscordUsername());
+        assertEquals("sequoian", harness.config.getDiscordUsername(ConnectionHarness.PROFILE));
         assertTrue(harness.connection().isDiscordLinked());
     }
 
     @Test
     void signingInWithoutADiscordNameForgetsTheOneStored() {
-        harness.config.setDiscordUsername("someone-else");
+        harness.config.setDiscordUsername(ConnectionHarness.PROFILE, "someone-else");
         harness.connectAutomatically();
         harness.open();
 
         harness.receive("{\"type\":\"authenticated\"}");
 
-        assertNull(harness.config.getDiscordUsername());
+        assertNull(harness.config.getDiscordUsername(ConnectionHarness.PROFILE));
         assertFalse(harness.connection().isDiscordLinked());
+    }
+
+    @Test
+    void aTokenRenewedBeforeTheSignInReplyStillUpdatesTheDiscordName() {
+        harness.config.setDiscordUsername(ConnectionHarness.PROFILE, "someone-else");
+        harness.connectAutomatically();
+        harness.open();
+
+        // An HTTP request renews the bearer after the handshake: the same sign-in, with a new token.
+        harness.tokens.token = "renewed-token";
+        harness.tokens.ensureValidToken(true);
+        harness.receive("{\"type\":\"authenticated\"}");
+
+        assertNull(harness.config.getDiscordUsername(ConnectionHarness.PROFILE), "the stale name still goes");
+    }
+
+    @Test
+    void aSignInReplyThatLandsInTheNextSessionUpdatesNoDiscordName() {
+        harness.connectAutomatically();
+        harness.open();
+
+        // An account switch that carries the token over: the same token, but the next session.
+        harness.tokens.session++;
+        harness.signIn();
+
+        assertNull(harness.config.getDiscordUsername(ConnectionHarness.PROFILE));
     }
 
     @Test
@@ -156,9 +181,8 @@ class ConnectionLifecycleTest {
     }
 
     @Test
-    void theOpenNoticeNamesTheAccountTheStoredSessionBelongsTo() {
-        harness.config.setAuthSession(new StoredAuthSession(
-                "stored", Instant.now().plusSeconds(3_600), ConnectionHarness.PROFILE.toString(), "Sequoian"));
+    void theOpenNoticeNamesTheAccountTheSignInSpeaksFor() {
+        harness.tokens.signedInUsername = "Sequoian";
         harness.connectManually();
 
         harness.open();
@@ -409,10 +433,9 @@ class ConnectionLifecycleTest {
     void signingOutClosesTheSocketAndNothingConnectsUntilThePlayerAsks() {
         FakeBackendSocket socket = harness.connectAsMember();
 
-        harness.connection().signOut();
+        harness.signOut();
         harness.echoClientClose();
 
-        assertEquals(1, harness.tokens.signOuts);
         assertEquals(1, socket.closes());
         assertEquals(List.of(), harness.told);
         assertFalse(ConnectionManager.canAutoConnectNow());
@@ -423,17 +446,6 @@ class ConnectionLifecycleTest {
         assertEquals(2, harness.sockets.size());
         assertTrue(harness.socket().connected());
         assertFalse(harness.tokens.signedOutByUser);
-    }
-
-    @Test
-    void clearingTheSessionAlsoForgetsTheDiscordNameAndSaysHowToSignInAgain() {
-        harness.connectAsMember();
-
-        harness.connection().unlinkLocally();
-
-        assertNull(harness.config.getDiscordUsername());
-        assertEquals(List.of("Backend session cleared. Run /seq connect to sign in again."), harness.told);
-        assertEquals(1, harness.tokens.signOuts);
     }
 
     @Test
