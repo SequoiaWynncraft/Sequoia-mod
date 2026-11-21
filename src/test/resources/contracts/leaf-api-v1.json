@@ -9,7 +9,7 @@
     },
     "status": 200,
     "body": {
-      "leaf": 3846,
+      "leaf": 4985,
       "spent": 0,
       "quest": {
         "id": "weekly:2",
@@ -87,12 +87,12 @@
         "id": "10000000-0000-0000-0000-000000000001",
         "username": "Alice"
       },
-      "leaf": 3846,
-      "xp": 3221,
+      "leaf": 4985,
+      "xp": 1985,
       "level": {
-        "number": 3,
-        "xp_into_level": 971,
-        "xp_for_next_level": 1500
+        "number": 2,
+        "xp_into_level": 985,
+        "xp_for_next_level": 1250
       }
     }
   },
@@ -270,8 +270,8 @@
           "created_at": "2026-11-25T12:40:00.000Z",
           "data": {
             "source": "raid",
-            "leaf": 110,
-            "xp": 110,
+            "leaf": 100,
+            "xp": 100,
             "detail": "Nest of the Grootslangs",
             "occurred_at": "2026-11-25T12:31:00.000Z"
           }
@@ -282,8 +282,8 @@
           "created_at": "2026-11-25T12:40:00.000Z",
           "data": {
             "source": "raid",
-            "leaf": 110,
-            "xp": 110,
+            "leaf": 100,
+            "xp": 100,
             "detail": "Nest of the Grootslangs",
             "occurred_at": "2026-11-25T12:31:20.000Z"
           }
@@ -294,8 +294,8 @@
           "created_at": "2026-11-25T12:40:00.000Z",
           "data": {
             "source": "raid",
-            "leaf": 110,
-            "xp": 110,
+            "leaf": 100,
+            "xp": 100,
             "detail": "Nest of the Grootslangs",
             "occurred_at": "2026-11-25T12:31:40.000Z"
           }
@@ -306,8 +306,8 @@
           "created_at": "2026-11-25T12:40:00.000Z",
           "data": {
             "source": "raid",
-            "leaf": 110,
-            "xp": 110,
+            "leaf": 100,
+            "xp": 100,
             "detail": "Orphion's Nexus of Light",
             "occurred_at": "2026-11-25T12:32:00.000Z"
           }
@@ -318,8 +318,8 @@
           "created_at": "2026-11-25T12:40:00.000Z",
           "data": {
             "source": "raid",
-            "leaf": 110,
-            "xp": 110,
+            "leaf": 100,
+            "xp": 100,
             "detail": "Orphion's Nexus of Light",
             "occurred_at": "2026-11-25T12:32:20.000Z"
           }
@@ -330,8 +330,8 @@
           "created_at": "2026-11-25T12:40:00.000Z",
           "data": {
             "source": "raid",
-            "leaf": 110,
-            "xp": 110,
+            "leaf": 100,
+            "xp": 100,
             "detail": "Orphion's Nexus of Light",
             "occurred_at": "2026-11-25T12:32:40.000Z"
           }
@@ -342,8 +342,8 @@
           "created_at": "2026-11-25T12:40:00.000Z",
           "data": {
             "source": "raid",
-            "leaf": 110,
-            "xp": 110,
+            "leaf": 100,
+            "xp": 100,
             "detail": "The Canyon Colossus",
             "occurred_at": "2026-11-25T12:33:00.000Z"
           }
@@ -354,8 +354,8 @@
           "created_at": "2026-11-25T12:40:00.000Z",
           "data": {
             "source": "raid",
-            "leaf": 110,
-            "xp": 110,
+            "leaf": 100,
+            "xp": 100,
             "detail": "The Canyon Colossus",
             "occurred_at": "2026-11-25T12:33:20.000Z"
           }
@@ -366,8 +366,8 @@
           "created_at": "2026-11-25T12:40:00.000Z",
           "data": {
             "source": "raid",
-            "leaf": 110,
-            "xp": 110,
+            "leaf": 100,
+            "xp": 100,
             "detail": "The Canyon Colossus",
             "occurred_at": "2026-11-25T12:33:40.000Z"
           }
@@ -378,8 +378,8 @@
           "created_at": "2026-11-25T12:40:00.000Z",
           "data": {
             "source": "raid",
-            "leaf": 110,
-            "xp": 110,
+            "leaf": 100,
+            "xp": 100,
             "detail": "The Nameless Anomaly",
             "occurred_at": "2026-11-25T12:34:00.000Z"
           }
@@ -390,8 +390,8 @@
           "created_at": "2026-11-25T12:40:00.000Z",
           "data": {
             "source": "raid",
-            "leaf": 110,
-            "xp": 110,
+            "leaf": 100,
+            "xp": 100,
             "detail": "The Nameless Anomaly",
             "occurred_at": "2026-11-25T12:34:20.000Z"
           }
@@ -443,8 +443,8 @@
           "created_at": "2026-11-25T12:40:00.000Z",
           "data": {
             "source": "raid",
-            "leaf": 110,
-            "xp": 110,
+            "leaf": 100,
+            "xp": 100,
             "detail": "The Nameless Anomaly",
             "occurred_at": "2026-11-25T12:34:40.000Z"
           }
@@ -496,8 +496,8 @@
           "created_at": "2026-11-25T12:40:00.000Z",
           "data": {
             "source": "raid",
-            "leaf": 110,
-            "xp": 110,
+            "leaf": 100,
+            "xp": 100,
             "detail": "The Wartorn Palace",
             "occurred_at": "2026-11-25T12:35:00.000Z"
           }
@@ -508,8 +508,8 @@
           "created_at": "2026-11-25T12:40:00.000Z",
           "data": {
             "source": "raid",
-            "leaf": 110,
-            "xp": 110,
+            "leaf": 100,
+            "xp": 100,
             "detail": "The Wartorn Palace",
             "occurred_at": "2026-11-25T12:35:20.000Z"
           }
@@ -520,8 +520,8 @@
           "created_at": "2026-11-25T12:40:00.000Z",
           "data": {
             "source": "raid",
-            "leaf": 110,
-            "xp": 110,
+            "leaf": 100,
+            "xp": 100,
             "detail": "The Wartorn Palace",
             "occurred_at": "2026-11-25T12:35:40.000Z"
           }
@@ -532,8 +532,8 @@
           "created_at": "2026-11-25T12:40:00.000Z",
           "data": {
             "source": "war",
-            "leaf": 146,
-            "xp": 146,
+            "leaf": 73,
+            "xp": 73,
             "detail": "Detlas",
             "occurred_at": "2026-11-25T12:37:00.000Z",
             "in_claim": true
@@ -545,8 +545,8 @@
           "created_at": "2026-11-25T12:40:00.000Z",
           "data": {
             "source": "war",
-            "leaf": 25,
-            "xp": 25,
+            "leaf": 12,
+            "xp": 12,
             "detail": "Ragni",
             "occurred_at": "2026-11-25T12:37:20.000Z",
             "in_claim": false
@@ -572,22 +572,13 @@
             "tier": "gold",
             "threshold": 100,
             "label": "Gold",
-            "leaf": 1000,
-            "xp": 1000,
+            "leaf": 2500,
+            "xp": 0,
             "earned_at": "2026-11-25T12:34:00.000Z"
           }
         },
         {
           "id": 22,
-          "type": "level_up",
-          "created_at": "2026-11-25T12:40:00.000Z",
-          "data": {
-            "level": 3,
-            "leaf": 125
-          }
-        },
-        {
-          "id": 23,
           "type": "quest_rerolled",
           "created_at": "2026-11-25T12:40:00.000Z",
           "data": {
