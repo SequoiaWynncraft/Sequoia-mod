@@ -5,6 +5,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.mojang.logging.LogUtils;
 import com.seqwawa.seq.ui.UpdatePromptScreen;
+import com.seqwawa.seq.ui.WhatsNewScreen;
 import com.seqwawa.seq.update.UpdateState.Asset;
 import com.seqwawa.seq.update.UpdateState.Attempt;
 import com.seqwawa.seq.update.UpdateState.Release;
@@ -364,7 +365,7 @@ public final class UpdateManager {
         int order = compareVersions(record.target(), running);
         if (order <= 0) {
             if (order == 0 && record.phase() != UpdateRecord.Phase.INCOMPATIBLE)
-                environment.toast("Sequoia updated", "Sequoia " + running + " is running.");
+                environment.toast("Sequoia updated", "Sequoia " + running + " is running. /seq update shows what's new.");
             resolve(record, updates);
             return Local.NONE;
         }
@@ -496,7 +497,9 @@ public final class UpdateManager {
                 deleteQuietly(updatesDir().resolve(local.copy().jar().name() + ".pending"));
                 deleteQuietly(updatesDir().resolve(UpdateRecord.FILE));
             }
-            state.set(new UpdateState.UpToDate(running));
+            // The latest release is usually the running one, so its notes come with no extra request.
+            state.set(new UpdateState.UpToDate(running,
+                    latest.version().equals(running) ? latest.notes() : ReleaseNotes.EMPTY));
             if (manual) environment.showPrompt(false);
             return;
         }
@@ -616,7 +619,8 @@ public final class UpdateManager {
             if (jar == null) throw new IOException("The latest release has no " + jarName);
             if (digest == null && checksum == null) throw new IOException("The latest release has no checksum for " + jarName);
             String page = string(root, "html_url");
-            return new Release(tag, version, URI.create(page != null ? page : jar.url().toString()), jar, checksum, digest);
+            return new Release(tag, version, URI.create(page != null ? page : jar.url().toString()), jar, checksum, digest,
+                    ReleaseNotes.parse(string(root, "body")));
         } catch (RuntimeException malformed) {
             throw new IOException("Unexpected release data from GitHub", malformed);
         }
@@ -807,7 +811,7 @@ public final class UpdateManager {
     private Release downloadedCopy(UpdateRecord.Data record) {
         return new Release(record.target(), version(record.target()),
                 URI.create("https://github.com/" + repository + "/releases/tag/" + record.target()),
-                new Asset(record.jar(), null, record.size()), null, record.sha256());
+                new Asset(record.jar(), null, record.size()), null, record.sha256(), ReleaseNotes.EMPTY);
     }
 
     private boolean inModsDir(Path file) {
@@ -956,7 +960,7 @@ public final class UpdateManager {
         public void showPrompt(boolean startup) {
             Minecraft minecraft = Minecraft.getInstance();
             minecraft.execute(() -> {
-                if (minecraft.screen instanceof UpdatePromptScreen) return;
+                if (minecraft.screen instanceof UpdatePromptScreen || minecraft.screen instanceof WhatsNewScreen) return;
                 if (startup && minecraft.level != null) {
                     SystemToast.add(minecraft.getToastManager(), TOAST, Component.literal("Sequoia update"),
                             Component.literal("Run /seq update for details"));

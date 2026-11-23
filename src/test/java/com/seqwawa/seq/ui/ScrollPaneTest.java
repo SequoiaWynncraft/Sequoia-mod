@@ -94,4 +94,27 @@ class ScrollPaneTest {
 
         assertEquals(0, pane.offset());
     }
+
+    @Test
+    void draggingTheContentMovesItWithThePointerAndNoFurtherThanItGoes() {
+        ScrollPane pane = new ScrollPane();
+        UiBounds view = new UiBounds(100, 50, 400, 200);
+        assertFalse(pane.startContentDrag(new UiPointer(300, 150), view), "nothing to scroll yet");
+        pane.setMax(300);
+        assertFalse(pane.startContentDrag(new UiPointer(300, 300), view), "outside the view");
+        assertTrue(pane.startContentDrag(new UiPointer(300, 200), view));
+        assertTrue(pane.dragging());
+
+        // Up by 80: the text follows the pointer, so the content scrolls 80 further down.
+        assertTrue(pane.drag(new UiPointer(300, 120), TRACK));
+        assertEquals(80, pane.offset());
+        assertTrue(pane.drag(new UiPointer(300, -900), TRACK));
+        assertEquals(300, pane.offset());
+        assertTrue(pane.drag(new UiPointer(300, 900), TRACK));
+        assertEquals(0, pane.offset());
+
+        assertTrue(pane.release());
+        assertFalse(pane.drag(new UiPointer(300, 100), TRACK));
+        assertFalse(pane.release());
+    }
 }

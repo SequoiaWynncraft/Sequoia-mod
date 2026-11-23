@@ -20,7 +20,10 @@ final class ScrollPane {
 
     private float offset;
     private float max;
-    private boolean dragging;
+    /** What a press is holding: nothing, the thumb, or the content itself. */
+    private enum Grip { NONE, THUMB, CONTENT }
+
+    private Grip grip = Grip.NONE;
     private float dragStartY;
     private float dragStartOffset;
 
@@ -46,7 +49,7 @@ final class ScrollPane {
     }
 
     boolean dragging() {
-        return dragging;
+        return grip != Grip.NONE;
     }
 
     /**
@@ -100,30 +103,50 @@ final class ScrollPane {
      * the bar's hit area, while there is anything to scroll. Returns whether it did.
      */
     boolean startDrag(UiPointer pointer, UiBounds grab) {
-        if (!canScroll() || !grab.contains(pointer)) return false;
-        dragging = true;
+        return hold(Grip.THUMB, pointer, grab);
+    }
+
+    /**
+     * Starts moving the content with the pointer, as on a touch screen, when the press lands
+     * in {@code view} while there is anything to scroll. Returns whether it did.
+     */
+    boolean startContentDrag(UiPointer pointer, UiBounds view) {
+        return hold(Grip.CONTENT, pointer, view);
+    }
+
+    private boolean hold(Grip held, UiPointer pointer, UiBounds area) {
+        if (!canScroll() || !area.contains(pointer)) return false;
+        grip = held;
         dragStartY = pointer.y();
         dragStartOffset = offset;
         return true;
     }
 
     /**
-     * Scrolls as far as the pointer has moved the thumb along {@code track}. Returns
-     * whether a drag is under way, so the screen does nothing else with the motion.
+     * Scrolls as far as the pointer has moved the thumb along {@code track}, or the content
+     * with it. Returns whether a drag is under way, so the screen does nothing else with the
+     * motion.
      */
     boolean drag(UiPointer pointer, UiBounds track) {
-        if (!dragging) return false;
-        Bar bar = bar(track);
-        float room = bar == null ? 0 : track.height() - bar.thumbHeight();
-        // A thumb that fills its track has nowhere to go.
-        if (room > 0) offset = clamp(dragStartOffset + (pointer.y() - dragStartY) / room * max);
+        switch (grip) {
+            case NONE -> {
+                return false;
+            }
+            case CONTENT -> offset = clamp(dragStartOffset - (pointer.y() - dragStartY));
+            case THUMB -> {
+                Bar bar = bar(track);
+                float room = bar == null ? 0 : track.height() - bar.thumbHeight();
+                // A thumb that fills its track has nowhere to go.
+                if (room > 0) offset = clamp(dragStartOffset + (pointer.y() - dragStartY) / room * max);
+            }
+        }
         return true;
     }
 
-    /** Lets go of the thumb. Returns whether it was held. */
+    /** Lets go of the thumb or the content. Returns whether either was held. */
     boolean release() {
-        boolean was = dragging;
-        dragging = false;
+        boolean was = grip != Grip.NONE;
+        grip = Grip.NONE;
         return was;
     }
 

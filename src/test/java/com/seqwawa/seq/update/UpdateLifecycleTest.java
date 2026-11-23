@@ -474,11 +474,24 @@ class UpdateLifecycleTest {
         UpdateManager manager = manager();
         manager.start(true);
 
-        awaitState(manager, UpdateState.UpToDate.class);
+        UpdateState upToDate = awaitState(manager, UpdateState.UpToDate.class);
 
-        assertEquals(List.of("Sequoia updated: Sequoia 1.12.0 is running."), game.toasts);
+        assertEquals(List.of("Sequoia updated: Sequoia 1.12.0 is running. /seq update shows what's new."), game.toasts);
         assertFalse(Files.exists(recordFile()));
         assertFalse(Files.exists(backup));
+        // The latest release is the one now running, so its notes are already at hand for "What's new".
+        assertEquals(List.of("One line a player reads at once."), ((UpdateState.UpToDate) upToDate).notes().summary());
+    }
+
+    @Test
+    void aRunningVersionNewerThanTheLatestReleaseShowsNoNotes() throws Exception {
+        game.running = "1.13.0";
+        UpdateManager manager = manager();
+        manager.start(true);
+
+        UpdateState upToDate = awaitState(manager, UpdateState.UpToDate.class);
+
+        assertTrue(((UpdateState.UpToDate) upToDate).notes().isEmpty(), "1.12.0's notes are not 1.13.0's");
     }
 
     @Test

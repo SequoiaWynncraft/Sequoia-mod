@@ -13,6 +13,7 @@ import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.List;
 import java.util.Random;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -264,6 +265,9 @@ class ReleaseDownloadTest {
         assertEquals(1234, release.jar().size());
         assertEquals("ab".repeat(32), release.sha256());
         assertEquals(URI.create(server.uri("/download/sequoia-1.12.0.jar.sha256").toString()), release.checksum().url());
+        assertEquals(List.of("One line a player reads at once."), release.notes().summary());
+        assertEquals(List.of(new ReleaseNotes.Heading("New"), new ReleaseNotes.Item(0, List.of(
+                new ReleaseNotes.Span("Lead.", true), new ReleaseNotes.Span(" More.", false)))), release.notes().blocks());
         assertThrows(java.io.IOException.class, () -> UpdateManager.parseRelease(
                 server.releaseJson("v1.12.0", "sequoia-renamed.jar", 1234, null)));
         assertThrows(java.io.IOException.class, () -> UpdateManager.parseRelease(

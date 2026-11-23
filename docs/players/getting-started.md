@@ -23,6 +23,7 @@ This includes Veteran, Honoured Veteran, and Community access. A non-guild sessi
 With **Update checks on startup** enabled, the title screen checks GitHub for a release.
 Run `/seq update` to open the prompt manually.
 
+- **What's new** opens the release's full notes. When you are up to date, it shows the notes of the version you run.
 - **Update** downloads and verifies the release, then installs it. Linux and macOS install immediately. Windows installs when Minecraft closes.
 - **Update + Exit** requests the update and closes Minecraft after a successful install or staging for Windows.
 - **Cancel** stops the download.

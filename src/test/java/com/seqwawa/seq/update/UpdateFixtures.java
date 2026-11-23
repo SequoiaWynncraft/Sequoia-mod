@@ -197,13 +197,16 @@ final class UpdateFixtures {
             text("/releases/latest", 200, releaseJson(tag, name, jar.length, digest ? sha256(jar) : null));
         }
 
+        /** The notes every fixture release carries: a summary line, then one section with one item. */
+        static final String NOTES = "## Sequoia x\\r\\n\\r\\nOne line a player reads at once.\\r\\n\\r\\n### New\\r\\n\\r\\n- **Lead.** More.";
+
         String releaseJson(String tag, String name, long size, String digest) {
             return """
-                    {"tag_name":"%s","html_url":"%s","assets":[
+                    {"tag_name":"%s","html_url":"%s","body":"%s","assets":[
                       {"name":"sequoia-%s-sources.jar","size":10,"browser_download_url":"%s"},
                       {"name":"%s","size":%d,"browser_download_url":"%s"%s},
                       {"name":"%s.sha256","size":85,"browser_download_url":"%s"}]}
-                    """.formatted(tag, uri("/page/" + tag), tag.substring(1), uri("/download/sources.jar"), name, size,
+                    """.formatted(tag, uri("/page/" + tag), NOTES, tag.substring(1), uri("/download/sources.jar"), name, size,
                     uri("/download/" + name), digest == null ? "" : ",\"digest\":\"sha256:" + digest + "\"", name,
                     uri("/download/" + name + ".sha256"));
         }

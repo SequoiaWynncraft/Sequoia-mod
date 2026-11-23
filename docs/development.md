@@ -124,11 +124,12 @@ miss still shows up within a week; run Build by hand to test one sooner.
 ## Release a version
 
 1. Set `mod_version` in `gradle.properties` and merge the change.
-2. Write the release notes and create an annotated tag on that commit. `--cleanup=verbatim`
-   keeps Markdown headings, which a plain tag message would drop:
+2. Write the release notes in `docs/releases/VERSION.md`, in the shape
+   [below](#write-the-release-notes), and create an annotated tag on that commit with them as its
+   message. `--cleanup=verbatim` keeps Markdown headings, which a plain tag message would drop:
 
    ```sh
-   git tag --cleanup=verbatim -a v1.12.0 -F notes.md
+   git tag --cleanup=verbatim -a v1.12.0 -F docs/releases/1.12.0.md
    git push origin v1.12.0
    ```
 
@@ -151,6 +152,49 @@ miss still shows up within a week; run Build by hand to test one sooner.
    publishes the draft as the latest GitHub release, uploads the same JAR and source zip to
    Modrinth and reads both releases back. A rerun after a failure only checks what is already
    published.
+
+## Write the release notes
+
+A release's notes reach players in four places: the GitHub release and Modrinth show all of them,
+and the mod's update prompt and the Discord post show a short summary first. The notes have two
+layers for that, written in this shape:
+
+```markdown
+## Sequoia 1.16.0
+
+One line on the change players will notice most.
+One line on the next one.
+
+### New
+
+- **Short lead.** What a player can do now, in a sentence or two.
+  - A detail only some players need.
+
+### Changed
+
+- What works differently now.
+
+### Fixed
+
+- What was wrong, said as what works now.
+```
+
+- The first line is `## Sequoia VERSION`.
+- The summary is the two to four lines of plain text under it: what is new for a player, not how
+  it was built. Write one sentence per line, without bullets, bold or links. The update prompt
+  shows it under its title, wrapped at about 54 characters, and cuts it after 6 lines or when
+  the window is too short.
+- The full notes are sections, each under a `###` heading. Use New, Changed and Fixed, in that
+  order, and leave out a section that would be empty.
+- An item is one line that starts with `- `; don't wrap it by hand. It can open with a bold lead
+  and run to a second sentence. A sub-item is indented two spaces (`  - `) under its item.
+- In game, **What's new** shows the summary, headings, items, sub-items and bold, and shows the
+  text of `` `code` `` and of `[links](url)`. Other Markdown shows as written.
+- Notes without a summary, like every release up to 1.15.0, still work: the prompt shows none, and
+  What's new shows the items.
+
+The Discord post shows the summary, then as much of the full notes as fits, with a link to the
+GitHub release when they do not all fit (`docs/mod-release-announcements.md` in sequoia-backend).
 
 ## Update tools and actions
 
