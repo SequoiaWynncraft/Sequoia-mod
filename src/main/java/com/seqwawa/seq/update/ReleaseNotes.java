@@ -159,9 +159,12 @@ public record ReleaseNotes(List<String> summary, List<Block> blocks) {
                     i++;
                 }
             } else if (c == '[') {
-                int close = text.indexOf("](", i + 1);
-                int end = close < 0 ? -1 : text.indexOf(')', close + 2);
-                if (close > i && end > close) {
+                // A link only when its first closing bracket is followed at once by "(": a bracket in
+                // plain text ("[VIP] tags") stays as it is, and a later link is still a link.
+                int close = text.indexOf(']', i + 1);
+                boolean link = close > i && close + 1 < text.length() && text.charAt(close + 1) == '(';
+                int end = link ? text.indexOf(')', close + 2) : -1;
+                if (end > close) {
                     run.append(text, i + 1, close);
                     i = end + 1;
                 } else {

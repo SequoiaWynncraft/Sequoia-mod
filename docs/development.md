@@ -129,7 +129,7 @@ miss still shows up within a week; run Build by hand to test one sooner.
    message. `--cleanup=verbatim` keeps Markdown headings, which a plain tag message would drop:
 
    ```sh
-   git tag --cleanup=verbatim -a v1.12.0 -F notes.md
+   git tag --cleanup=verbatim -a v1.12.0 -F docs/releases/1.12.0.md
    git push origin v1.12.0
    ```
 

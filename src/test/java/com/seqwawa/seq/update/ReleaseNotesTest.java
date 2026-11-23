@@ -80,22 +80,62 @@ class ReleaseNotesTest {
                 item(0, plain("Refresh the world map's built-in gathering spots from Wynncraft."))), notes.blocks());
     }
 
-    /** Every release so far was written before the summary: none has one, and each reads as its items. */
+    /**
+     * Every release's notes read, in either shape: those written before the summary start with an item
+     * and have none, those after have one; and every item and sub-item line is an item.
+     */
     @Test
-    void everyPublishedReleasesNotesReadWithoutASummary() throws IOException {
+    void everyReleasesNotesReadInEitherShape() throws IOException {
         List<Path> files;
         try (Stream<Path> listed = Files.list(Path.of("docs", "releases"))) {
             files = listed.filter(path -> path.toString().endsWith(".md")).sorted().toList();
         }
         assertFalse(files.isEmpty());
         for (Path file : files) {
-            ReleaseNotes notes = ReleaseNotes.parse(Files.readString(file));
+            List<String> lines = Files.readAllLines(file);
+            ReleaseNotes notes = ReleaseNotes.parse(String.join("\n", lines));
             String name = file.getFileName().toString();
-            assertEquals(List.of(), notes.summary(), name);
-            assertInstanceOf(Item.class, notes.blocks().getFirst(), name);
-            long items = Files.readAllLines(file).stream().filter(line -> line.startsWith("- ")).count();
+            String first = lines.stream()
+                    .filter(line -> !line.isBlank() && !line.startsWith("## "))
+                    .findFirst()
+                    .orElse("");
+            assertEquals(first.startsWith("- ") || first.startsWith("### "), notes.summary().isEmpty(), name);
+            long items = lines.stream().filter(line -> line.stripLeading().startsWith("- ")).count();
             assertEquals(items, notes.blocks().stream().filter(Item.class::isInstance).count(), name);
         }
+    }
+
+    /** A note in the new shape, as the template in docs/development.md has it, reads with its summary and sections. */
+    @Test
+    void notesInTheNewShapeHaveTheirSummaryAndSections() {
+        ReleaseNotes notes = ReleaseNotes.parse("""
+                ## Sequoia 1.16.0
+
+                One line on the change players will notice most.
+                One line on the next one.
+
+                ### New
+
+                - **Short lead.** What a player can do now.
+                  - A detail only some players need.
+
+                ### Fixed
+
+                - What works now.
+                """);
+        assertEquals(2, notes.summary().size());
+        assertEquals(3, notes.blocks().stream().filter(Item.class::isInstance).count());
+    }
+
+    /** A bracket in plain text is kept, and a link after it is still read as its text. */
+    @Test
+    void aLiteralBracketBeforeALinkStaysAsItIs() {
+        ReleaseNotes notes = ReleaseNotes.parse("""
+                ## Sequoia 1.16.0
+
+                - Show [VIP] tags; see [Ranks](https://example.invalid).
+                """);
+        assertEquals(List.of(item(0, plain("Show [VIP] tags; see Ranks."))), notes.blocks());
     }
 
     @Test
