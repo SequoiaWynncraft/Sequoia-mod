@@ -4,6 +4,7 @@ import static com.seqwawa.seq.managers.ThemeManager.color;
 import static com.seqwawa.seq.ui.theme.UiColor.*;
 
 import com.seqwawa.seq.client.SeqClient;
+import com.seqwawa.seq.update.ReleaseNotes;
 import com.seqwawa.seq.update.UpdateManager;
 import com.seqwawa.seq.update.UpdateState;
 import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
@@ -16,6 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
@@ -25,72 +27,115 @@ import org.jetbrains.annotations.NotNull;
 /**
  * The update prompt: a view of {@link UpdateManager#state()}, redrawn every frame, so progress,
  * results and failures appear as they happen. Buttons call the manager's actions; the manager
- * decides what each does in the current state.
+ * decides what each does in the current state. A release's summary shows under the title, and
+ * "What's new" opens its full notes.
  */
 public class UpdatePromptScreen extends Screen {
     private static final float PANEL_WIDTH = 380;
+    /** The panel's height with up to {@link #MAX_LINES} lines; more lines make it taller. */
     private static final float PANEL_HEIGHT = 210;
+    /** From the panel's top to the middle of its first line. */
+    private static final float FIRST_LINE = 52;
+    /** From the middle of the last line to the panel's foot, with the buttons and progress bar. */
+    private static final float FOOT = 68;
+    /** Space kept between the panel and the window's top and bottom. */
+    private static final float SCREEN_MARGIN = 8;
     private static final float BUTTON_WIDTH = 108;
     private static final float BUTTON_HEIGHT = 22;
     private static final float BUTTON_SPACING = 10;
+    /** Buttons that do not fit at full width share the row at this spacing, this far inside the panel's edges. */
+    private static final float NARROW_BUTTON_SPACING = 8;
+    private static final float BUTTON_ROW_MARGIN = 12;
     private static final float LINE_HEIGHT = 15;
+    private static final float SUMMARY_GAP = 6;
     /** Characters per line at the prompt's text size; leaves a margin for wide glyphs. */
     private static final int WRAP_CHARACTERS = 54;
     private static final int MAX_LINES = 7;
+    /** The summary is written as two to four lines; this leaves room for some of them to wrap. */
+    private static final int MAX_SUMMARY_LINES = 6;
     private static final Duration LONG_INSTALLER_WAIT = Duration.ofMinutes(10);
 
     /** A button's label and what it does, given the open prompt. */
     public record Button(String label, Consumer<UpdatePromptScreen> action) {}
 
-    public record Placed(Button button, float x, float y) {
+    public record Placed(Button button, float x, float y, float width) {
         UiBounds bounds() {
-            return new UiBounds(x, y, BUTTON_WIDTH, BUTTON_HEIGHT);
+            return new UiBounds(x, y, width, BUTTON_HEIGHT);
         }
     }
 
-    /** @param progress 0..1 for a download bar, or negative for none */
-    public record Content(String title, List<String> lines, float progress, List<Button> buttons) {}
+    /**
+     * @param summary the release's summary, wrapped, shown under the title; empty for none
+     * @param progress 0..1 for a download bar, or negative for none
+     */
+    public record Content(String title, List<String> summary, List<String> lines, float progress, List<Button> buttons) {
+        public Content(String title, List<String> lines, float progress, List<Button> buttons) {
+            this(title, List.of(), lines, progress, buttons);
+        }
+    }
+
+    /**
+     * Where the panel and its buttons go at one window size, and the summary lines that fit;
+     * drawing and clicking both use it.
+     */
+    public record Frame(UiBounds panel, List<String> summary, float linesY, List<Placed> buttons) {}
 
     private final Screen parent;
+    private final Supplier<UpdateState> state;
     /** Where the pointer was when this frame began. */
     private UiPointer pointer = UiPointer.ORIGIN;
 
     public UpdatePromptScreen(Screen parent) {
+        this(parent, () -> UpdateManager.getInstance().state());
+    }
+
+    /** A prompt showing {@code state} instead of the updater's, as the development preview does. */
+    public UpdatePromptScreen(Screen parent, Supplier<UpdateState> state) {
         super(Component.literal("Sequoia update"));
         this.parent = parent;
+        this.state = state;
+    }
+
+    private Content content() {
+        UpdateManager manager = UpdateManager.getInstance();
+        return content(state.get(), manager.runningVersion(), manager.testSource());
     }
 
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         super.render(guiGraphics, mouseX, mouseY, partialTick);
         pointer = UiPointer.at(mouseX, mouseY);
-        UpdateManager manager = UpdateManager.getInstance();
-        Content content = content(manager.state(), manager.runningVersion(), manager.testSource());
+        Content content = content();
 
         UiRenderer.renderScreen(this, canvas -> {
             float screenWidth = canvas.metrics().width();
             float screenHeight = canvas.metrics().height();
+            Frame frame = frame(content, screenWidth, screenHeight);
+            UiBounds panel = frame.panel();
             canvas.fillRect(0, 0, screenWidth, screenHeight, color(BACKGROUND_MODAL_OVERLAY));
-            float panelX = (screenWidth - PANEL_WIDTH) / 2f;
-            float panelY = (screenHeight - PANEL_HEIGHT) / 2f;
-            canvas.fillRect(panelX, panelY, PANEL_WIDTH, PANEL_HEIGHT, color(BACKGROUND_BODY_OPAQUE));
+            panel.fill(canvas, color(BACKGROUND_BODY_OPAQUE));
 
             String font = SeqClient.getFontManager().getSelectedFont();
-            float centerX = panelX + PANEL_WIDTH / 2f;
-            text(canvas, font, 16, color(ACCENT_PRIMARY_HOVER), centerX, panelY + 24, content.title());
-            float lineY = panelY + 52;
+            float centerX = panel.centerX();
+            text(canvas, font, 16, color(ACCENT_PRIMARY_HOVER), centerX, panel.y() + 24, content.title());
+            float lineY = panel.y() + FIRST_LINE;
+            for (String line : frame.summary()) {
+                text(canvas, font, 11, color(TEXT_PRIMARY), centerX, lineY, line);
+                lineY += LINE_HEIGHT;
+            }
+            lineY = frame.linesY();
             for (String line : content.lines()) {
                 text(canvas, font, 11, color(TEXT_SECONDARY), centerX, lineY, line);
                 lineY += LINE_HEIGHT;
             }
             if (content.progress() >= 0) {
-                float barX = panelX + 30;
-                float barY = panelY + PANEL_HEIGHT - 66;
+                float barX = panel.x() + 30;
+                float barY = panel.bottom() - 66;
                 float barWidth = PANEL_WIDTH - 60;
                 canvas.fillRect(barX, barY, barWidth, 8, color(CONTROL_INPUT_HOVER));
                 canvas.fillRect(barX, barY, barWidth * content.progress(), 8, color(ACCENT_PRIMARY_HOVER));
             }
-            for (Placed placed : layout(content.buttons(), screenWidth, screenHeight)) {
+            for (Placed placed : frame.buttons()) {
                 UiBounds button = placed.bounds();
                 button.fill(canvas, button.contains(pointer) ? color(ACCENT_PRIMARY_DARK_HOVER) : color(CONTROL_INPUT_HOVER));
                 text(canvas, font, 11, color(TEXT_SECONDARY), button.centerX(), button.centerY(), placed.button().label());
@@ -102,9 +147,8 @@ public class UpdatePromptScreen extends Screen {
     public boolean mouseClicked(@NotNull MouseButtonEvent click, boolean outsideScreen) {
         if (click.button() != 0) return super.mouseClicked(click, outsideScreen);
         UiPointer at = UiPointer.at(click);
-        UpdateManager manager = UpdateManager.getInstance();
-        Content content = content(manager.state(), manager.runningVersion(), manager.testSource());
-        for (Placed placed : layout(content.buttons(), MinecraftUiRenderer.screenWidth(), MinecraftUiRenderer.screenHeight())) {
+        Frame frame = frame(content(), MinecraftUiRenderer.screenWidth(), MinecraftUiRenderer.screenHeight());
+        for (Placed placed : frame.buttons()) {
             if (placed.bounds().contains(at)) {
                 placed.button().action().accept(this);
                 return true;
@@ -116,14 +160,14 @@ public class UpdatePromptScreen extends Screen {
     /** Esc does nothing while downloading (use Cancel) or while the JAR swap runs, which cannot be undone part-way. */
     @Override
     public boolean shouldCloseOnEsc() {
-        UpdateState state = UpdateManager.getInstance().state();
-        return !(state instanceof UpdateState.Downloading || state instanceof UpdateState.Installing);
+        UpdateState shown = state.get();
+        return !(shown instanceof UpdateState.Downloading || shown instanceof UpdateState.Installing);
     }
 
     /** Esc on an offered update means Ignore; elsewhere it just closes the prompt. */
     @Override
     public void onClose() {
-        if (UpdateManager.getInstance().state() instanceof UpdateState.Available) UpdateManager.getInstance().ignore();
+        if (state.get() instanceof UpdateState.Available) UpdateManager.getInstance().ignore();
         close();
     }
 
@@ -136,17 +180,52 @@ public class UpdatePromptScreen extends Screen {
         SeqClient.mc.setScreen(parent);
     }
 
-    /** One row of buttons, centred; rendering and clicking both place buttons with this. */
-    public static List<Placed> layout(List<Button> buttons, float screenWidth, float screenHeight) {
-        float panelX = (screenWidth - PANEL_WIDTH) / 2f;
-        float panelY = (screenHeight - PANEL_HEIGHT) / 2f;
-        float rowWidth = buttons.size() * BUTTON_WIDTH + Math.max(0, buttons.size() - 1) * BUTTON_SPACING;
-        float x = panelX + (PANEL_WIDTH - rowWidth) / 2f;
-        float y = panelY + PANEL_HEIGHT - 42;
+    private void openWhatsNew(String heading, ReleaseNotes notes) {
+        SeqClient.mc.setScreen(new WhatsNewScreen(this, heading, notes));
+    }
+
+    /**
+     * The panel, centred and as tall as its lines need, and one row of buttons along its foot.
+     * A summary that would make the panel taller than the window keeps only the lines that fit;
+     * "What's new" shows all of it.
+     */
+    public static Frame frame(Content content, float screenWidth, float screenHeight) {
+        int lines = content.lines().size();
+        List<String> summary = content.summary();
+        float height = height(summary.size(), lines);
+        int fit = summary.size();
+        while (fit > 0 && height > screenHeight - 2 * SCREEN_MARGIN) height = height(--fit, lines);
+        if (fit < summary.size()) {
+            summary = new ArrayList<>(summary.subList(0, fit));
+            if (fit > 0) summary.set(fit - 1, summary.get(fit - 1) + "...");
+        }
+        UiBounds panel = new UiBounds((screenWidth - PANEL_WIDTH) / 2f, (screenHeight - height) / 2f, PANEL_WIDTH, height);
+        float linesY = panel.y() + FIRST_LINE + summary.size() * LINE_HEIGHT + (summary.isEmpty() || lines == 0 ? 0 : SUMMARY_GAP);
+        return new Frame(panel, List.copyOf(summary), linesY, buttons(content.buttons(), panel));
+    }
+
+    private static float height(int summaryLines, int lines) {
+        int all = summaryLines + lines;
+        float gap = summaryLines > 0 && lines > 0 ? SUMMARY_GAP : 0;
+        return Math.max(PANEL_HEIGHT, FIRST_LINE + Math.max(0, all - 1) * LINE_HEIGHT + gap + FOOT);
+    }
+
+    /** One row, centred; buttons that would not fit at full width share the panel's width. */
+    private static List<Placed> buttons(List<Button> buttons, UiBounds panel) {
+        int count = buttons.size();
+        float width = BUTTON_WIDTH;
+        float spacing = BUTTON_SPACING;
+        if (count * BUTTON_WIDTH + (count - 1) * BUTTON_SPACING > PANEL_WIDTH - 2 * BUTTON_ROW_MARGIN) {
+            spacing = NARROW_BUTTON_SPACING;
+            width = (PANEL_WIDTH - 2 * BUTTON_ROW_MARGIN - (count - 1) * spacing) / count;
+        }
+        float rowWidth = count * width + Math.max(0, count - 1) * spacing;
+        float x = panel.x() + (PANEL_WIDTH - rowWidth) / 2f;
+        float y = panel.bottom() - 42;
         List<Placed> placed = new ArrayList<>();
         for (Button button : buttons) {
-            placed.add(new Placed(button, x, y));
-            x += BUTTON_WIDTH + BUTTON_SPACING;
+            placed.add(new Placed(button, x, y, width));
+            x += width + spacing;
         }
         return placed;
     }
@@ -207,7 +286,30 @@ public class UpdatePromptScreen extends Screen {
                     lines(lines, incompatible.reason()), -1, List.of(new Button("Close", UpdatePromptScreen::ignore), releasePage));
         };
         if (testSource != null) content.lines().add("(test source: " + testSource + ")");
-        return content;
+        return withNotes(content, state, running);
+    }
+
+    /**
+     * The release's summary under the title and a "What's new" button first in the row, for an offered,
+     * installed or running release whose notes are known. Other states show only what happened.
+     */
+    private static Content withNotes(Content content, UpdateState state, String running) {
+        record Shown(String version, ReleaseNotes notes) {}
+        Shown shown = switch (state) {
+            case UpdateState.Available available -> new Shown(available.release().version(), available.release().notes());
+            case UpdateState.ManualOnly manual -> new Shown(manual.release().version(), manual.release().notes());
+            case UpdateState.Installed installed -> new Shown(installed.release().version(), installed.release().notes());
+            case UpdateState.Staged staged -> new Shown(staged.release().version(), staged.release().notes());
+            case UpdateState.UpToDate upToDate -> new Shown(running, upToDate.notes());
+            default -> null;
+        };
+        if (shown == null || shown.notes() == null || shown.notes().isEmpty()) return content;
+        String heading = "What's new in Sequoia " + shown.version();
+        List<Button> buttons = new ArrayList<>();
+        buttons.add(new Button("What's new", screen -> screen.openWhatsNew(heading, shown.notes())));
+        buttons.addAll(content.buttons());
+        List<String> summary = lines(new ArrayList<>(), MAX_SUMMARY_LINES, shown.notes().summary().toArray(String[]::new));
+        return new Content(content.title(), summary, content.lines(), content.progress(), List.copyOf(buttons));
     }
 
     private static Content downloading(UpdateState.Downloading downloading, List<String> lines) {
@@ -237,11 +339,15 @@ public class UpdatePromptScreen extends Screen {
         return attempt == null ? null : attempt.detail();
     }
 
-    /**
-     * Appends each non-null text, word-wrapped, up to the panel's line budget. A word longer than a
-     * line, such as a file path, is broken into line-sized pieces rather than running off the panel.
-     */
     private static List<String> lines(List<String> into, String... texts) {
+        return lines(into, MAX_LINES, texts);
+    }
+
+    /**
+     * Appends each non-null text, word-wrapped, up to {@code max} lines. A word longer than a line,
+     * such as a file path, is broken into line-sized pieces rather than running off the panel.
+     */
+    private static List<String> lines(List<String> into, int max, String... texts) {
         for (String text : texts) {
             if (text == null || text.isBlank()) continue;
             StringBuilder line = new StringBuilder();
@@ -249,21 +355,21 @@ public class UpdatePromptScreen extends Screen {
                 for (int start = 0; start < word.length() || start == 0; start += WRAP_CHARACTERS) {
                     String piece = word.substring(start, Math.min(word.length(), start + WRAP_CHARACTERS));
                     if (line.length() > 0 && line.length() + 1 + piece.length() > WRAP_CHARACTERS) {
-                        add(into, line.toString());
+                        add(into, max, line.toString());
                         line.setLength(0);
                     }
                     if (line.length() > 0 && start == 0) line.append(' ');
                     line.append(piece);
                 }
             }
-            if (line.length() > 0) add(into, line.toString());
+            if (line.length() > 0) add(into, max, line.toString());
         }
         return into;
     }
 
-    private static void add(List<String> into, String line) {
-        if (into.size() < MAX_LINES) into.add(line);
-        else if (into.size() == MAX_LINES && !into.get(MAX_LINES - 1).endsWith("...")) into.set(MAX_LINES - 1, into.get(MAX_LINES - 1) + "...");
+    private static void add(List<String> into, int max, String line) {
+        if (into.size() < max) into.add(line);
+        else if (into.size() == max && !into.get(max - 1).endsWith("...")) into.set(max - 1, into.get(max - 1) + "...");
     }
 
     private static void text(UiCanvas canvas, String font, float size, Color color, float x, float y, String text) {

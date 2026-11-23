@@ -13,7 +13,8 @@ public sealed interface UpdateState {
 
     record Checking(boolean manual) implements UpdateState {}
 
-    record UpToDate(String running) implements UpdateState {}
+    /** {@code notes} are the running version's own, when it is the latest release; otherwise empty. */
+    record UpToDate(String running, ReleaseNotes notes) implements UpdateState {}
 
     record CheckFailed(String reason, Attempt previous) implements UpdateState {}
 
@@ -57,10 +58,11 @@ public sealed interface UpdateState {
     record Incompatible(Release release, String reason) implements UpdateState {}
 
     /**
-     * A release from GitHub has {@code jar.url()} set. A downloaded copy rebuilt from the update
-     * record has none: it installs only from its re-verified staged file and never downloads.
+     * A release from GitHub has {@code jar.url()} set and its notes. A downloaded copy rebuilt from
+     * the update record has neither: it installs only from its re-verified staged file and never
+     * downloads.
      */
-    record Release(String tag, String version, URI page, Asset jar, Asset checksum, String sha256) {
+    record Release(String tag, String version, URI page, Asset jar, Asset checksum, String sha256, ReleaseNotes notes) {
         public boolean downloadedCopy() {
             return jar.url() == null;
         }

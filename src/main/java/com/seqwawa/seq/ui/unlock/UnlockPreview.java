@@ -33,9 +33,13 @@ import com.seqwawa.seq.ui.SettingsScreen;
 import com.seqwawa.seq.ui.ThemeEditorScreen;
 import com.seqwawa.seq.ui.UpdatePromptScreen;
 import com.seqwawa.seq.ui.WarQueueHudEditorScreen;
+import com.seqwawa.seq.ui.WhatsNewScreen;
 import com.seqwawa.seq.ui.WorldMapScreen;
+import com.seqwawa.seq.update.ReleaseNotes;
+import com.seqwawa.seq.update.UpdateState;
 import com.seqwawa.seq.utils.PlayerNameCache;
 import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
+import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -115,18 +119,54 @@ public final class UnlockPreview {
                 return new PartyFinderScreen(parent);
             }));
 
+    /** A release's notes in the shape docs/development.md describes: a summary, then sections. */
+    private static final ReleaseNotes SAMPLE_NOTES = ReleaseNotes.parse("""
+            ## Sequoia 1.16.0
+
+            Patch notes open in game: the update prompt shows a short summary, and What's new shows the rest.
+            Discord's release post starts with the same summary.
+
+            ### New
+
+            - **What's new.** The update prompt has a What's new button that opens the release's full notes.
+              - Scroll with the mouse wheel, drag the scrollbar, or drag the text itself.
+              - Esc or Back returns to the prompt.
+            - **Summary.** Two to four lines about the release show under the prompt's title.
+            - After an update, `/seq update` shows the notes of the version you are running.
+
+            ### Changed
+
+            - The update prompt grows taller when the summary needs the room, and keeps inside the window.
+            - With four buttons, the prompt's buttons share its width instead of running off its edges.
+            - The toast after Sequoia updates itself says how to see what's new.
+            - Discord's release post shows the summary, then as many whole items as fit, then a link to the full patch notes.
+            """);
+    private static final UpdateState SAMPLE_UPDATE = new UpdateState.Available(new UpdateState.Release("v1.16.0", "1.16.0",
+            URI.create("https://github.com/SequoiaWynncraft/Sequoia-mod/releases/tag/v1.16.0"),
+            new UpdateState.Asset("sequoia-1.16.0.jar", URI.create("https://example.invalid/sequoia-1.16.0.jar"), 18_200_000),
+            null, null, SAMPLE_NOTES), null);
+    /** Shots of the notes; the last is scrolled to their end. */
+    private static final String NOTES_SCROLLED = "whats-new-end";
+    private static final List<GalleryScreen> NOTES_GALLERY = List.of(
+            new GalleryScreen("update-prompt-notes", parent -> new UpdatePromptScreen(parent, () -> SAMPLE_UPDATE)),
+            new GalleryScreen("whats-new", parent -> new WhatsNewScreen(parent, "What's new in Sequoia 1.16.0", SAMPLE_NOTES)),
+            new GalleryScreen(NOTES_SCROLLED, parent -> new WhatsNewScreen(parent, "What's new in Sequoia 1.16.0", SAMPLE_NOTES)));
+
     /** A gallery screenshot: which screen, and whether at the narrow size. */
     private record Shot(GalleryScreen screen, boolean narrow) {}
 
     /**
-     * Every screen wide, then every one narrow, then the party finder's states, narrow first:
-     * the shots before those come at the same moments as before they were added.
+     * Every screen wide, then every one narrow, then the party finder's states, narrow first,
+     * then the release notes, wide first: the shots before each addition come at the same
+     * moments as before it was added.
      */
     private static final List<Shot> SHOTS = Stream.of(
                     GALLERY.stream().map(screen -> new Shot(screen, false)),
                     GALLERY.stream().map(screen -> new Shot(screen, true)),
                     PARTY_GALLERY.stream().map(screen -> new Shot(screen, true)),
-                    PARTY_GALLERY.stream().map(screen -> new Shot(screen, false)))
+                    PARTY_GALLERY.stream().map(screen -> new Shot(screen, false)),
+                    NOTES_GALLERY.stream().map(screen -> new Shot(screen, false)),
+                    NOTES_GALLERY.stream().map(screen -> new Shot(screen, true)))
             .flatMap(Function.identity())
             .toList();
     /** Ticks the gallery waits after closing the player in, for the blocks and their light to settle. */
@@ -287,6 +327,11 @@ public final class UnlockPreview {
                     // Fresh sample data, so the board's "in 6h 11m" and "12m ago" don't depend on how long the tour took.
                     LeafQuestService.getInstance().showPreview(sampleBoard());
                     mc.setScreen(shot.screen().open().apply(null));
+                }
+                // Down to the end of the notes, once a frame has measured them.
+                if (galleryTick % GALLERY_TICKS_PER_SCREEN == GALLERY_TICKS_PER_SCREEN / 2
+                        && shot.screen().name().equals(NOTES_SCROLLED) && mc.screen instanceof WhatsNewScreen notes) {
+                    notes.scrollBy(10_000);
                 }
                 if (galleryTick % GALLERY_TICKS_PER_SCREEN == GALLERY_TICKS_PER_SCREEN - 1) {
                     grab("gallery-" + shot.screen().name() + (shot.narrow() ? "-narrow" : "") + ".png");
